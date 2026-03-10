@@ -1,0 +1,175 @@
+[
+  {
+    "name": "Stage 1",
+    "hp": "300",
+    "moves": [
+      "Soul Strike",
+      "Slash",
+      "Rebirth"
+    ],
+    "notes": "Innate Regen 10 (15)",
+    "ai": "Always begins with Slash. Afterwards, has a 25% chance of using Soul Strike and a 75% chance of Slash, except Soul Strike cannot be used twice in a row and slash cannot be used three times in a row. Becomes \"half dead\" and uses Rebirth upon hitting 0 hp.",
+    "ascension_20_ai": null
+  },
+  {
+    "name": "Stage 2",
+    "hp": "300",
+    "moves": [
+      "Dark Echo",
+      "Sludge",
+      "Tackle"
+    ],
+    "notes": "Cleanses all debuffs for stage 2",
+    "ai": "Always begins with Dark Echo. Afterwards, has a 50% chance of using Sludge or Tackle, except neither can be used three times in a row.",
+    "ascension_20_ai": null
+  },
+  {
+    "name": "Bronze Automaton",
+    "hp": "300",
+    "moves": [
+      "Spawn Orbs",
+      "HYPER BEAM",
+      "Stunned",
+      "Boost",
+      "Flail"
+    ],
+    "notes": "Innate Artifact 3",
+    "ai": "Deterministic order. First, uses Spawn Orbs. Afterwards, cycles in the order of Flail -> Boost -> Flail -> Boost -> HYPER BEAM -> Stunned. In Ascension 19, uses Boost instead of Stunned.",
+    "ascension_20_ai": null
+  },
+  {
+    "name": "Bronze Orb",
+    "hp": "52-58",
+    "moves": [
+      "Support Beam",
+      "Beam",
+      "Stasis"
+    ],
+    "notes": "Stasis always steals a random card of the highest rarity in your draw pile (or discard pile, if the draw pile is empty).",
+    "ai": "Has a 75% chance of using Stasis until it has been used. Otherwise, has a 70% chance of using Support Beam and 30% chance of using Beam, but cannot use the same move 3 times in a row.",
+    "ascension_20_ai": null
+  },
+  {
+    "name": "The Champ",
+    "hp": "420",
+    "moves": [
+      "Face Slap",
+      "Taunt",
+      "Defensive Stance",
+      "Gloat",
+      "Heavy Slash"
+    ],
+    "notes": "Enrages when reaching below 50% hp (no indicator)",
+    "ai": "Every 4 turns, uses Taunt. Otherwise, approximately (15/15/25/45) (30/0/25/45) probability split between (Defensive Stance/Gloat/Face Slap/Heavy Slash). No move can be used twice in a row, and Defensive Stance cannot be used more than 2 times, total (this applies to enraged too). When attempting to use an invalid move, will use the next move in the order of Defensive Stance -> Gloat -> Face Slap -> Heavy Slash -> Face Slap (instead of even probability distribution).",
+    "ascension_20_ai": null
+  },
+  {
+    "name": "The Collector",
+    "hp": "282",
+    "moves": [
+      "Spawn",
+      "Revive",
+      "Buff",
+      "(Mega Debuff)",
+      "Fireball"
+    ],
+    "notes": null,
+    "ai": "Always begins with Spawn. On turn 4, always uses the Mega Debuff. Otherwise, if a Torch Head is dead, has approximately a (25/45/30) probability split between (Revive/Fireball/Buff). If all Torch Heads are alive, the split becomes (70/30) between (Fireball/Buff). Cannot use Revive or Buff twice in a row, or Fireball three times in a row.",
+    "ascension_20_ai": null
+  },
+  {
+    "name": "Torch Head",
+    "hp": "38-40",
+    "moves": [
+      "Tackle"
+    ],
+    "notes": null,
+    "ai": null,
+    "ascension_20_ai": null
+  },
+  {
+    "name": "Corrupt Heart",
+    "hp": "750",
+    "moves": [
+      "Blood Shots",
+      "Echo",
+      "Debilitate",
+      "(Buff)",
+      "**List of Additional Buffs:"
+    ],
+    "notes": "Innate Invincible 300 (200)",
+    "ai": "Always begins with Debilitate. Every 3 turns, starting from turn 4, uses Buff. Otherwise, has an equal chance of either using Blood Shots followed by Echo or Echo followed by Blood Shots.",
+    "ascension_20_ai": null
+  },
+  {
+    "name": "Donu",
+    "hp": "250",
+    "moves": [
+      "Circle of Power",
+      "Beam"
+    ],
+    "notes": "Innate Artifact 2 (3)",
+    "ai": "Always begins by using Circle of Power, and then alternates between its two moves.",
+    "ascension_20_ai": null
+  },
+  {
+    "name": "Deca",
+    "hp": "250",
+    "moves": [
+      "Square of Protection",
+      "Beam"
+    ],
+    "notes": "Innate Artifact 2 (3)",
+    "ai": "Always begins by using Beam, and then alternates between its two moves.",
+    "ascension_20_ai": null
+  },
+  {
+    "name": "The Guardian",
+    "hp": "240 (250)",
+    "moves": [],
+    "notes": null,
+    "ai": null,
+    "ascension_20_ai": null
+  },
+  {
+    "name": "Hexaghost",
+    "hp": "250",
+    "moves": [
+      "Divider",
+      "Inferno",
+      "Inflame",
+      "Sear",
+      "Tackle",
+      "Activate"
+    ],
+    "notes": "H = (Player's Current HP / 12) + 1",
+    "ai": "Always begins with Activate, then Divider. Afterwards, cycles in the order of Sear -> Tackle -> Sear -> Inflame -> Tackle -> Sear -> Inferno, with 0-6 orbs active, respectively.",
+    "ascension_20_ai": null
+  },
+  {
+    "name": "Slime Boss",
+    "hp": "140",
+    "moves": [
+      "Goop Spray",
+      "Preparing",
+      "Slam",
+      "Split"
+    ],
+    "notes": "Splits into a Spike Slime (L) and an Acid Slime (L) if HP is 50% or below",
+    "ai": "Always cycles in the order of Goop Spray -> Preparing -> Slam.",
+    "ascension_20_ai": null
+  },
+  {
+    "name": "Time Eater",
+    "hp": "456",
+    "moves": [
+      "Ripple",
+      "Reverberate",
+      "Head Slam",
+      "Haste"
+    ],
+    "notes": "Innate Time Warp",
+    "ai": "Always uses Haste once, immediately after reaching below 50% HP. Otherwise, approximately a (20/45/35) probability split between Ripple, Reverberate, and Head Slam, except Ripple and Head Slam cannot be used twice in a row, and Reverberate cannot be used three times in a row.",
+    "ascension_20_ai": null
+  }
+]

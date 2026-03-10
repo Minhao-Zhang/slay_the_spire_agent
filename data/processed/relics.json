@@ -1,0 +1,1394 @@
+[
+  {
+    "name": "Akabeko",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Your first Attack each combat deals 8 additional damage.",
+    "flavor_text": "\"Muuu~\"",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Anchor",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Start each combat with 10 Block.",
+    "flavor_text": "Holding this miniature trinket, you feel heavier and more stable.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Ancient Tea Set",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Whenever you enter a Rest Site, start the next combat with [E] [E] .",
+    "flavor_text": "The key to a refreshing night's rest.",
+    "spawn_conditions": "Below floor 49"
+  },
+  {
+    "name": "Art of War",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "If you do not play any Attacks during your turn, gain an additional [E] next turn.",
+    "flavor_text": "This ancient manuscript contains wisdom from a past age.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Bag of Marbles",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "At the start of each combat, apply 1 Vulnerable to ALL enemies.",
+    "flavor_text": "A once popular toy in the City. Useful for throwing enemies off balance.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Bag of Preparation",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "At the start of each combat, draw 2 additional cards.",
+    "flavor_text": "Oversized adventurer's pack. Has many pockets and straps.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Blood Vial",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "At the start of each combat, heal 2 HP.",
+    "flavor_text": "A vial containing the blood of a pure and elder vampire.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Bronze Scales",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Start each combat with 3 Thorns.",
+    "flavor_text": "The sharp scales of the Guardian. Rearranges itself to protect its user.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Centennial Puzzle",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "The first time you lose HP each combat, draw 3 cards.",
+    "flavor_text": "Upon solving the puzzle, you feel a powerful warmth in your chest.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Ceramic Fish",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Whenever you add a card to your deck, gain 9 Gold.",
+    "flavor_text": "Meticulously painted, these fish were revered to bring great fortune.",
+    "spawn_conditions": "Below floor 49"
+  },
+  {
+    "name": "Damaru",
+    "rarity": "Common",
+    "class_specific": "Watcher",
+    "description": "At the start of your turn, gain 1 Mantra.",
+    "flavor_text": "The sound of the small drum keeps your mind awake, revealing a path forward.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Data Disk",
+    "rarity": "Common",
+    "class_specific": "Defect",
+    "description": "Start each combat with 1 Focus.",
+    "flavor_text": "This disk contains precious data on birds and snakes.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Dream Catcher",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Whenever you Rest, you may add a card into your deck.",
+    "flavor_text": "The northern tribes would often use dream catchers at night, believing they led to self improvement.",
+    "spawn_conditions": "Below floor 49"
+  },
+  {
+    "name": "Happy Flower",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Every 3 turns, gain [E] .",
+    "flavor_text": "This unceasingly joyous plant is a popular novelty item among nobles.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Juzu Bracelet",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Normal enemy combats are no longer encountered in ? rooms.",
+    "flavor_text": "A ward against the unknown.",
+    "spawn_conditions": "Below floor 49"
+  },
+  {
+    "name": "Lantern",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Start each combat with an additional [E] .",
+    "flavor_text": "An eerie lantern which illuminates only for the wielder.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Maw Bank",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Whenever you climb a floor, gain 12 Gold. No longer works when you spend any Gold at a shop.",
+    "flavor_text": "Surprisingly popular, despite maw attacks being a regular occurrence.",
+    "spawn_conditions": "Below floor 49 and not in a shop"
+  },
+  {
+    "name": "Meal Ticket",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Whenever you enter a shop, heal 15 HP.",
+    "flavor_text": "\"Complimentary meatballs with every visit!\"",
+    "spawn_conditions": "Below floor 49"
+  },
+  {
+    "name": "Nunchaku",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Every time you play 10 Attacks, gain [E] .",
+    "flavor_text": "A good training tool. Improves the posture and agility of the wielder.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Oddly Smooth Stone",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Start each combat with 1 Dexterity.",
+    "flavor_text": "You have never seen something so smooth and pristine. This must be the work of the Ancients.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Omamori",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Negate the next 2 Curses you obtain.",
+    "flavor_text": "A common charm for staving off vile spirits. This one seems to possess a spark of divine energy.",
+    "spawn_conditions": "Below floor 49"
+  },
+  {
+    "name": "Orichalcum",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "If you end your turn without Block, gain 6 Block.",
+    "flavor_text": "A green tinted metal of an unknown origin. Seemingly indestructible.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Pen Nib",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Every 10th Attack you play deals double damage.",
+    "flavor_text": "Holding the nib, you can see everyone ever slain by a previous owner of the pen. A violent history.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Potion Belt",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Upon pickup, gain 2 Potion slots.",
+    "flavor_text": "I can hold more Potions using this belt!",
+    "spawn_conditions": "Below floor 49"
+  },
+  {
+    "name": "Preserved Insect",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Enemies in Elite combats have 25% less HP.",
+    "flavor_text": "The insect seems to create a shrinking aura that targets particularly large enemies.",
+    "spawn_conditions": "Below floor 53"
+  },
+  {
+    "name": "Red Skull",
+    "rarity": "Common",
+    "class_specific": "Ironclad",
+    "description": "While your HP is at or below 50%, you have 3 additional Strength.",
+    "flavor_text": "A small skull covered in ornamental paint.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Regal Pillow",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Whenever you Rest, heal an additional 15 HP.",
+    "flavor_text": "Now you can get a proper night's rest.",
+    "spawn_conditions": "Below floor 49"
+  },
+  {
+    "name": "Smiling Mask",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "The Merchant's card removal service now always costs 50 Gold.",
+    "flavor_text": "Mask worn by the Merchant. He must have spares...",
+    "spawn_conditions": "Below floor 49 and not in a shop"
+  },
+  {
+    "name": "Snecko Skull",
+    "rarity": "Common",
+    "class_specific": "Silent",
+    "description": "Whenever you apply Poison, apply an additional 1 Poison.",
+    "flavor_text": "A snecko skull in pristine condition. Mysteriously clean and smooth, dirt and grime fall off inexplicably.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Strawberry",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Upon pickup, raise your Max HP by 7.",
+    "flavor_text": "\"Delicious! Haven't seen any of these since the blight.\" - Ranwid",
+    "spawn_conditions": null
+  },
+  {
+    "name": "The Boot",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Whenever you would deal 4 or less unblocked attack damage, increase it to 5.",
+    "flavor_text": "When wound up, the boot grows larger in size.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Tiny Chest",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Every 4th ? room is a Treasure room.",
+    "flavor_text": "\"A fine prototype.\" - The Architect",
+    "spawn_conditions": "Below floor 36"
+  },
+  {
+    "name": "Toy Ornithopter",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Whenever you use a potion, heal 5 HP.",
+    "flavor_text": "\"This little toy is the perfect companion for the lone adventurer!\"",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Vajra",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Start each combat with 1 Strength.",
+    "flavor_text": "An ornamental relic given to warriors displaying glory in battle.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "War Paint",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Upon pickup, Upgrade 2 random Skills.",
+    "flavor_text": "In the past, Ironclads would create wards using enchanted war paint before charging into battle.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Whetstone",
+    "rarity": "Common",
+    "class_specific": null,
+    "description": "Upon pickup, Upgrade 2 random Attacks.",
+    "flavor_text": "\"Flesh never beats steel.\" - Kublai the Great",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Blue Candle",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Unplayable Curse cards can now be played. Whenever you play a Curse, lose 1 HP and Exhaust it.",
+    "flavor_text": "The flame ignites when shrouded in darkness.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Bottled Flame",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Upon pickup, choose an Attack. Start each combat with this card in your hand.",
+    "flavor_text": "Inside the bottle resides a flame that eternally burns.",
+    "spawn_conditions": "Non-basic attack in deck"
+  },
+  {
+    "name": "Bottled Lightning",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Upon pickup, choose a Skill. Start each combat with this card in your hand.",
+    "flavor_text": "Peering into the swirling maelstrom, you see a part of yourself staring back.",
+    "spawn_conditions": "Non-basic skill in deck"
+  },
+  {
+    "name": "Bottled Tornado",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Upon pickup, choose a Power card. Start each combat with this card in your hand.",
+    "flavor_text": "The bottle gently hums and whirs.",
+    "spawn_conditions": "Non-basic power in deck"
+  },
+  {
+    "name": "Darkstone Periapt",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Whenever you obtain a Curse, increase your Max HP by 6.",
+    "flavor_text": "The stone draws power from dark energy, converting it into vitality for the wearer.",
+    "spawn_conditions": "Below floor 49"
+  },
+  {
+    "name": "Duality",
+    "rarity": "Uncommon",
+    "class_specific": "Watcher",
+    "description": "Whenever you play an Attack, gain 1 temporary Dexterity.",
+    "flavor_text": "\"And the sun was extinguished forever, as if curtains fell before it.\" - Zoroth",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Eternal Feather",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "For every 5 cards in your deck, heal 3 HP whenever you enter a Rest Site.",
+    "flavor_text": "This feather appears to be completely indestructible. What bird does this possibly come from?",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Frozen Egg",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Whenever you add a Power card into your deck, Upgrade it.",
+    "flavor_text": "The egg lies inert and frozen, never to hatch.",
+    "spawn_conditions": "Below floor 49"
+  },
+  {
+    "name": "Gold-Plated Cables",
+    "rarity": "Uncommon",
+    "class_specific": "Defect",
+    "description": "Your rightmost Orb triggers its passive an additional time.",
+    "flavor_text": "\"Interesting! Even automatons are affected by placebo.\" - Ranwid",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Gremlin Horn",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Whenever an enemy dies, gain [E] and draw 1 card.",
+    "flavor_text": "\"Gremlin Nobs are capable of growing until the day they die. Remarkable.\" - Ranwid",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Horn Cleat",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "At the start of your 2nd turn, gain 14 Block.",
+    "flavor_text": "Pleasant to hold in the hand. What was it for?",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Ink Bottle",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Whenever you play 10 cards, draw 1 card.",
+    "flavor_text": "Once exhausted, appears to refill itself in a different color.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Kunai",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Every time you play 3 Attacks in a single turn, gain 1 Dexterity.",
+    "flavor_text": "A blade favored by assassins for its lethality at range.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Letter Opener",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Every time you play 3 Skills in a single turn, deal 5 damage to ALL enemies.",
+    "flavor_text": "Unnaturally sharp.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Matryoshka",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "The next 2 non-Boss chests you open contain 2 Relics.",
+    "flavor_text": "A stackable set of painted dolls. The paint depicts an unknown bird with white eyes and blue feathers.",
+    "spawn_conditions": "Below floor 41"
+  },
+  {
+    "name": "Meat on the Bone",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "If your HP is at or below 50% at the end of combat, heal 12 HP.",
+    "flavor_text": "The meat keeps replenishing, never seeming to fully run out.",
+    "spawn_conditions": "Below floor 49"
+  },
+  {
+    "name": "Mercury Hourglass",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "At the start of your turn, deal 3 damage to ALL enemies.",
+    "flavor_text": "An enchanted hourglass that endlessly drips.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Molten Egg",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Whenever you add an Attack into your deck, Upgrade it.",
+    "flavor_text": "The egg of a Phoenix. It glows red hot with a simmering lava.",
+    "spawn_conditions": "Below floor 49"
+  },
+  {
+    "name": "Mummified Hand",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Whenever you play a Power card, a random card in your hand costs 0 that turn.",
+    "flavor_text": "Frequently twitches, especially when your pulse is high.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Ninja Scroll",
+    "rarity": "Uncommon",
+    "class_specific": "Silent",
+    "description": "At the start of each combat, add 3 Shivs into your hand.",
+    "flavor_text": "Contains the secrets of assassination.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Ornamental Fan",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Every time you play 3 Attacks in a single turn, gain 4 Block.",
+    "flavor_text": "The fan seems to extend and harden as blood is spilled.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Pantograph",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "At the start of Boss combats, heal 25 HP.",
+    "flavor_text": "\"Solid foundations are not accidental. Tools for planning are a must.\" - The Architect",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Paper Krane",
+    "rarity": "Uncommon",
+    "class_specific": "Silent",
+    "description": "Enemies with Weak deal 40% less damage rather than 25%.",
+    "flavor_text": "An origami of a creature from a past age.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Paper Phrog",
+    "rarity": "Uncommon",
+    "class_specific": "Ironclad",
+    "description": "Enemies with Vulnerable take 75% more damage rather than 50%.",
+    "flavor_text": "The paper continually folds and unfolds itself into the shape of a small creature.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Pear",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Upon pickup, raise your Max HP by 10.",
+    "flavor_text": "A common fruit before the Spireblight.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Question Card",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Future card rewards have 1 additional card to choose from.",
+    "flavor_text": "\"Those with more choices minimize the downside to chaos.\" - Kublai the Great",
+    "spawn_conditions": "Below floor 49"
+  },
+  {
+    "name": "Self-Forming Clay",
+    "rarity": "Uncommon",
+    "class_specific": "Ironclad",
+    "description": "Whenever you lose HP, gain 3 Block next turn.",
+    "flavor_text": "\"Most curious! It appears to form itself loosely on my thoughts! Tele-clay?\" - Ranwid",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Shuriken",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Every time you play 3 Attacks in a single turn, gain 1 Strength.",
+    "flavor_text": "Lightweight throwing weapons. Recommend going for the eyes.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Singing Bowl",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "When adding cards into your deck, you may raise your Max HP by 2 instead.",
+    "flavor_text": "This well-used artifact rings out with a beautiful melody when struck.",
+    "spawn_conditions": "Below floor 49"
+  },
+  {
+    "name": "Strike Dummy",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Cards containing \"Strike\" deal 3 additional damage.",
+    "flavor_text": "It's beat up.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Sundial",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Every 3 times you shuffle your draw pile, gain [E] [E] .",
+    "flavor_text": "\"Early man's foolish obsession with time caused them to look to the sky for guidance, hoping for something permanent.\" - Zoroth",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Symbiotic Virus",
+    "rarity": "Uncommon",
+    "class_specific": "Defect",
+    "description": "At the start of each combat, Channel 1 Dark.",
+    "flavor_text": "A little bit of bad can do a lot of good...",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Teardrop Locket",
+    "rarity": "Uncommon",
+    "class_specific": "Watcher",
+    "description": "Start each combat in Calm.",
+    "flavor_text": "Its owner blind, its contents unseen.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "The Courier",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "The Merchant restocks cards, relics, and potions. All prices are reduced by 20%.",
+    "flavor_text": "The Merchant's personal pet!",
+    "spawn_conditions": "Below floor 49 and not in a shop"
+  },
+  {
+    "name": "Toxic Egg",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Whenever you add a Skill into your deck, Upgrade it.",
+    "flavor_text": "\"What a marvelous discovery! This appears to be the inert egg of some magical creature. Who or what created this?\" - Ranwid",
+    "spawn_conditions": "Below floor 49"
+  },
+  {
+    "name": "White Beast Statue",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "description": "Potions always appear in combat rewards.",
+    "flavor_text": "A small white statue of a creature you have never seen before.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Bird-Faced Urn",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "Whenever you play a Power card, heal 2 HP.",
+    "flavor_text": "This urn shows the crow god Mazaleth looking mischievous.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Calipers",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "At the start of your turn, lose 15 Block rather than all of your Block.",
+    "flavor_text": "\"Mechanical precision leads to greatness\" - The Architect",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Captain's Wheel",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "At the start of your 3rd turn, gain 18 Block.",
+    "flavor_text": "Wooden trinket carved with delicate precision. A name is carved into it but the language is foreign.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Champion Belt",
+    "rarity": "Rare",
+    "class_specific": "Ironclad",
+    "description": "Whenever you apply Vulnerable, apply 1 Weak.",
+    "flavor_text": "Only the greatest may wear this belt.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Charon's Ashes",
+    "rarity": "Rare",
+    "class_specific": "Ironclad",
+    "description": "Whenever you Exhaust a card, deal 3 damage to ALL enemies.",
+    "flavor_text": "Charon was said to be the god of rebirth, eternally dying and reviving in a burst of flame.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Cloak Clasp",
+    "rarity": "Rare",
+    "class_specific": "Watcher",
+    "description": "At the end of your turn, gain 1 Block for each card in your hand.",
+    "flavor_text": "A simple but sturdy design.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Dead Branch",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "Whenever you Exhaust a card, add a random card into your hand.",
+    "flavor_text": "The branch of a tree from a forgotten era.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Du-Vu Doll",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "For each Curse in your deck, start each combat with 1 Strength.",
+    "flavor_text": "A doll devised to gain strength from malicious energy.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Emotion Chip",
+    "rarity": "Rare",
+    "class_specific": "Defect",
+    "description": "If you lost HP during the previous turn, trigger the passive ability of all Orbs at the start of your turn.",
+    "flavor_text": "...<3...?",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Fossilized Helix",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "Prevent the first time you would lose HP each combat.",
+    "flavor_text": "Seemingly indestructible, you wonder what kind of creature this belonged to.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Gambling Chip",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "At the start of each combat, discard any number of cards, then draw that many cards.",
+    "flavor_text": "You can see a small inscription on one side. It reads: \"Bear's Lucky Chip!\"",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Ginger",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "You can no longer become Weakened.",
+    "flavor_text": "A potent tool in many tonics.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Girya",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "You can now gain Strength at Rest Sites (up to 3 times).",
+    "flavor_text": "This Girya is unfathomably heavy. You could train with this to get significantly stronger.",
+    "spawn_conditions": "Below floor 49. Max 2 campfire relics."
+  },
+  {
+    "name": "Golden Eye",
+    "rarity": "Rare",
+    "class_specific": "Watcher",
+    "description": "Whenever you Scry, Scry 2 additional cards.",
+    "flavor_text": "See into the minds of those nearby, predicting their future moves.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Ice Cream",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "Energy is now conserved between turns.",
+    "flavor_text": "\"Delicious!\"",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Incense Burner",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "Every 6 turns, gain 1 Intangible.",
+    "flavor_text": "The smoke imbues its owner with the spirit of the burned.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Lizard Tail",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "When you would die, heal to 50% of your Max HP instead (works once).",
+    "flavor_text": "A fake tail to trick enemies during combat.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Magic Flower",
+    "rarity": "Rare",
+    "class_specific": "Ironclad",
+    "description": "Healing is 50% more effective during combat.",
+    "flavor_text": "A flower long thought extinct, somehow preserved in perfect condition.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Mango",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "Upon pickup, raise your Max HP by 14.",
+    "flavor_text": "The most coveted forgotten fruit. Impeccably preserved with no signs of Spireblight.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Old Coin",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "Upon pickup, gain 300 Gold.",
+    "flavor_text": "Unique coins are highly valued by merchants for their historical value and rare metallic composition.",
+    "spawn_conditions": "Below floor 49 and not in a shop"
+  },
+  {
+    "name": "Peace Pipe",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "You can now remove cards from your deck at Rest Sites.",
+    "flavor_text": "Clears the mind and cleanses the soul.",
+    "spawn_conditions": "Below floor 49. Max 2 campfire relics."
+  },
+  {
+    "name": "Pocketwatch",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "Whenever you play 3 or less cards during your turn, draw 3 additional cards at the start of your next turn.",
+    "flavor_text": "The hands seem stuck on the 3 o'clock position.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Prayer Wheel",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "Normal enemies drop an additional card reward.",
+    "flavor_text": "The wheel continues to spin, never stopping.",
+    "spawn_conditions": "Below floor 49"
+  },
+  {
+    "name": "Shovel",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "You can now Dig for relics at Rest Sites.",
+    "flavor_text": "The Spire houses all number of relics from past civilizations and powerful adventurers lost to time. Time to go dig them up!",
+    "spawn_conditions": "Below floor 49. Max 2 campfire relics."
+  },
+  {
+    "name": "Stone Calendar",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "At the end of turn 7, deal 52 damage to ALL enemies.",
+    "flavor_text": "The passage of time is imperceptible in the Spire.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "The Specimen",
+    "rarity": "Rare",
+    "class_specific": "Silent",
+    "description": "Whenever an enemy dies, transfer any Poison it has to a random enemy.",
+    "flavor_text": "\"Fascinating! I found a mutated creature demonstrating astounding toxic properties. Storing a sample for later examination.\" - Ranwid",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Thread and Needle",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "Start each combat with 4 Plated Armor.",
+    "flavor_text": "Wrapping the magical thread around your body, you feel harder to the touch.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Tingsha",
+    "rarity": "Rare",
+    "class_specific": "Silent",
+    "description": "Whenever you discard a card during your turn, deal 3 damage to a random enemy.",
+    "flavor_text": "The sound this instrument generates seems to be capable of reverberating to painful levels of volume.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Torii",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "Whenever you would receive 5 or less unblocked attack damage, reduce it to 1.",
+    "flavor_text": "Holding the small Torii, you feel a sense of calm and safety drift through your mind.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Tough Bandages",
+    "rarity": "Rare",
+    "class_specific": "Silent",
+    "description": "Whenever you discard a card during your turn, gain 3 Block.",
+    "flavor_text": "Loss gives strength.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Tungsten Rod",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "Whenever you would lose HP, lose 1 less.",
+    "flavor_text": "It's very very heavy.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Turnip",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "You can no longer become Frail.",
+    "flavor_text": "Best with Ginger.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Unceasing Top",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "Whenever you have no cards in hand during your turn, draw a card.",
+    "flavor_text": "The top continues to spin effortlessly as if you were in a dream.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Wing Boots",
+    "rarity": "Rare",
+    "class_specific": null,
+    "description": "You may ignore paths when choosing the next room to travel to 3 times.",
+    "flavor_text": "Stylish.",
+    "spawn_conditions": "Below floor 41"
+  },
+  {
+    "name": "Astrolabe",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "Upon pickup, Transform 3 cards, then Upgrade them.",
+    "flavor_text": "A tool to glean invaluable knowledge from the stars.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Black Blood",
+    "rarity": "Boss",
+    "class_specific": "Ironclad",
+    "description": "Replaces Burning Blood. At the end of combat, heal 12 HP.",
+    "flavor_text": "The rage grows darker.",
+    "spawn_conditions": "You have the relic Burning Blood"
+  },
+  {
+    "name": "Black Star",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "Elites drop an additional relic when defeated.",
+    "flavor_text": "Originally discovered in the town of the serpent, beside a solitary candle.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Busted Crown",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "Gain [E] at the start of your turn. Future card rewards have 2 less cards to choose from.",
+    "flavor_text": "The Champ's crown... or a pale imitation?",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Calling Bell",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "Upon pickup, obtain a unique Curse and 3 relics.",
+    "flavor_text": "This dark iron bell rang 3 times when you found it, but now stays silent.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Coffee Dripper",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "Gain [E] at the start of your turn. You can no longer Rest at Rest Sites.",
+    "flavor_text": "\"Yes, another cup please. Back to work. Back to work!\" - The Architect",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Cursed Key",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "Gain [E] at the start of your turn. Whenever you open a non-Boss chest, obtain a Curse.",
+    "flavor_text": "You can feel the malicious energy emanating from the key. Power comes at a price.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Ectoplasm",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "Gain [E] at the start of your turn. You can no longer gain Gold.",
+    "flavor_text": "This blob of slime and energy seems to pulse with life.",
+    "spawn_conditions": "Only in act 1"
+  },
+  {
+    "name": "Empty Cage",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "Upon pickup, remove 2 cards from your deck.",
+    "flavor_text": "\"How unusual to cage that which you worship.\" - Ranwid",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Frozen Core",
+    "rarity": "Boss",
+    "class_specific": "Defect",
+    "description": "Replaces Cracked Core. If you end your turn with any empty Orb slots, Channel 1 Frost.",
+    "flavor_text": "The crack in your core has been filled with a pulsating cold energy.",
+    "spawn_conditions": "You have the relic Cracked Core"
+  },
+  {
+    "name": "Fusion Hammer",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "Gain [E] at the start of your turn. You can no longer Smith at Rest Sites.",
+    "flavor_text": "Once wielded, the owner can never let go.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Holy Water",
+    "rarity": "Boss",
+    "class_specific": "Watcher",
+    "description": "Replaces Pure Water. At the start of each combat, add 3 Miracles into your hand.",
+    "flavor_text": "Collected from a time before the Spire.",
+    "spawn_conditions": "You have the relic Pure Water"
+  },
+  {
+    "name": "Hovering Kite",
+    "rarity": "Boss",
+    "class_specific": "Silent",
+    "description": "The first time you discard a card each turn, gain [E] .",
+    "flavor_text": "The Kite floats around you in battle, propelled by a mysterious force.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Inserter",
+    "rarity": "Boss",
+    "class_specific": "Defect",
+    "description": "Every 2 turns, gain 1 Orb slot.",
+    "flavor_text": "Push. Pull. Stack. Repeat.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Mark of Pain",
+    "rarity": "Boss",
+    "class_specific": "Ironclad",
+    "description": "Gain [R] at the start of your turn. At the start of combat, shuffle 2 Wounds into your draw pile.",
+    "flavor_text": "This brand was used by the northern tribes to signify warriors who had mastered pain in battle.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Nuclear Battery",
+    "rarity": "Boss",
+    "class_specific": "Defect",
+    "description": "At the start of each combat, Channel 1 Plasma.",
+    "flavor_text": "Ooooh...",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Pandora's Box",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "Upon pickup, Transform all Strike and Defend cards.",
+    "flavor_text": "You have a bad feeling about opening this.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Philosopher's Stone",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "Gain [E] at the start of your turn. ALL enemies start combat with 1 Strength.",
+    "flavor_text": "Raw energy emanates from the stone, empowering all nearby.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Ring of the Serpent",
+    "rarity": "Boss",
+    "class_specific": "Silent",
+    "description": "Replaces Ring of the Snake. At the start of your turn, draw 1 additional card.",
+    "flavor_text": "Your ring has morphed and changed forms.",
+    "spawn_conditions": "You have the relic Ring of the Snake"
+  },
+  {
+    "name": "Runic Cube",
+    "rarity": "Boss",
+    "class_specific": "Ironclad",
+    "description": "Whenever you lose HP, draw 1 card.",
+    "flavor_text": "The runes are indecipherable.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Runic Dome",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "Gain [E] at the start of your turn. You can no longer see enemy intents.",
+    "flavor_text": "The runes are indecipherable.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Runic Pyramid",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "At the end of your turn, you no longer discard your hand.",
+    "flavor_text": "The runes are indecipherable.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Sacred Bark",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "Double the effectiveness of potions.",
+    "flavor_text": "A bark rumored to originate from the World tree.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Slaver's Collar",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "During Boss and Elite combats, gain [E] at the start of your turn.",
+    "flavor_text": "Rusty miserable chains.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Snecko Eye",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "At the start of your turn, draw 2 additional cards. Start each combat Confused.",
+    "flavor_text": "An eye of a fallen snecko. Much larger than you imagined.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Sozu",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "Gain [E] at the start of your turn. You can no longer obtain potions.",
+    "flavor_text": "You notice that magical liquids seem to lose their properties when near this relic.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Tiny House",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "Upon pickup, obtain 1 potion. Gain 50 Gold. Raise your Max HP by 5. Obtain 1 card. Upgrade 1 random card.",
+    "flavor_text": "\"A near perfect implementation of miniaturization. My finest work to date, but still not adequate.\" - The Architect",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Velvet Choker",
+    "rarity": "Boss",
+    "class_specific": null,
+    "description": "Gain [E] at the start of your turn. You cannot play more than 6 cards per turn.",
+    "flavor_text": "\"Immense power, but too limited.\" - Kublai the Great",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Violet Lotus",
+    "rarity": "Boss",
+    "class_specific": "Watcher",
+    "description": "Whenever you exit Calm, gain an additional [E] .",
+    "flavor_text": "The old texts describe that the surface of \"mana pools\" were littered with these flowers.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Wrist Blade",
+    "rarity": "Boss",
+    "class_specific": "Silent",
+    "description": "Attacks that cost 0 deal 4 additional damage.",
+    "flavor_text": "Handy for assassinations.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Brimstone",
+    "rarity": "Shop",
+    "class_specific": "Ironclad",
+    "description": "At the start of your turn, gain 2 Strength and ALL enemies gain 1 Strength.",
+    "flavor_text": "Emanates an infernal heat.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Cauldron",
+    "rarity": "Shop",
+    "class_specific": null,
+    "description": "Upon pickup, brews 5 random potions.",
+    "flavor_text": "The Merchant is actually a rather skilled potion brewer. Buy 4 get 1 free.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Chemical X",
+    "rarity": "Shop",
+    "class_specific": null,
+    "description": "The effects of your cost X cards are increased by 2.",
+    "flavor_text": "WARNING: Do not combine with sugar, spice, and everything nice.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Clockwork Souvenir",
+    "rarity": "Shop",
+    "class_specific": null,
+    "description": "Start each combat with 1 Artifact.",
+    "flavor_text": "\"So many intricate gears.\"",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Dolly's Mirror",
+    "rarity": "Shop",
+    "class_specific": null,
+    "description": "Upon pickup, obtain an additional copy of a card in your deck.",
+    "flavor_text": "\"I look funny in this.\"",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Frozen Eye",
+    "rarity": "Shop",
+    "class_specific": null,
+    "description": "When viewing your Draw Pile, the cards are now shown in order.",
+    "flavor_text": "Staring into the eye, you see a glimpse of your future.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Hand Drill",
+    "rarity": "Shop",
+    "class_specific": null,
+    "description": "Whenever you break an enemy's Block, apply 2 Vulnerable.",
+    "flavor_text": "\"Spirals are dangerous.\"",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Lee's Waffle",
+    "rarity": "Shop",
+    "class_specific": null,
+    "description": "Upon pickup, raise your Max HP by 7 and heal all of your HP.",
+    "flavor_text": "\"Tastiest treat you will find in all the Spire! Baked today just for you.\"",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Medical Kit",
+    "rarity": "Shop",
+    "class_specific": null,
+    "description": "Unplayable Status cards can now be played. Whenever you play a Status card, Exhaust it.",
+    "flavor_text": "\"Has everything you need! Anti-itch, anti-burn, anti-venom, and more!\"",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Melange",
+    "rarity": "Shop",
+    "class_specific": "Watcher",
+    "description": "Whenever you shuffle your draw pile, Scry 3.",
+    "flavor_text": "Mysterious sands from an unknown origin. Smells of cinnamon.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Membership Card",
+    "rarity": "Shop",
+    "class_specific": null,
+    "description": "50% discount on all products!",
+    "flavor_text": "\"Bonus membership offer for my most valuable customers!\"",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Orange Pellets",
+    "rarity": "Shop",
+    "class_specific": null,
+    "description": "Whenever you play a Power, Attack, and Skill in the same turn, remove all of your debuffs.",
+    "flavor_text": "\"Made from various fungi found throughout the Spire, they will stave off any affliction.\"",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Orrery",
+    "rarity": "Shop",
+    "class_specific": null,
+    "description": "Upon pickup, choose and add 5 cards to your deck.",
+    "flavor_text": "\"Once you understand the universe...\" - Zoroth",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Prismatic Shard",
+    "rarity": "Shop",
+    "class_specific": null,
+    "description": "Combat reward screens now contain Colorless cards and cards from other colors.",
+    "flavor_text": "Looking through the shard, you are able to see entirely new perspectives.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Runic Capacitor",
+    "rarity": "Shop",
+    "class_specific": "Defect",
+    "description": "Start each combat with 3 additional Orb slots.",
+    "flavor_text": "More is better.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Sling of Courage",
+    "rarity": "Shop",
+    "class_specific": null,
+    "description": "Start each Elite combat with 2 Strength.",
+    "flavor_text": "\"A handy tool for dealing with particularly tough opponents.\"",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Strange Spoon",
+    "rarity": "Shop",
+    "class_specific": null,
+    "description": "Cards which Exhaust when played will instead discard 50% of the time.",
+    "flavor_text": "Staring at the spoon, it appears to bend and twist around before your eyes.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "The Abacus",
+    "rarity": "Shop",
+    "class_specific": null,
+    "description": "Whenever you shuffle your draw pile, gain 6 Block.",
+    "flavor_text": "\"One...Two...Three...\"",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Toolbox",
+    "rarity": "Shop",
+    "class_specific": null,
+    "description": "At the start of each combat, choose 1 of 3 random Colorless cards and add the chosen card into your hand.",
+    "flavor_text": "A tool for every job.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Twisted Funnel",
+    "rarity": "Shop",
+    "class_specific": "Silent",
+    "description": "At the start of each combat, apply 4 Poison to ALL enemies.",
+    "flavor_text": "\"I wouldn't drink out of it.\"",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Bloody Idol",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "Whenever you gain Gold, heal 5 HP.",
+    "flavor_text": "The idol now weeps a constant stream of blood.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Cultist Headpiece",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "You feel more talkative.",
+    "flavor_text": "Part of the Flock!",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Enchiridion",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "At the start of each combat, add a random Power card into your hand. It costs 0 for that turn.",
+    "flavor_text": "The legendary journal of an ancient lich.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Face Of Cleric",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "At the end of combat, raise your Max HP by 1.",
+    "flavor_text": "Everyone loves Cleric.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Golden Idol",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "Enemies drop 25% more Gold.",
+    "flavor_text": "Made of solid gold, you feel richer just holding it.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Gremlin Visage",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "Start each combat with 1 Weak.",
+    "flavor_text": "Time to run.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Mark of the Bloom",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "You can no longer heal.",
+    "flavor_text": "In the Beyond, thoughts and reality are one.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Mutagenic Strength",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "Start each combat with 3 Strength. At the end of your first turn, lose 3 Strength.",
+    "flavor_text": "\"The results seem fleeting, triggering when the subject is in danger.\" - Unknown",
+    "spawn_conditions": null
+  },
+  {
+    "name": "N'loth's Gift",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "Triple the chance of finding Rare cards from combat rewards.",
+    "flavor_text": "The strange gift from N'loth. Whenever you try and unwrap it, another wrapped box of the same size lies within.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "N'loth's Hungry Face",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "The next non-Boss chest you open is empty.",
+    "flavor_text": "You feel hungry.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Necronomicon",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "The first Attack played each turn that costs 2 or more is played twice. Upon pickup, obtain a special Curse.",
+    "flavor_text": "Only a fool would try and harness this evil power. At night your dreams are haunted by images of the book devouring your mind.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Neow's Lament",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "Enemies in your first 3 combats will have 1 HP.",
+    "flavor_text": "The blessing of lamentation bestowed by Neow.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Nilry's Codex",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "At the end of your turn, you may shuffle 1 of 3 random cards into your draw pile.",
+    "flavor_text": "Crafted by the infamous game master himself. Said to expand one's mind.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Odd Mushroom",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "When Vulnerable, take 25% more attack damage rather than 50%.",
+    "flavor_text": "\"After consuming trichella parastius I felt larger and less... susceptible.\" - Ranwid",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Red Mask",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "At the start of each combat, apply 1 Weak to ALL enemies.",
+    "flavor_text": "This very stylish looking mask belongs to the leader of the Red Mask Bandits. Technically that makes you the leader now?",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Spirit Poop",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "It's unpleasant.",
+    "flavor_text": "The charred remains of your offering to the spirits.",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Ssserpent Head",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "Whenever you enter a ? room, gain 50 Gold.",
+    "flavor_text": "The most fulfilling of lives is that in which you can buy anything!",
+    "spawn_conditions": null
+  },
+  {
+    "name": "Warped Tongs",
+    "rarity": "Special",
+    "class_specific": null,
+    "description": "At the start of your turn, Upgrade a random card in your hand for the rest of combat.",
+    "flavor_text": "The cursed tongs emit a strong desire to return to where they were stolen from.",
+    "spawn_conditions": null
+  }
+]

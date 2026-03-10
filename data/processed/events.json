@@ -1,0 +1,442 @@
+[
+  {
+    "name": "Ancient Writing (Back to Basics)",
+    "choices": [
+      "Elegance",
+      "Simplicity"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Augmenter (Drug Dealer)",
+    "choices": [
+      "Test J.A.X.",
+      "Become Test Subject (Requires 2 Cards)",
+      "Ingest Mutagens"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Big Fish",
+    "choices": [
+      "Banana",
+      "Donut",
+      "Box"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Bonfire Spirits (Bonfire Elementals)",
+    "choices": [
+      "Offer"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "The Cleric",
+    "choices": [
+      "Heal (requires 35 gold)",
+      "Purify (requires 50 (75) gold)",
+      "Leave"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "The Colosseum (Colosseum)",
+    "choices": [
+      "Continue/Fight (Mandatory)",
+      "COWARDICE (After first fight)",
+      "VICTORY (After first fight)",
+      "Elite triggers (not Black Star) occur for the Nob + Taskmaster fight."
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Council of Ghosts",
+    "choices": [
+      "Accept",
+      "Refuse"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Cursed Tome",
+    "choices": [
+      "Read/Continue (x3)",
+      "Leave (Before Reading)",
+      "Stop (requires reading 3 times)",
+      "Take (requires reading 3 times)"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Dead Adventurer",
+    "choices": [
+      "Search/Continue",
+      "Leave (if search was successful)",
+      "Fight (upon failing the search)"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Designer In-Spire (Designer)",
+    "choices": [
+      "Adjustments",
+      "Clean Up",
+      "Full Service (Requires 90 (110) gold)",
+      "(4th Option) Punch"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "The Divine Fountain (Fountain of Cleansing)",
+    "choices": [
+      "Drink",
+      "Leave"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "Duplicator",
+    "choices": [
+      "Pray",
+      "Leave"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "Face Trader",
+    "choices": [
+      "Touch",
+      "Trade",
+      "Leave",
+      "List of possible masks:"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "Falling",
+    "choices": [
+      "Land (requires a skill in your deck)",
+      "Channel (requires a power)",
+      "Strike (requires an attack)",
+      "Land (if other options unavailable)"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Forgotten Altar",
+    "choices": [
+      "Offer: Golden Idol (requires relic)",
+      "Sacrifice",
+      "Desecrate"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Golden Idol",
+    "choices": [
+      "Take",
+      "Leave"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Golden Shrine",
+    "choices": [
+      "Pray",
+      "Desecrate",
+      "Leave"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "The Joust",
+    "choices": [
+      "Bet on Murderer",
+      "Bet on Owner"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "Knowing Skull",
+    "choices": [
+      "Success?",
+      "A Pick Me Up?",
+      "Riches?",
+      "(4th Option) How do I leave?"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "Lab",
+    "choices": [
+      "Find Some Potions!"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "The Library",
+    "choices": [
+      "Read",
+      "Sleep"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Living Wall",
+    "choices": [
+      "Forget",
+      "Change",
+      "Grow (Requires Upgradeable Card)"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Masked Bandits",
+    "choices": [
+      "Pay",
+      "Fight"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Match and Keep!",
+    "choices": [
+      "Play",
+      "Available cards:"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "The Mausoleum",
+    "choices": [
+      "Open Coffin",
+      "Leave"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Mind Bloom",
+    "choices": [
+      "I am War",
+      "I am Awake",
+      "I am Rich (if on floors 35-40)",
+      "I am Healthy (if on floor 41 or above)"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "The Moai Head",
+    "choices": [
+      "Jump Inside",
+      "Offer: Golden Idol (requires Golden Idol)",
+      "Leave"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Mushrooms",
+    "choices": [
+      "Stomp",
+      "Eat"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Mysterious Sphere",
+    "choices": [
+      "Open Sphere",
+      "Leave"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "The Nest",
+    "choices": [
+      "Smash and Grab",
+      "Stay in Line"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "A Note For Yourself (Note For Yourself)",
+    "choices": [
+      "Take and Give",
+      "Ignore"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "N'loth",
+    "choices": [
+      "Offer Relic",
+      "Offer Relic",
+      "Leave"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "Old Beggar (Beggar)",
+    "choices": [
+      "Offer Gold (requires 75 gold)",
+      "Leave"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Ominous Forge (Accursed Blacksmith)",
+    "choices": [
+      "Forge (requires upgradeable card)",
+      "Rummage",
+      "Leave"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Pleading Vagrant (Addict)",
+    "choices": [
+      "Offer Gold (requires 85 gold)",
+      "Rob",
+      "Leave"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Purifier",
+    "choices": [
+      "Pray",
+      "Leave"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "Scrap Ooze",
+    "choices": [
+      "Reach Inside",
+      "Leave"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Secret Portal",
+    "choices": [
+      "Enter the Portal",
+      "Leave"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "Sensory Stone",
+    "choices": [
+      "Recall (1 card)",
+      "Recall (2 cards)",
+      "Recall (3 cards)"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Shining Light",
+    "choices": [
+      "Enter",
+      "Leave"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "The Ssssserpent (Liars Game)",
+    "choices": [
+      "Agree",
+      "Disagree"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Tomb of Lord Red Mask",
+    "choices": [
+      "Offer Gold",
+      "Don the Mask (Requires Red Mask)",
+      "Leave"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Transmogrifier",
+    "choices": [
+      "Pray",
+      "Leave"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "Upgrade Shrine",
+    "choices": [
+      "Pray (Requires Upgradeable Card)",
+      "Leave"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "Vampires(?) (Vampires)",
+    "choices": [
+      "Accept",
+      "Lose Blood Vial (requires Blood Vial)",
+      "Refuse"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "We Meet Again",
+    "choices": [
+      "Give Potion (Requires Potion)",
+      "Give Gold (Requires at least 50 Gold)",
+      "Give Card (Requires a valid Card)",
+      "Attack (4th option)"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "Wheel of Change",
+    "choices": [
+      "Spin the wheel!"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "Winding Halls",
+    "choices": [
+      "Embrace Madness",
+      "Focus",
+      "Retrace Your Steps"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "Wing Statue (Golden Wing)",
+    "choices": [
+      "Pray",
+      "Destroy (requires an Attack with 10 dmg)",
+      "Leave"
+    ],
+    "is_shrine": false
+  },
+  {
+    "name": "The Woman in Blue",
+    "choices": [
+      "Buy 1 Potion",
+      "Buy 2 Potions",
+      "Buy 3 Potions",
+      "Leave (4th option)"
+    ],
+    "is_shrine": true
+  },
+  {
+    "name": "World of Goop",
+    "choices": [
+      "Gather Gold",
+      "Leave It",
+      "X is random, between 20 and 50 (35 and 75), capped at your gold."
+    ],
+    "is_shrine": false
+  }
+]

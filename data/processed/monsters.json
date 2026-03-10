@@ -1,0 +1,570 @@
+[
+  {
+    "name": "Acid Slime (L)",
+    "hp": "65-69",
+    "moves": [
+      "Corrosive Spit",
+      "Split",
+      "Lick",
+      "Tackle"
+    ],
+    "notes": "Splits if HP is 50% or below",
+    "ai": "When not splitting, approximately a 30-40-30 probability split between Corrosive Spit, Tackle, and Lick. Tackle cannot be used twice in a row, and the other moves cannot be used three times in a row."
+  },
+  {
+    "name": "Acid Slime (M)",
+    "hp": "28-32",
+    "moves": [
+      "Corrosive Spit",
+      "Lick",
+      "Tackle"
+    ],
+    "notes": "*Slimed goes into the Discard Pile",
+    "ai": "Same AI as Acid Slime (L)"
+  },
+  {
+    "name": "Acid Slime (S)",
+    "hp": "8-12",
+    "moves": [
+      "Tackle",
+      "Lick"
+    ],
+    "notes": null,
+    "ai": "50% chance of each move on turn 1, then alternates between the two."
+  },
+  {
+    "name": "Bear",
+    "hp": "38-42",
+    "moves": [
+      "Bear Hug",
+      "Maul",
+      "Lunge"
+    ],
+    "notes": null,
+    "ai": "Starts with Bear Hug, then alternates between Lunge and Maul."
+  },
+  {
+    "name": "Blue Slaver",
+    "hp": "46-50",
+    "moves": [
+      "Rake",
+      "Stab"
+    ],
+    "notes": null,
+    "ai": "40% chance to use Rake, but cannot use the same move three times in a row."
+  },
+  {
+    "name": "Book of Stabbing",
+    "hp": "160-164",
+    "moves": [
+      "(Attack 1)",
+      "(Attack 2)"
+    ],
+    "notes": "Innate Painful Stabs",
+    "ai": "15% chance to use Attack 2, except Attack 1 cannot be used 3 times in a row, and Attack 2 cannot be used twice in a row."
+  },
+  {
+    "name": "Byrd",
+    "hp": "25-31",
+    "moves": [
+      "Peck",
+      "Swoop",
+      "Headbutt",
+      "(Start Flying)",
+      "(Stunned)",
+      "Caw"
+    ],
+    "notes": "Innate Flying 3 (4)",
+    "ai": "Cannot use Swoop on turn 1. When flying, has a 50-20-30 split between Peck, Swoop, and Caw. Peck cannot be used three times in a row and Swoop and Caw cannot be used twice in a row. When knocked down, is stunned, then uses Headbutt, and then starts flying again."
+  },
+  {
+    "name": "Centurion",
+    "hp": "76-80",
+    "moves": [
+      "Slash",
+      "Fury",
+      "(Defend)"
+    ],
+    "notes": null,
+    "ai": "While the Mystic is alive, either uses Defend on the Mystic or Slash (about 35-65 probability split). Once the Mystic dies, Defend is replaced by Fury. Uses Defend on itself if was about to use Defend and the Mystic dies. Cannot use any move three times in a row."
+  },
+  {
+    "name": "Chosen",
+    "hp": "95-99",
+    "moves": [
+      "Poke",
+      "Zap",
+      "Debilitate",
+      "Drain",
+      "Hex"
+    ],
+    "notes": null,
+    "ai": "Always starts with Poke, followed by Hex. Then alternates between using either Debilitate or Drain (50% chance each), and using either Zap or Poke (40% Zap, 60% Poke)."
+  },
+  {
+    "name": "Cultist",
+    "hp": "48-54",
+    "moves": [
+      "Incantation",
+      "Dark Strike"
+    ],
+    "notes": null,
+    "ai": "First uses Incantation, then repeats Dark Strike."
+  },
+  {
+    "name": "Darkling",
+    "hp": "48-56",
+    "moves": [
+      "Nip",
+      "Chomp",
+      "Harden",
+      "(Unknown)",
+      "Reincarnate"
+    ],
+    "notes": "Innate Life Link",
+    "ai": "On turn 1, 50% chance of either Nip or Harden. Afterwards, has a 30-40-30 split between Nip, Chomp, and Harden, but  Harden and Chomp both cannot be used twice in a row, and Nip cannot be used three times in a row. The middle Darkling cannot Chomp and has a 50-50 split instead. When \"half-dead\", uses Unknown, followed by Reincarnate."
+  },
+  {
+    "name": "Exploder",
+    "hp": "30",
+    "moves": [
+      "(Attack)",
+      "(Unknown)"
+    ],
+    "notes": "Innate Explode 3",
+    "ai": "Attacks twice, and then explodes."
+  },
+  {
+    "name": "Fat Gremlin",
+    "hp": "13-17",
+    "moves": [
+      "Smash"
+    ],
+    "notes": null,
+    "ai": null
+  },
+  {
+    "name": "Fungi Beast",
+    "hp": "22-28",
+    "moves": [
+      "Grow",
+      "Bite"
+    ],
+    "notes": "Innate Spore Cloud 2",
+    "ai": "60% chance of Bite, but cannot use Bite 3 times in a row or Buff twice in a row."
+  },
+  {
+    "name": "Giant Head",
+    "hp": "500",
+    "moves": [
+      "Count",
+      "It Is Time",
+      "Glare"
+    ],
+    "notes": "Innate Slow",
+    "ai": "For the first 4 turns, has a 50-50 split between Count and Glare, but cannot use either move three times in a row. Afterwards, repeats It Is Time."
+  },
+  {
+    "name": "Gremlin Leader",
+    "hp": "140-148",
+    "moves": [
+      "Rally!",
+      "Stab",
+      "Encourage"
+    ],
+    "notes": null,
+    "ai": "With 0 allies, has a 75-25 split between Rally and Stab. With 1 ally, has a 50-50 split between Rally and Stab if the last move was Encourage, and a 62.5-37.5 split between Rally and Encourage if the last move was Stab. With >1 ally, has a 66-34 split between Encourage and Stab. Cannot use any move twice in a row."
+  },
+  {
+    "name": "Gremlin Nob",
+    "hp": "82-86",
+    "moves": [
+      "Skull Bash",
+      "Rush",
+      "Bellow"
+    ],
+    "notes": null,
+    "ai": "Always starts with Bellow. Afterwards, has a 33-67 split between Skull Bash and Rush, but cannot use Rush 3 times in a row."
+  },
+  {
+    "name": "Gremlin Wizard",
+    "hp": "21-25",
+    "moves": [
+      "Charging",
+      "Ultimate Blast"
+    ],
+    "notes": null,
+    "ai": "Charges for 2 turns, and then uses Ultimate Blast. Afterwards, charges 3 turns and then uses Ultimate Blast, repeating until dead."
+  },
+  {
+    "name": "Jaw Worm",
+    "hp": "40-44",
+    "moves": [
+      "Bellow",
+      "Thrash",
+      "Chomp"
+    ],
+    "notes": null,
+    "ai": "Always starts with Chomp. Afterwards, has a 45-30-25 split between Bellow, Thrash and Chomp, but cannot use Thrash three times in a row or Chomp or Bellow twice in a row."
+  },
+  {
+    "name": "Jaw Worm",
+    "hp": "40-44",
+    "moves": [
+      "Bellow",
+      "Thrash",
+      "Chomp"
+    ],
+    "notes": "Starts with the bonuses of Bellow",
+    "ai": "Has a 45-30-25 split between Bellow, Thrash and Chomp, but cannot use Thrash three times in a row or Chomp or Bellow twice in a row."
+  },
+  {
+    "name": "Lagavulin",
+    "hp": "109-111",
+    "moves": [
+      "Siphon Soul",
+      "(Attack)",
+      "(Sleep)",
+      "(Stunned)"
+    ],
+    "notes": "Innate Block 8",
+    "ai": "After waking up, cycles in the order of Attack -> Attack -> Siphon Soul."
+  },
+  {
+    "name": "Looter",
+    "hp": "44-48",
+    "moves": [
+      "Lunge",
+      "Mug",
+      "Smoke Bomb",
+      "Escape"
+    ],
+    "notes": "Innate Thievery 15 (20)",
+    "ai": "First, uses Mug twice. Then, has a 50% chance to use Lunge. Either after Lunge or in place of Lunge, uses Smoke Bomb, followed by Escape."
+  },
+  {
+    "name": "Louse (Red)",
+    "hp": "10-15",
+    "moves": [
+      "Grow",
+      "Bite"
+    ],
+    "notes": "Innate Curl Up C, where C is random between 3 and 7 (4 and 8) (9 and 12). D is randomly chosen between 5 and 7 at the beginning of the fight.",
+    "ai": "25% chance of Grow and 75% of Bite, but cannot use the same move 3 times in a row."
+  },
+  {
+    "name": "Louse (Green)",
+    "hp": "11-17",
+    "moves": [
+      "Spit Web",
+      "Bite"
+    ],
+    "notes": "See above",
+    "ai": "25% chance of Spit Web and 75% of Bite, but cannot use the same move 3 times in a row."
+  },
+  {
+    "name": "Mad Gremlin",
+    "hp": "20-24",
+    "moves": [
+      "Scratch"
+    ],
+    "notes": "Innate Angry 1 (2)",
+    "ai": null
+  },
+  {
+    "name": "The Maw",
+    "hp": "300",
+    "moves": [
+      "Roar",
+      "Drool",
+      "Slam",
+      "Nom"
+    ],
+    "notes": "T = Turn Number / 2, rounded up.",
+    "ai": "Always starts with Roar. Afterwards and after using Drool, has a 50-50 split between Slam and Nom. If used Slam, then has a 50-50 split between Nom and Drool. Always uses Drool after Nom."
+  },
+  {
+    "name": "Mugger",
+    "hp": "48-52",
+    "moves": [
+      "Lunge",
+      "Mug",
+      "Smoke Bomb",
+      "Escape"
+    ],
+    "notes": "Innate Thievery 15 (20)",
+    "ai": "First, uses Mug twice. Then, has a 50% chance to use Lunge. Either after Lunge or in place of Lunge, uses Smoke Bomb, followed by Escape."
+  },
+  {
+    "name": "Mystic",
+    "hp": "48-56",
+    "moves": [
+      "(Heal)",
+      "(Buff)",
+      "(Attack Debuff)"
+    ],
+    "notes": null,
+    "ai": "If there is 16 HP to heal, uses Heal (up to twice in a row). Otherwise, has a 60% chance of attacking and a 40% chance of buffing, but Attack and Buff cannot happen three times in a row."
+  },
+  {
+    "name": "Nemesis",
+    "hp": "185",
+    "moves": [
+      "(Debuff)",
+      "(Attack)",
+      "Scythe"
+    ],
+    "notes": "Every second turn, gains 1 Intangible",
+    "ai": "On turn 1, has a 50% chance of using the Burn or Triple Attack. Afterwards, has approximately a (35/35/30) probability split between the three moves (Burn/Triple Attack/Scythe), except Scythe and Burn cannot be used twice in a row, and Triple Attack cannot be used three times in a row."
+  },
+  {
+    "name": "Orb Walker",
+    "hp": "90-96",
+    "moves": [
+      "Laser",
+      "Claw"
+    ],
+    "notes": "Innate Strength Up 3 (5)",
+    "ai": "Has a 60-40 split between Laser and Claw, but neither move can be used three times in a row."
+  },
+  {
+    "name": "Pointy",
+    "hp": "30",
+    "moves": [
+      "(Attack)"
+    ],
+    "notes": null,
+    "ai": null
+  },
+  {
+    "name": "Red Slaver",
+    "hp": "46-50",
+    "moves": [
+      "Stab",
+      "Scrape",
+      "Entangle"
+    ],
+    "notes": null,
+    "ai": "Always starts with Stab. Then, has a 25% chance of using Entangle until it is used. If Entangle has not been used yet, cycles in the order of Scrape -> Scrape -> Stab. Otherwise, 45% chance of Stab and 55% chance of Scrape, except Stab and Scrape cannot be used 3 times in a row."
+  },
+  {
+    "name": "Reptomancer",
+    "hp": "180-190",
+    "moves": [
+      "Snake Strike",
+      "Big Bite",
+      "Summon"
+    ],
+    "notes": null,
+    "ai": "Always starts with Summon. Otherwise, has an approximately equal chance of using all 3 moves, except cannot use Snake Strike twice in a row, Summon 3 times in a row, or Big Bite twice in a row. Cannot use Summon with 4 Daggers in play (will use the Snake Strike instead)."
+  },
+  {
+    "name": "Dagger",
+    "hp": "20-25",
+    "moves": [
+      "Stab",
+      "Explode"
+    ],
+    "notes": "*Wounds go into the Discard Pile",
+    "ai": "Uses Stab, then explodes."
+  },
+  {
+    "name": "Repulsor",
+    "hp": "29-35",
+    "moves": [
+      "(Attack)",
+      "(Debuff)"
+    ],
+    "notes": "*Dazes go into the Draw Pile",
+    "ai": "20% chance of Attack, and 80% chance of Debuff. Cannot use Attack twice in a row."
+  },
+  {
+    "name": "Romeo",
+    "hp": "35-39",
+    "moves": [
+      "Mock",
+      "Agonizing Slash",
+      "Cross Slash"
+    ],
+    "notes": null,
+    "ai": "Starts with Mock (Unknown Move), then alternates between Agonizing Slash and Cross Slash."
+  },
+  {
+    "name": "Sentry",
+    "hp": "38-42",
+    "moves": [
+      "Beam",
+      "Bolt"
+    ],
+    "notes": "Innate Artifact 1",
+    "ai": "In a 3-Sentry encounter, the Sentries start with Bolt/Beam/Bolt. In the Sentry + Spheric Guardian encounter, the Sentry starts with Bolt. Always alternates between the two moves."
+  },
+  {
+    "name": "Shelled Parasite",
+    "hp": "68-72",
+    "moves": [
+      "Double Strike",
+      "Suck",
+      "Fell",
+      "(Stunned)"
+    ],
+    "notes": "Innate Plated Armor 14",
+    "ai": "Cannot use Fell on turn 1. Has a 40-40-20 split between Double Strike, Suck, and Fell, but Double Strike and Suck cannot be used three times in a row and Fell cannot be used twice in a row."
+  },
+  {
+    "name": "Shield Gremlin",
+    "hp": "12-15",
+    "moves": [
+      "Protect",
+      "Shield Bash"
+    ],
+    "notes": null,
+    "ai": "Protects random allies until none remain, then uses Shield Bash."
+  },
+  {
+    "name": "Snake Plant",
+    "hp": "75-79",
+    "moves": [
+      "Enfeebling Spores",
+      "Chomp"
+    ],
+    "notes": "Innate Malleable 3",
+    "ai": "65% chance of Chomp and 35% chance of Enfeebling Spores, except Chomp cannot happen 3 times in a row and Enfeebling Spores cannot happen twice in a row."
+  },
+  {
+    "name": "Sneaky Gremlin",
+    "hp": "10-14",
+    "moves": [
+      "Puncture"
+    ],
+    "notes": null,
+    "ai": null
+  },
+  {
+    "name": "Snecko",
+    "hp": "114-120",
+    "moves": [
+      "Perplexing Glare",
+      "Tail Whip",
+      "Bite"
+    ],
+    "notes": null,
+    "ai": "Starts with Perplexing Glare. Then, 40% chance of Tail Whip and 60% chance of Bite, but cannot use Bite 3 times in a row."
+  },
+  {
+    "name": "Spheric Guardian",
+    "hp": "20",
+    "moves": [
+      "Activate",
+      "(Attack Debuff)",
+      "Slam",
+      "Harden"
+    ],
+    "notes": "Innate Barricade",
+    "ai": "First, uses Activate, followed by Attack Debuff. Afterwards, alternates between Slam and Harden."
+  },
+  {
+    "name": "Spiker",
+    "hp": "42-56",
+    "moves": [
+      "(Attack)",
+      "(Buff)"
+    ],
+    "notes": "Innate Thorns 3 (4) (7)",
+    "ai": "50% chance of each action, but cannot use Attack twice in a row. Cannot use (Buff) once it has been used 6 times and will otherwise use Attack."
+  },
+  {
+    "name": "Spike Slime (L)",
+    "hp": "64-70",
+    "moves": [
+      "Flame Tackle",
+      "Lick",
+      "Split"
+    ],
+    "notes": "Splits if HP is 50% or below",
+    "ai": "Has (30-70) probability split between Flame Tackle and Lick, though neither can be used three times in a row."
+  },
+  {
+    "name": "Spike Slime (M)",
+    "hp": "28-32",
+    "moves": [
+      "Flame Tackle",
+      "Lick"
+    ],
+    "notes": "*Slimed goes into the Discard Pile",
+    "ai": "Same AI as Spike Slime (L)"
+  },
+  {
+    "name": "Spike Slime (S)",
+    "hp": "10-14",
+    "moves": [
+      "Tackle"
+    ],
+    "notes": null,
+    "ai": null
+  },
+  {
+    "name": "Spire Growth",
+    "hp": "170",
+    "moves": [
+      "Quick Tackle",
+      "Smash",
+      "Constrict"
+    ],
+    "notes": null,
+    "ai": "Has a 50% chance to use Quick Tackle and 50% chance to Constrict. If Constrict was used last turn or the player is already Constricted, uses Smash instead of Constrict. Cannot use either attack three times in a row."
+  },
+  {
+    "name": "Spire Shield",
+    "hp": "110",
+    "moves": [
+      "Bash",
+      "Fortify",
+      "Smash"
+    ],
+    "notes": "Innate Artifact 1 (2)",
+    "ai": "Every 3 turns, starting from turn 3, uses Smash. Otherwise, has an equal chance of either using Bash followed by Fortify or Fortify followed by Bash."
+  },
+  {
+    "name": "Spire Spear",
+    "hp": "160",
+    "moves": [
+      "Burn Strike",
+      "Piercer",
+      "Skewer"
+    ],
+    "notes": "Innate Artifact 1 (2)",
+    "ai": "Always starts with Burn Strike. Every 3 turns, starting from turn 2, uses Skewer. Otherwise, has an equal chance to either use Burn Strike followed by Piercer or Piercer followed by Burn Strike."
+  },
+  {
+    "name": "Taskmaster",
+    "hp": "54-60",
+    "moves": [
+      "Scouring Whip"
+    ],
+    "notes": "*Wounds go into the Discard Pile",
+    "ai": null
+  },
+  {
+    "name": "Transient",
+    "hp": "999",
+    "moves": [
+      "(Attack)"
+    ],
+    "notes": "Innate Fading 5 (6)",
+    "ai": null
+  },
+  {
+    "name": "Writhing Mass",
+    "hp": "160",
+    "moves": [
+      "(Mega Debuff)",
+      "(Attack Defend)",
+      "(Attack Debuff)",
+      "(Attack 1)",
+      "(Attack 2)"
+    ],
+    "notes": "Innate Malleable 3",
+    "ai": "For the first move, has an approximately equal chance of using Attack 1, Attack 2, and Attack Debuff. Then, has about a 10-30-20-30-10 split between Mega Debuff, Attack Defend, Attack Debuff, Attack 1, and Attack 2, but can only use Mega Debuff once each combat. The same move cannot be used (or rerolled) twice in a row."
+  }
+]
