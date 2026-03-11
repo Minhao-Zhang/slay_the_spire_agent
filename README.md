@@ -9,9 +9,17 @@ This project aims to create an LLM-powered bot capable of playing Slay the Spire
 
 ```text
 slay_the_spire_agent/
+├── data/
+│   ├── processed/          # Cleaned JSON facts (cards, relics, monsters)
+│   └── raw/                # Excel source files
 ├── logs/                   # Raw JSON game states generated during play
+├── scripts/
+│   └── extract_reference_data.py # Parses raw Excel into processed JSON
 ├── src/
 │   ├── main.py             # Orchestrator: Connects to CommMod, handles UI/Logging
+│   ├── reference/          # Local knowledge base queries for game entities
+│   │   ├── __init__.py
+│   │   └── knowledge_base.py
 │   └── ui/                 # Real-time FastAPI debugging dashboard
 │       ├── dashboard.py
 │       └── templates/
@@ -45,13 +53,28 @@ This project manages Python dependencies using **uv**.
    command=/ABSOLUTE/PATH/TO/slay_the_spire_agent/.venv/bin/python /ABSOLUTE/PATH/TO/slay_the_spire_agent/src/main.py
    ```
 
-## Running the Debug Dashboard
+## Running the Debug Dashboard & Manual Control
 
 To view the real-time agent tracker while playing the game, start the FastAPI dashboard in a separate terminal *before* launching Slay the Spire:
 
 ```bash
-cd slay_the_spire_agent
 uv run src/ui/dashboard.py
 ```
 
 Once running, open your web browser to `http://localhost:8000/`. The dashboard will automatically update once you launch Slay the Spire and enter a combat encounter.
+
+### Manual Override
+
+The dashboard includes a "Manual Actions" input field. You can use this to manually drive the bot while Slay the Spire is running via CommunicationMod. 
+
+To take an action, type a valid CommunicationMod command and press Enter (or click "Send action"). 
+
+Examples of valid manual actions:
+- `PLAY 1 0` (Plays the 1st card in your hand, targeting the 1st monster)
+- `PLAY 3` (Plays the 3rd card in your hand, no target required)
+- `END` (Ends your turn)
+- `POTION Use 0 1` (Uses the potion in slot 0 on monster 1)
+- `RETURN` (Click the Skip/Leave button)
+- `PROCEED` (Click the Confirm button)
+
+Whenever you submit a manual action, the `main.py` orchestrator will intercept the game's next 'wait' cycle and inject your command directly into the game.

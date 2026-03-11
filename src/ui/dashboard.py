@@ -10,6 +10,9 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
+# A simple queue to hold manual actions coming from the UI
+manual_actions_queue = []
+
 # Setup templates
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
@@ -59,6 +62,44 @@ async def update_state(request: Request):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+# --- Local Replay API ---
+LOGS_DIR = os.path.join(BASE_DIR, "..", "..", "logs")
+
+@app.get("/api/runs")
+async def get_runs():
+    """Returns a list of all available run directories in the logs folder."""
+    try:
+        if not os.path.exists(LOGS_DIR):
+            return {"runs": []}
+        runs = [d for d in os.listdir(LOGS_DIR) if os.path.isdir(os.path.join(LOGS_DIR, d))]
+        # Sort descending so newest is first
+        runs.sort(reverse=True)
+        return {"runs": runs}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/runs/{run_name}")
+async def get_run_states(run_name: str):
+    """Returns an ordered list of all state JSON payloads for a specific run."""
+    try:
+        run_path = os.path.join(LOGS_DIR, run_name)
+        if not os.path.exists(run_path):
+            return {"status": "error", "message": "Run not found"}
+            
+        states = []
+        files = [f for f in os.listdir(run_path) if f.endswith('.json')]
+        # Ensure sequential order (0000.json, 0001.json, etc.)
+        files.sort()
+        
+        for file in files:
+            with open(os.path.join(run_path, file), 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                states.append(data)
+                
+        return {"states": states}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.post("/action_taken")
 async def action_taken(request: Request):
     try:
@@ -69,6 +110,27 @@ async def action_taken(request: Request):
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+class ManualAction(BaseModel):
+    action: str
+
+@app.post("/submit_action")
+async def submit_action(cmd: ManualAction):
+    """Called by the frontend UI to queue a manual action."""
+    action_str = cmd.action.strip()
+    if action_str:
+        manual_actions_queue.append(action_str)
+        return {"status": "queued", "action": action_str}
+    return {"status": "ignored"}
+
+@app.get("/get_action")
+async def get_action():
+    """Called by main.py to pull the next manual action if any exist."""
+    if manual_actions_queue:
+        # Pop the oldest action
+        action = manual_actions_queue.pop(0)
+        return {"action": action}
+    return {"action": None}
 
 if __name__ == "__main__":
     import uvicorn

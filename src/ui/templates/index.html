@@ -3,93 +3,404 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Slay the Spire Agent Debugger</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1a1a1a; color: #e0e0e0; margin: 0; padding: 20px; }
-        h1, h2, h3 { color: #87CEFA; margin-top: 5px; margin-bottom: 10px; }
-        .dashboard { display: flex; flex-direction: column; gap: 20px; max-width: 1400px; margin: 0 auto; }
-        
+        :root {
+            --bg-deep: #f0f2f5;
+            --bg-panel: #ffffff;
+            --bg-card: #ffffff;
+            --accent-primary: #2563eb;
+            --accent-success: #16a34a;
+            --accent-warning: #ca8a04;
+            --accent-danger: #dc2626;
+            --accent-purple: #7c3aed;
+            --text-primary: #1e293b;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --border: #e2e8f0;
+            --glass: rgba(255, 255, 255, 0.8);
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1);
+            --transition: all 0.2s ease;
+        }
+
+        * { box-sizing: border-box; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-deep); }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        body { 
+            font-family: 'Inter', system-ui, -apple-system, sans-serif; 
+            background-color: var(--bg-deep); 
+            color: var(--text-primary); 
+            margin: 0; 
+            padding: 15px;
+            line-height: 1.5;
+        }
+
+        h1, h2, h3 { 
+            font-weight: 700;
+            color: var(--text-primary); 
+            margin-top: 0; 
+            margin-bottom: 12px;
+            letter-spacing: -0.025em;
+        }
+
+        .dashboard { 
+            display: flex; 
+            flex-direction: column; 
+            gap: 15px; 
+            max-width: 1800px; 
+            margin: 0 auto; 
+        }
+
         /* Top Bar: Player Status */
-        .top-bar { display: flex; justify-content: space-between; align-items: center; background: #262626; padding: 15px 25px; border-radius: 8px; border: 1px solid #333; min-height: 60px; }
-        .stats-group { display: flex; gap: 20px; font-size: 1.1em; }
-        .stat-item { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 80px; }
-        .stat-label { font-size: 0.75em; color: #888; text-transform: uppercase; letter-spacing: 1px; }
-        .stat-value { font-weight: bold; color: #4ec9b0; }
+        .top-bar { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            background: var(--bg-panel); 
+            padding: 12px 20px; 
+            border-radius: 8px; 
+            border: 1px solid var(--border); 
+            box-shadow: var(--shadow-sm);
+        }
+
+        .stats-group { display: flex; gap: 20px; }
+        .stat-item { 
+            display: flex; 
+            flex-direction: column; 
+            align-items: flex-start; 
+            min-width: 70px;
+        }
+        .stat-label { 
+            font-size: 0.7rem; 
+            color: var(--text-muted); 
+            text-transform: uppercase; 
+            letter-spacing: 0.05em; 
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+        .stat-value { 
+            font-weight: 700; 
+            font-size: 1.1rem;
+            color: var(--text-primary); 
+        }
         
-        /* Relics and Potions Bar */
-        .inventory-bar { display: flex; gap: 30px; background: #222; padding: 15px; border-radius: 8px; border: 1px solid #333; min-height: 50px; }
-        .inventory-section { flex: 1; display: flex; flex-direction: column; gap: 5px; }
-        .item-list { display: flex; flex-wrap: wrap; gap: 10px; min-height: 24px; }
-        .relic-badge, .potion-badge { background: #333; padding: 4px 10px; border-radius: 12px; font-size: 0.85em; color: #ddd; border: 1px solid #444; }
-        .potion-empty { color: #666; font-style: italic; background: #2a2a2a; }
+        #connection-status { 
+            font-size: 0.75rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: #f1f5f9;
+            border-radius: 20px;
+        }
+
+        /* Inventory Bar */
+        .inventory-bar { 
+            display: flex; 
+            gap: 15px; 
+            background: var(--bg-panel); 
+            padding: 12px 20px; 
+            border-radius: 8px; 
+            border: 1px solid var(--border); 
+            box-shadow: var(--shadow-sm);
+        }
+        .inventory-section { flex: 1; }
+        .item-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+        .relic-badge, .potion-badge { 
+            background: #f8fafc; 
+            padding: 4px 10px; 
+            border-radius: 6px; 
+            font-size: 0.75rem; 
+            color: var(--text-secondary); 
+            border: 1px solid var(--border);
+            font-weight: 600;
+        }
+        .relic-badge:hover, .potion-badge:hover {
+            border-color: var(--accent-primary);
+            background: #ffffff;
+        }
+        .potion-empty { color: var(--text-muted); font-style: italic; border-style: dashed; }
 
         /* Main Game Area */
-        .game-area { display: flex; gap: 20px; }
-        .panel { flex: 1; background: #262626; padding: 15px; border-radius: 8px; border: 1px solid #333; min-height: 600px; }
-        .deck-panel { flex: 1.5; }
+        .game-area { display: flex; gap: 15px; }
+        .panel { 
+            flex: 1; 
+            background: var(--bg-panel); 
+            padding: 15px; 
+            border-radius: 8px; 
+            border: 1px solid var(--border); 
+            box-shadow: var(--shadow-sm);
+        }
+        .deck-panel { flex: 2; }
         
-        /* Card Styling */
-        .card-container { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+        /* Card Styling - Compact */
+        .card-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-top: 10px; }
         .card { 
-            background: #2d2d30; border: 1px solid #3e3e42; border-radius: 6px; padding: 8px 12px; 
-            display: flex; flex-direction: column; transition: background 0.2s; position: relative;
+            background: #f8fafc; 
+            border: 1px solid var(--border); 
+            border-radius: 6px; 
+            padding: 8px; 
+            display: flex; 
+            flex-direction: column; 
+            transition: var(--transition); 
+            position: relative;
+            min-height: 100px;
+            overflow: hidden;
+            cursor: pointer;
         }
-        .card:hover { background: #3e3e42; }
-        .card-header { display: flex; align-items: center; gap: 10px; cursor: default; }
-        .card-cost { 
-            display: inline-flex; align-items: center; justify-content: center;
-            width: 24px; height: 24px; background: #007acc; color: white; 
-            border-radius: 50%; font-weight: bold; font-size: 0.9em;
+        .card:hover { 
+            border-color: var(--accent-primary);
+            box-shadow: var(--shadow-md);
+            background: #ffffff;
         }
-        .card-name { font-weight: bold; font-size: 1.05em; color: #fff; }
-        .card-type { margin-left: auto; font-size: 0.8em; color: #9cdcfe; background: #1e1e1e; padding: 2px 6px; border-radius: 4px; }
+        .card-header { 
+            display: flex; 
+            flex-direction: column;
+            gap: 2px; 
+        }
+        .card-cost-circle {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            width: 22px;
+            height: 22px;
+            background: var(--accent-primary);
+            color: white;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 0.75rem;
+        }
+        .card-name { 
+            font-weight: 700; 
+            font-size: 0.85rem; 
+            color: var(--text-primary);
+            padding-right: 25px;
+        }
+        .card-type { 
+            font-size: 0.6rem; 
+            color: var(--text-muted); 
+            text-transform: uppercase;
+            font-weight: 700;
+        }
         
-        /* Hidden Card Details */
         .card-details { 
-            display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #444; 
-            font-size: 0.85em; color: #aaa; background: #1a1a1a; padding: 8px; border-radius: 4px;
+            margin-top: 8px;
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border);
+            padding-top: 5px;
         }
-        .card:hover .card-details { display: block; }
+        .card-detail-row { display: flex; justify-content: space-between; margin-bottom: 2px; }
+        .card-detail-value { font-family: 'JetBrains Mono', monospace; color: var(--accent-primary); }
         
-        .card-detail-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
-        .card-detail-label { color: #777; }
-        .card-detail-value { color: #ce9178; font-family: monospace; }
-        
-        /* Piles (Details/Summary) */
-        details { background: #2a2a2d; margin-bottom: 10px; border-radius: 6px; border: 1px solid #333; }
+        /* Piles */
+        details { 
+            background: #fbfbfd; 
+            margin-bottom: 8px; 
+            border-radius: 6px; 
+            border: 1px solid var(--border); 
+        }
         summary { 
-            padding: 10px 15px; cursor: pointer; font-weight: bold; color: #ccc; 
-            list-style: none; display: flex; justify-content: space-between;
+            padding: 8px 12px; 
+            cursor: pointer; 
+            font-weight: 600; 
+            font-size: 0.85rem;
+            display: flex; 
+            justify-content: space-between;
+            align-items: center;
         }
-        summary::-webkit-details-marker { display: none; }
-        details[open] summary { border-bottom: 1px solid #444; background: #333; }
+        summary:hover { background: #f1f5f9; }
         .pile-content { padding: 10px; max-height: 400px; overflow-y: auto; }
-        .pile-count { background: #555; padding: 2px 8px; border-radius: 10px; font-size: 0.8em; }
+        .pile-count { 
+            background: #e2e8f0; 
+            padding: 2px 8px; 
+            border-radius: 4px; 
+            font-size: 0.7rem; 
+            color: var(--text-primary);
+        }
 
         /* Monster Styling */
-        .monster { margin-bottom: 15px; padding: 12px; border: 1px solid #5c2b29; background: #331c1b; border-radius: 6px; }
-        .monster-header { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 5px; }
-        .monster-name { color: #f48771; font-size: 1.1em; }
-        .monster-hp { color: #4ec9b0; }
-        .monster-block { color: #569cd6; font-size: 0.9em; margin-left: 10px; }
-        .monster-intent { font-weight: bold; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #5c2b29; }
-        .intent-attack { color: #f44336; }
-        .intent-buff { color: #c586c0; }
+        .monster { 
+            margin-bottom: 12px; 
+            padding: 12px; 
+            border: 1px solid var(--border); 
+            background: #fdfdfd; 
+            border-radius: 8px;
+            position: relative;
+        }
+        .monster-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+        .monster-name { color: var(--accent-danger); font-size: 1rem; font-weight: 700; }
+        .monster-hp { color: var(--text-primary); font-weight: 700; font-size: 0.9rem; }
+        .monster-block { color: var(--accent-primary); font-size: 0.8rem; font-weight: 700; margin-left: 4px; }
+        
+        .hp-bar-bg { width: 100%; height: 8px; background: #e2e8f0; border-radius: 4px; margin: 8px 0; overflow: hidden; }
+        .hp-bar-fill { height: 100%; background: #ef4444; transition: width 0.3s ease; }
+
+        .monster-intent { 
+            font-weight: 600; 
+            margin-top: 6px; 
+            padding: 4px 8px; 
+            border-radius: 4px; 
+            background: #fff5f5;
+            border-left: 3px solid var(--accent-danger);
+            font-size: 0.8rem;
+        }
+        .intent-attack { color: var(--accent-danger); }
+        .intent-buff { color: var(--accent-purple); }
+
+        /* Power Icons */
+        .power-badge {
+            display: inline-flex;
+            align-items: center;
+            background: #f1f5f9;
+            color: var(--accent-purple);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            margin: 0 4px 4px 0;
+            border: 1px solid var(--border);
+        }
 
         /* Logs */
-        .log-box { height: 200px; overflow-y: auto; background: #000; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 0.9em; border: 1px solid #333;}
-        .log-entry { margin-bottom: 6px; color: #d4d4d4; }
-        .log-time { color: #569cd6; margin-right: 10px; }
-        .action { color: #b5cea8; font-weight: bold; background: #1e1e1e; padding: 0 4px; border-radius: 3px;}
+        .log-box { 
+            height: 200px; 
+            overflow-y: auto; 
+            background: #ffffff; 
+            padding: 15px; 
+            border-radius: 8px; 
+            font-family: 'JetBrains Mono', monospace; 
+            font-size: 0.75rem; 
+            border: 1px solid var(--border);
+        }
+        .log-entry { margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #f1f5f9; color: var(--text-secondary); }
+        .log-time { color: var(--text-muted); margin-right: 8px; font-size: 0.7rem; }
+        .action { color: var(--accent-primary); font-weight: 700; }
+        .system-log { color: var(--accent-warning); font-style: italic; }
         
-        #connection-status { margin-left: auto; font-weight: bold; }
+        /* Buttons */
+        button {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-family: inherit;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            border: 1px solid var(--border);
+            font-size: 0.8rem;
+        }
+        .btn-primary { background: var(--accent-primary); color: white; border: none; }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-secondary { background: #f8fafc; color: var(--text-primary); }
+        .btn-secondary:hover { background: #f1f5f9; border-color: var(--accent-primary); }
+        .btn-danger { background: #fef2f2; color: var(--accent-danger); border-color: #fee2e2; }
+        .btn-danger:hover { background: #fee2e2; }
+
+        /* Map Styles */
+        #map-viz-container {
+            position: relative;
+            width: 100%;
+            height: 500px;
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow-y: auto;
+            margin-top: 15px;
+            padding: 20px;
+        }
+        .map-line { stroke: #cbd5e1; stroke-width: 1; stroke-dasharray: 2; }
+        .map-line.highlight { stroke: var(--accent-primary); stroke-width: 2; stroke-dasharray: none; }
+
+        .map-node {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            margin-left: -15px;
+            margin-top: -15px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            font-weight: 700;
+            font-size: 0.8rem;
+            z-index: 2;
+        }
+        .map-node.current {
+            background: var(--accent-warning);
+            border-color: #ffffff;
+            color: #ffffff;
+            box-shadow: 0 0 10px rgba(202, 138, 4, 0.3);
+        }
+        .map-node.available {
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+            cursor: pointer;
+        }
+        .map-node.available:hover {
+            background: var(--accent-primary);
+            color: #ffffff;
+            transform: scale(1.1);
+        }
+        .map-node.boss {
+            width: 60px;
+            height: 60px;
+            margin-left: -30px;
+            margin-top: -30px;
+            font-size: 1.5rem;
+            background: #fff1f1;
+            border-color: var(--accent-danger);
+            color: var(--accent-danger);
+        }
+
+        /* Screen States */
+        #contextual-panel { 
+            background: #ffffff; 
+            padding: 30px;
+        }
+        #context-title { font-size: 1.8rem; text-align: left; border-bottom: 2px solid var(--border); padding-bottom: 10px; }
+        #context-body { font-size: 1rem; color: var(--text-primary); margin-top: 20px; }
+        
+        .event-option {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            transition: var(--transition);
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        .event-option:hover:not(.disabled) {
+            border-color: var(--accent-primary);
+            background: #f1f5f9;
+        }
+        .event-option.disabled { opacity: 0.5; cursor: not-allowed; }
+        .event-option-label { color: var(--accent-primary); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 4px; }
     </style>
 </head>
 <body>
-
     <div class="dashboard">
         <!-- Top Status Bar -->
         <div class="top-bar">
-            <h2>STS Agent UI Tracker</h2>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <h1 style="margin:0; font-size: 1.25rem;">Spire Agent <span style="font-weight: 400; color: var(--text-muted); font-size: 0.9rem;">Debugger</span></h1>
+                <div id="connection-status">
+                    <span style="width: 8px; height: 8px; border-radius: 50%; background: currentColor;"></span>
+                    Connecting...
+                </div>
+            </div>
             <div class="stats-group">
                 <div class="stat-item"><span class="stat-label">Class</span><span class="stat-value" id="player-class">-</span></div>
                 <div class="stat-item"><span class="stat-label">Floor</span><span class="stat-value" id="player-floor">-</span></div>
@@ -98,59 +409,128 @@
                 <div class="stat-item"><span class="stat-label">Energy</span><span class="stat-value" id="player-energy">-</span></div>
                 <div class="stat-item"><span class="stat-label">Turn</span><span class="stat-value" id="combat-turn">-</span></div>
             </div>
-            <div id="connection-status" style="color: yellow;">Connecting...</div>
         </div>
 
-        <!-- Relics and Potions -->
+        <!-- Run Replay Panel -->
+        <div class="panel" style="padding: 10px 20px; border-color: var(--border);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span class="stat-label" style="margin: 0;">Run Replay</span>
+                    <select id="run-selector" class="btn-secondary" style="padding: 4px 8px; font-size: 0.8rem; min-width: 180px;">
+                        <option value="">Select a run record...</option>
+                    </select>
+                    <button class="btn-primary" style="padding: 4px 12px; font-size: 0.8rem;" onclick="loadSelectedRun()">Load</button>
+                    <span id="replay-status" style="font-size: 0.75rem; font-weight: 600;"></span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button id="btn-prev" class="btn-secondary" style="padding: 4px 12px;" onclick="replayStep(-1)" disabled>&larr; Past</button>
+                    <span id="replay-counter" style="font-family: 'JetBrains Mono'; font-weight: 700; font-size: 0.85rem; min-width: 60px; text-align: center;">0 / 0</span>
+                    <button id="btn-next" class="btn-secondary" style="padding: 4px 12px;" onclick="replayStep(1)" disabled>Next &rarr;</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Powers Bar -->
+        <div id="player-powers-bar" class="panel" style="display: none; padding: 10px 20px; border-color: var(--accent-purple); background: #fdfaff; margin-top: -10px;">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <span class="stat-label" style="min-width: 100px; color: var(--accent-purple);">Active Powers:</span>
+                <div id="player-powers" class="item-list"></div>
+            </div>
+        </div>
+
+        <!-- Inventory -->
         <div class="inventory-bar">
             <div class="inventory-section">
                 <span class="stat-label">Relics</span>
-                <div class="item-list" id="relics-list"><span class="relic-badge">Waiting for state...</span></div>
+                <div id="relics-list" class="item-list"><span class="potion-empty">Awaiting state...</span></div>
             </div>
             <div class="inventory-section">
                 <span class="stat-label">Potions</span>
-                <div class="item-list" id="potions-list"><span class="potion-badge">Waiting for state...</span></div>
+                <div id="potions-list" class="item-list"><span class="potion-empty">Awaiting state...</span></div>
             </div>
         </div>
 
-        <!-- Main Workspace -->
+        <!-- Main Content Area -->
         <div class="game-area">
-            
-            <!-- Cards Panel -->
-            <div class="panel deck-panel">
-                <h3>Current Hand (<span id="hand-count">0</span>)</h3>
-                <div class="card-container" id="hand-list" style="margin-bottom: 30px;">
-                    <div style="color: #666;">Waiting for combat...</div>
+            <!-- Left Panel: Cards -->
+            <div class="panel deck-panel" id="deck-panel">
+                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px;">
+                    <h2 style="margin:0; font-size: 1.1rem;">Player Hand</h2>
+                    <span class="pile-count" id="hand-count">0</span>
+                </div>
+                <div class="card-container" id="hand-list">
+                    <div style="color: var(--text-muted); font-style: italic; font-size: 0.85rem;">Awaiting combat...</div>
                 </div>
 
-                <h3>Card Piles</h3>
-                <details>
-                    <summary>Draw Pile <span class="pile-count" id="draw-count">0</span></summary>
-                    <div class="pile-content card-container" id="draw-list"></div>
-                </details>
-                <details>
-                    <summary>Discard Pile <span class="pile-count" id="discard-count">0</span></summary>
-                    <div class="pile-content card-container" id="discard-list"></div>
-                </details>
-                <details>
-                    <summary>Exhaust Pile <span class="pile-count" id="exhaust-count">0</span></summary>
-                    <div class="pile-content card-container" id="exhaust-list"></div>
-                </details>
-            </div>
-
-            <!-- Enemies Panel -->
-            <div class="panel">
-                <h3>Monsters</h3>
-                <div id="monster-list">
-                    <div style="color: #666;">Waiting for combat...</div>
+                <div style="margin-top: 20px;">
+                    <h3 style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border); padding-bottom: 4px; margin-bottom: 10px;">Card Piles</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                        <details>
+                            <summary>Draw Pile <span class="pile-count" id="draw-count">0</span></summary>
+                            <div class="pile-content card-container" id="draw-list"></div>
+                        </details>
+                        <details>
+                            <summary>Discard Pile <span class="pile-count" id="discard-count">0</span></summary>
+                            <div class="pile-content card-container" id="discard-list"></div>
+                        </details>
+                        <details>
+                            <summary>Exhaust Pile <span class="pile-count" id="exhaust-count">0</span></summary>
+                            <div class="pile-content card-container" id="exhaust-list"></div>
+                        </details>
+                    </div>
                 </div>
             </div>
-            
+
+            <!-- Right Panel: Monsters & Context -->
+            <div class="panel" style="flex: 0.7;">
+                <div id="monsters-panel">
+                    <h2 style="font-size: 1.1rem;">Monsters</h2>
+                    <div id="monster-list">
+                        <div style="color: var(--text-muted); font-style: italic; font-size: 0.85rem;">Field is clear...</div>
+                    </div>
+                </div>
+
+                <div id="contextual-panel" style="display: none;">
+                    <h2 id="context-title" style="font-size: 1.25rem;">Screen</h2>
+                    <div id="context-body" style="font-size: 0.9rem; margin-top: 10px;">Loading context...</div>
+                    
+                    <div id="event-options" style="margin-top: 20px; display: none;">
+                        <h3 style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Options</h3>
+                        <div id="options-list"></div>
+                    </div>
+
+                    <div id="map-options" style="margin-top: 20px; display: none;">
+                        <div id="current-pos" style="font-family: 'JetBrains Mono'; font-size: 0.75rem; color: var(--accent-primary); margin-bottom: 10px;">Position: -</div>
+                        <div id="map-viz-container" style="height: 400px;">
+                            <svg id="map-svg" style="position: absolute; top:0; left:0; width:100%; pointer-events: none; z-index: 1;"></svg>
+                            <div id="map-nodes-layer"></div>
+                        </div>
+                        <div id="boss-interaction" style="margin-top: 15px; display: none;">
+                            <button class="btn-danger" style="width: 100%;" onclick="submitManualActionBtn('choose boss')">Challenge Boss</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <!-- Logs -->
-        <div class="log-box" id="log-box">
-            <div class="log-entry" style="color: #6a9955;">// Agent action log will appear here</div>
+        <!-- Footer: Actions & Logs -->
+        <div class="panel" style="background: #fafafa;">
+            <div style="display: flex; gap: 20px;">
+                <div style="flex: 2;">
+                    <h2 style="font-size: 1.1rem;">Manual Actions</h2>
+                    <div id="valid-operations-container" class="item-list" style="margin: 10px 0; border: 1px dashed var(--border); padding: 12px; border-radius: 6px; min-height: 50px;">
+                        <div style="color: var(--text-muted); font-style: italic; font-size: 0.8rem;">Waiting for action availability...</div>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="manual-action-input" placeholder="Enter command (e.g. PLAY 1 0, END)" style="flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; font-family: 'JetBrains Mono'; font-size: 0.9rem;">
+                        <button class="btn-primary" onclick="submitManualAction()">Submit</button>
+                    </div>
+                </div>
+                <div style="flex: 1.2;">
+                    <h2 style="font-size: 1.1rem;">Session Logs</h2>
+                    <div class="log-box" id="log-box" style="height: 140px;"></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -160,26 +540,21 @@
         const logBox = document.getElementById('log-box');
 
         ws.onopen = () => {
-            statusSpan.textContent = 'Connected \u25CF';
-            statusSpan.style.color = '#4ec9b0';
+            statusSpan.style.color = 'var(--accent-success)';
+            statusSpan.innerHTML = '<span style="width: 8px; height: 8px; border-radius: 50%; background: currentColor;"></span> Connected';
         };
 
         ws.onclose = () => {
-            statusSpan.textContent = 'Disconnected \u25EF';
-            statusSpan.style.color = '#f44336';
+            statusSpan.style.color = 'var(--accent-danger)';
+            statusSpan.innerHTML = '<span style="width: 8px; height: 8px; border-radius: 50%; background: currentColor;"></span> Disconnected';
         };
 
         function addLog(message, isAction=false) {
             const entry = document.createElement('div');
             entry.className = 'log-entry';
             const time = new Date().toLocaleTimeString();
-            
-            if (isAction) {
-                entry.innerHTML = `<span class="log-time">[${time}]</span> Agent executed: <span class="action">${message}</span>`;
-            } else {
-                entry.innerHTML = `<span class="log-time">[${time}]</span> ${message}`;
-            }
-            
+            if (isAction) entry.innerHTML = `<span class="log-time">[${time}]</span> <span class="action">Action: ${message}</span>`;
+            else entry.innerHTML = `<span class="log-time">[${time}]</span> ${message}`;
             logBox.appendChild(entry);
             logBox.scrollTop = logBox.scrollHeight;
         }
@@ -187,177 +562,352 @@
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.type === 'state') {
-                updateState(data.payload);
+                if (!isReplayMode) updateState(data.payload);
             } else if (data.type === 'action') {
                 addLog(data.payload, true);
             }
         };
 
-        function createCardHTML(card, index, locationContext="") {
-            const targetInfo = card.has_target ? '<span style="color:#f48771;" title="Requires target"> \u2316</span>' : '';
-            const upgradeText = card.upgrades > 0 ? `+${card.upgrades}` : '';
-            
+        // --- Replay Logic ---
+        let replayStates = [];
+        let currentReplayIndex = 0;
+        let isReplayMode = false;
+
+        async function fetchAvailableRuns() {
+            try {
+                const r = await fetch('/api/runs');
+                const d = await r.json();
+                const s = document.getElementById('run-selector');
+                if (d.runs && d.runs.length > 0) {
+                    d.runs.forEach(run => {
+                        const o = document.createElement('option');
+                        o.value = run; o.textContent = run; s.appendChild(o);
+                    });
+                }
+            } catch (e) { console.error(e); }
+        }
+        fetchAvailableRuns();
+
+        async function loadSelectedRun() {
+            const run = document.getElementById('run-selector').value;
+            if (!run) return;
+            const status = document.getElementById('replay-status');
+            status.textContent = "Loading...";
+            try {
+                const r = await fetch(`/api/runs/${run}`);
+                const d = await r.json();
+                if (d.states && d.states.length > 0) {
+                    replayStates = d.states; currentReplayIndex = 0; isReplayMode = true;
+                    status.textContent = `Active: ${run}`; status.style.color = 'var(--accent-success)';
+                    document.getElementById('btn-prev').disabled = false;
+                    document.getElementById('btn-next').disabled = false;
+                    renderReplayState();
+                }
+            } catch (e) { status.textContent = "Load Failed"; status.style.color = 'var(--accent-danger)'; }
+        }
+
+        function replayStep(delta) {
+            if (!isReplayMode) return;
+            currentReplayIndex = Math.max(0, Math.min(replayStates.length - 1, currentReplayIndex + delta));
+            renderReplayState();
+        }
+
+        function renderReplayState() {
+            document.getElementById('replay-counter').textContent = `${currentReplayIndex + 1} / ${replayStates.length}`;
+            updateState(replayStates[currentReplayIndex]);
+        }
+
+        async function submitManualAction() {
+            const input = document.getElementById('manual-action-input');
+            const action = input.value.trim();
+            if (!action) return;
+            await submitActionToServer(action, 'Manual');
+            input.value = '';
+        }
+
+        async function submitActionToServer(actionText, logPrefix) {
+            try {
+                const r = await fetch('/submit_action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: actionText })
+                });
+                if (r.ok) addLog(`[${logPrefix}]: ${actionText}`);
+            } catch (e) { addLog(`Error: ${e}`); }
+        }
+
+        window.submitManualActionBtn = function(a) { submitActionToServer(a, 'Button'); };
+        document.getElementById('manual-action-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') submitManualAction(); });
+
+        function createCardHTML(card, index) {
+            const up = card.upgrades > 0 ? '+' : '';
             return `
                 <div class="card">
+                    <div class="card-cost-circle">${card.cost}</div>
                     <div class="card-header">
-                        <span class="card-cost">${card.cost}</span>
-                        <span class="card-name">${card.name}</span>
-                        ${targetInfo}
-                        <span class="card-type">${card.type || 'UNKNOWN'}</span>
+                        <div class="card-name">${card.name}${up}</div>
+                        <div class="card-type">${card.type}</div>
                     </div>
                     <div class="card-details">
-                        <div class="card-detail-row"><span class="card-detail-label">ID:</span> <span class="card-detail-value">${card.id}${upgradeText}</span></div>
-                        <div class="card-detail-row"><span class="card-detail-label">UUID:</span> <span class="card-detail-value">${card.uuid}</span></div>
-                        <div class="card-detail-row"><span class="card-detail-label">Playable:</span> <span class="card-detail-value">${card.is_playable ? 'Yes' : 'No'}</span></div>
-                        <div class="card-detail-row"><span class="card-detail-label">Traits:</span> <span class="card-detail-value">${card.exhausts ? 'Exhaust ' : ''}${card.ethereal ? 'Ethereal ' : ''} [Pos: ${index}]</span></div>
+                        <div class="card-detail-row"><span>Playable</span> <span class="card-detail-value">${card.is_playable ? 'Yes' : 'No'}</span></div>
+                        <div class="card-detail-row"><span>Target</span> <span class="card-detail-value">${card.has_target ? 'Yes' : 'No'}</span></div>
+                        <div style="font-size:0.6rem; opacity:0.6; margin-top:2px;">Idx: ${index}</div>
                     </div>
                 </div>
             `;
         }
 
-        function renderPile(cardsArray, containerId, countId) {
-            const container = document.getElementById(containerId);
-            const countSpan = document.getElementById(countId);
-            
-            if (!cardsArray) return;
-            countSpan.textContent = cardsArray.length;
-            
-            if (cardsArray.length === 0) {
-                container.innerHTML = '<div style="color: #666; padding: 10px;">Empty</div>';
-            } else {
-                container.innerHTML = cardsArray.map((card, idx) => createCardHTML(card, idx + 1)).join('');
-            }
+        function renderPile(cards, containerId, countId) {
+            const c = document.getElementById(containerId);
+            const ct = document.getElementById(countId);
+            if (!cards) return;
+            ct.textContent = cards.length;
+            c.innerHTML = cards.length === 0 ? '<div style="padding:10px; font-size:0.8rem; color:#888;">Empty</div>' : 
+                          cards.map((card, i) => createCardHTML(card, i + 1)).join('');
         }
 
-        let lastGameStateString = "";
+        function renderFullMap(nodes, current, next, boss) {
+            const layer = document.getElementById('map-nodes-layer');
+            const svg = document.getElementById('map-svg');
+            const container = document.getElementById('map-viz-container');
+            layer.innerHTML = ''; svg.innerHTML = '';
+            if (!nodes || nodes.length === 0) return;
 
-        function updateState(stateWrapper) {
-            const stateString = JSON.stringify(stateWrapper);
-            if (stateString === lastGameStateString) {
-                return; // Prevent DOM tearing/CPU usage on duplicate frames
+            let maxCol = 6; 
+            let maxY = 0; nodes.forEach(n => maxY = Math.max(maxY, n.y));
+            const rowH = 70; const colW = container.clientWidth / (maxCol + 1);
+            const totalH = (maxY + 2) * rowH;
+            svg.setAttribute('height', totalH); layer.style.height = totalH + 'px';
+
+            const getPos = (x, y) => ({ x: (x + 0.5) * colW, y: totalH - (y + 1) * rowH });
+
+            nodes.forEach(n => {
+                const p = getPos(n.x, n.y);
+                if (n.children) n.children.forEach(c => {
+                    const ep = getPos(c.x, c.y);
+                    const l = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                    l.setAttribute("x1", p.x); l.setAttribute("y1", p.y); l.setAttribute("x2", ep.x); l.setAttribute("y2", ep.y);
+                    const isNext = current && n.x === current.x && n.y === current.y && next && next.some(nx => nx.x === c.x && nx.y === c.y);
+                    l.setAttribute("class", isNext ? "map-line highlight" : "map-line");
+                    svg.appendChild(l);
+                });
+            });
+
+            nodes.forEach(n => {
+                const p = getPos(n.x, n.y);
+                const d = document.createElement('div');
+                d.className = 'map-node';
+                if (current && n.x === current.x && n.y === current.y) d.classList.add('current');
+                const nIdx = next ? next.findIndex(nx => nx.x === n.x && nx.y === n.y) : -1;
+                if (nIdx !== -1) { d.classList.add('available'); d.onclick = () => submitManualActionBtn(`choose ${nIdx}`); }
+                d.style.left = p.x + 'px'; d.style.top = p.y + 'px'; d.textContent = n.symbol;
+                layer.appendChild(d);
+            });
+
+            const bp = getPos(3, maxY + 1);
+            const b = document.createElement('div');
+            b.className = 'map-node boss';
+            if (boss) { b.classList.add('available'); b.onclick = () => submitManualActionBtn('choose boss'); }
+            b.style.left = bp.x + 'px'; b.style.top = bp.y + 'px'; b.textContent = '\u2620';
+            layer.appendChild(b);
+        }
+
+        let lastState = "";
+        function updateState(wrapper) {
+            const ws = JSON.stringify(wrapper);
+            if (ws === lastState) return;
+            lastState = ws;
+
+            const state = wrapper.state || wrapper;
+            const ops = document.getElementById('valid-operations-container');
+            ops.innerHTML = '';
+
+            if (state.in_game && state.available_commands && state.game_state) {
+                const btns = [];
+                const commands = state.available_commands;
+                const game = state.game_state;
+                const s = game.screen_state;
+
+                if (commands.includes("proceed")) btns.push('<button class="btn-primary" onclick="submitManualActionBtn(\'PROCEED\')">PROCEED</button>');
+                if (commands.includes("end")) btns.push('<button class="btn-danger" onclick="submitManualActionBtn(\'END\')">END TURN</button>');
+                if (commands.includes("cancel")) btns.push('<button class="btn-secondary" onclick="submitManualActionBtn(\'CANCEL\')">CANCEL</button>');
+                if (commands.includes("leave")) btns.push('<button class="btn-secondary" onclick="submitManualActionBtn(\'LEAVE\')">LEAVE</button>');
+                if (commands.includes("skip")) btns.push('<button class="btn-secondary" onclick="submitManualActionBtn(\'SKIP\')">SKIP</button>');
+                if (commands.includes("confirm")) btns.push('<button class="btn-primary" onclick="submitManualActionBtn(\'CONFIRM\')">CONFIRM</button>');
+
+                if (commands.includes("play") && game.combat_state) {
+                    game.combat_state.hand.forEach((c, i) => {
+                        if (c.is_playable && c.cost <= game.combat_state.player.energy) {
+                            if (c.has_target) {
+                                game.combat_state.monsters.forEach((m, mi) => {
+                                    if (!m.is_gone && !m.half_dead) btns.push(`<button class="btn-primary" style="background:var(--accent-success);" onclick="submitManualActionBtn('PLAY ${i+1} ${mi}')">${c.name} \u2192 ${m.name}</button>`);
+                                });
+                            } else btns.push(`<button class="btn-primary" onclick="submitManualActionBtn('PLAY ${i+1}')">${c.name}</button>`);
+                        }
+                    });
+                }
+                
+                if (commands.includes("choose") && s) {
+                    const items = s.hand || s.cards || s.relics || s.rewards || s.rest_options || s.potions;
+                    if (items) {
+                        items.forEach((it, i) => {
+                            let label = it.name || it.reward_type || it.label || it.id || `Option ${i}`;
+                            if (it.reward_type === "GOLD") label = `Take ${it.gold} Gold`;
+                            if (it.reward_type === "POTION") label = `Take ${it.potion.name}`;
+                            if (it.reward_type === "RELIC") label = `Take ${it.relic.name}`;
+                            if (it.reward_type === "CARD") label = "Reward: Card Draft";
+                            btns.push(`<button class="btn-secondary" onclick="submitManualActionBtn('choose ${i}')">${label}</button>`);
+                        });
+                    }
+                    else if (game.screen_type === "MAP" && s.next_nodes) s.next_nodes.forEach((n, i) => btns.push(`<button class="btn-primary" onclick="submitManualActionBtn('choose ${i}')">GO: ${n.symbol}</button>`));
+                    else if (game.screen_type === "EVENT" && s.options) s.options.forEach((o, i) => { if (!o.disabled) btns.push(`<button class="btn-primary" onclick="submitManualActionBtn('choose ${i}')">${o.label || `Select ${i}`}</button>`); });
+                }
+
+                ops.innerHTML = btns.length ? btns.join('') : '<span style="color:#888; font-size:0.8rem;">No commands available</span>';
             }
-            lastGameStateString = stateString;
 
-            const state = stateWrapper.state || stateWrapper;
-            
-            if (!state.in_game) {
-                document.getElementById('player-class').textContent = "Not in game";
-                return;
+            if (!state.in_game) { 
+                document.getElementById('player-class').textContent = "Main Menu"; 
+                document.getElementById('player-powers-bar').style.display='none'; return; 
             }
 
             const game = state.game_state;
-            // Render Player Status
-            document.getElementById('player-class').textContent = game.class || "-";
-            
-            let playerHpText = `${game.current_hp} / ${game.max_hp}`;
-            if (game.combat_state && game.combat_state.player.block > 0) {
-                 playerHpText += ` (\u26E8 ${game.combat_state.player.block})`;
-            }
-            document.getElementById('player-hp').textContent = playerHpText;
-            
-            document.getElementById('player-gold').textContent = game.gold;
+            document.getElementById('player-class').textContent = game.class;
             document.getElementById('player-floor').textContent = game.floor;
+            document.getElementById('player-gold').textContent = game.gold;
+            let hp = `${game.current_hp}/${game.max_hp}`;
+            if (game.combat_state && game.combat_state.player.block > 0) hp += ` [${game.combat_state.player.block}]`;
+            document.getElementById('player-hp').textContent = hp;
 
-            // Render Relics
-            const relicsContainer = document.getElementById('relics-list');
-            if (game.relics && game.relics.length > 0) {
-                relicsContainer.innerHTML = game.relics.map(r => 
-                    `<span class="relic-badge" title="${r.id} (Counter: ${r.counter})">${r.name}</span>`
-                ).join('');
-            } else {
-                relicsContainer.innerHTML = '<span class="potion-empty">None</span>';
-            }
+            document.getElementById('relics-list').innerHTML = game.relics.map(r => `<span class="relic-badge">${r.name}</span>`).join('') || 'None';
+            document.getElementById('potions-list').innerHTML = game.potions.map(p => `<span class="potion-badge ${p.id==='Potion Slot'?'potion-empty':''}">${p.name}</span>`).join('') || 'None';
 
-            // Render Potions
-            const potionsContainer = document.getElementById('potions-list');
-            if (game.potions && game.potions.length > 0) {
-                potionsContainer.innerHTML = game.potions.map(p => {
-                    const isEmpty = p.id === "Potion Slot";
-                    const className = isEmpty ? "potion-badge potion-empty" : "potion-badge";
-                    return `<span class="${className}" title="${p.can_use ? 'Usable' : 'Unusable'}">${isEmpty ? 'Empty Slot' : p.name}</span>`;
-                }).join('');
-            } else {
-                potionsContainer.innerHTML = '<span class="potion-empty">None</span>';
-            }
-
-            // --- Render Combat State ---
+            const pb = document.getElementById('player-powers-bar');
             if (game.combat_state) {
-                const combat = game.combat_state;
-                document.getElementById('player-energy').textContent = combat.player.energy;
-                document.getElementById('combat-turn').textContent = combat.turn;
+                pb.style.display = 'block';
+                document.getElementById('player-energy').textContent = game.combat_state.player.energy;
+                document.getElementById('combat-turn').textContent = game.combat_state.turn;
+                document.getElementById('player-powers').innerHTML = game.combat_state.player.powers.map(p => `<span class="power-badge">${p.name} (${p.amount})</span>`).join('') || 'None';
+                renderPile(game.combat_state.hand, 'hand-list', 'hand-count');
+                renderPile(game.combat_state.draw_pile, 'draw-list', 'draw-count');
+                renderPile(game.combat_state.discard_pile, 'discard-list', 'discard-count');
+                renderPile(game.combat_state.exhaust_pile, 'exhaust-list', 'exhaust-count');
 
-                // Render Player Powers
-                const playerPowersContainer = document.getElementById('player-powers') || document.createElement('div');
-                if(!document.getElementById('player-powers')) {
-                    playerPowersContainer.id = 'player-powers';
-                    document.getElementById('player-hp').parentNode.appendChild(playerPowersContainer);
-                }
-                
-                if (combat.player.powers && combat.player.powers.length > 0) {
-                    playerPowersContainer.innerHTML = combat.player.powers.map(p => 
-                        `<span style="color:#c586c0; font-size:0.85em; margin-right:5px;" title="${p.id}">${p.name} (${p.amount})</span>`
-                    ).join('<br>');
-                } else {
-                    playerPowersContainer.innerHTML = "";
-                }
-
-                // Render Piles
-                renderPile(combat.hand, 'hand-list', 'hand-count');
-                renderPile(combat.draw_pile, 'draw-list', 'draw-count');
-                renderPile(combat.discard_pile, 'discard-list', 'discard-count');
-                renderPile(combat.exhaust_pile, 'exhaust-list', 'exhaust-count');
-
-                // Render Monsters
-                const monsterList = document.getElementById('monster-list');
-                monsterList.innerHTML = '';
-                if (combat.monsters && combat.monsters.length > 0) {
-                    combat.monsters.forEach(m => {
-                        if (m.is_gone || m.half_dead) return;
-                        
-                        const div = document.createElement('div');
-                        div.className = 'monster';
-                        
-                        let damageHTML = "";
-                        if (m.move_base_damage > 0) {
-                             damageHTML = `<span class="intent-attack">Attacking for ${m.move_base_damage} x ${m.move_hits}</span>`;
-                        } else {
-                             damageHTML = `<span class="intent-buff">Intent: ${m.intent}</span>`;
-                        }
-
-                        let powersHTML = "";
-                        if (m.powers && m.powers.length > 0) {
-                             powersHTML = "<div style='margin-top: 5px; font-size: 0.85em;'>" + m.powers.map(p => 
-                                 `<span style="color:#c586c0; margin-right:8px;">${p.name} (${p.amount})</span>`
-                             ).join('') + "</div>";
-                        }
-
-                        div.innerHTML = `
-                            <div class="monster-header">
-                                <span class="monster-name">${m.name}</span>
-                                <div><span class="monster-hp">${m.current_hp} / ${m.max_hp} HP</span> <span class="monster-block">${m.block > 0 ? `(\u26E8 ${m.block})` : ''}</span></div>
-                            </div>
-                            <div class="card-detail-row" style="font-size: 0.8em;"><span class="card-detail-label">ID:</span> <span class="card-detail-value">${m.id}</span></div>
-                            ${powersHTML}
-                            <div class="monster-intent">${damageHTML}</div>
-                        `;
-                        monsterList.appendChild(div);
-                    });
-                } else {
-                     monsterList.innerHTML = '<div style="color: #666;">No monsters present.</div>';
-                }
+                document.getElementById('monster-list').innerHTML = game.combat_state.monsters.filter(m => !m.is_gone).map(m => `
+                    <div class="monster">
+                        <div class="monster-header"><span class="monster-name">${m.name}</span><span>${m.current_hp}/${m.max_hp} HP ${m.block>0?`[${m.block}]`:''}</span></div>
+                        <div class="hp-bar-bg"><div class="hp-bar-fill" style="width:${(m.current_hp/m.max_hp)*100}%"></div></div>
+                        <div class="monster-intent">${m.move_base_damage>0?`Attack: ${m.move_base_damage}x${m.move_hits}`:`Intent: ${m.intent}`}</div>
+                    </div>
+                `).join('');
             } else {
-                 document.getElementById('hand-list').innerHTML = '<div style="color: #666;">Not in combat</div>';
-                 document.getElementById('draw-list').innerHTML = '';
-                 document.getElementById('discard-list').innerHTML = '';
-                 document.getElementById('exhaust-list').innerHTML = '';
-                 document.getElementById('draw-count').textContent = '0';
-                 document.getElementById('discard-count').textContent = '0';
-                 document.getElementById('exhaust-count').textContent = '0';
-                 document.getElementById('hand-count').textContent = '0';
-                 document.getElementById('monster-list').innerHTML = '<div style="color: #666;">Not in combat</div>';
-                 document.getElementById('player-energy').textContent = "-";
-                 document.getElementById('combat-turn').textContent = "-";
+                pb.style.display = 'none';
+                document.getElementById('player-energy').textContent = '-';
+                document.getElementById('combat-turn').textContent = '-';
             }
+
+            const ctx = document.getElementById('contextual-panel');
+            const dck = document.getElementById('deck-panel');
+            const mst = document.getElementById('monsters-panel');
+            
+            // Clean up old context states
+            document.getElementById('event-options').style.display = 'none';
+            document.getElementById('map-options').style.display = 'none';
+            document.getElementById('context-body').innerHTML = '';
+
+            if (game.screen_type && game.screen_type !== "NONE") {
+                ctx.style.display = 'block'; dck.style.display = 'none'; mst.style.display = 'none';
+                const s = game.screen_state;
+                document.getElementById('context-title').textContent = game.screen_type.replace(/_/g, ' ');
+                
+                if (game.screen_type === "EVENT" && s) {
+                    document.getElementById('context-body').textContent = s.body_text;
+                    document.getElementById('event-options').style.display = 'block';
+                    document.getElementById('options-list').innerHTML = s.options.map((o, i) => `<div class="event-option ${o.disabled?'disabled':''}" onclick="${o.disabled?'':`submitManualActionBtn('choose ${i}')`}"><div>${o.label}</div><div style="font-size:0.85rem; color:#666;">${o.text}</div></div>`).join('');
+                } else if (game.screen_type === "MAP") {
+                    document.getElementById('map-options').style.display = 'block';
+                    document.getElementById('current-pos').textContent = s && s.current_node ? `Floor ${game.floor} - x:${s.current_node.x} y:${s.current_node.y}` : "Selecting first node";
+                    document.getElementById('boss-interaction').style.display = s && s.boss_available ? 'block' : 'none';
+                    renderFullMap(game.map, s ? s.current_node : null, s ? s.next_nodes : null, s ? s.boss_available : false);
+                } else if (game.screen_type === "COMBAT_REWARD") {
+                    document.getElementById('context-body').innerHTML = `
+                        <div style="display:grid; gap:8px;">
+                            ${s.rewards.map((r, i) => {
+                                let label = r.reward_type;
+                                if (r.reward_type === "GOLD") label = `${r.gold} Gold`;
+                                if (r.reward_type === "POTION") label = `Potion: ${r.potion.name}`;
+                                if (r.reward_type === "RELIC") label = `Relic: ${r.relic.name}`;
+                                if (r.reward_type === "CARD") label = "Card Reward (Draft)";
+                                return `<div class="event-option" onclick="submitManualActionBtn('choose ${i}')">${label}</div>`;
+                            }).join('')}
+                        </div>`;
+                } else if (game.screen_type === "CARD_REWARD") {
+                    document.getElementById('context-body').innerHTML = `
+                        <div class="card-container" style="justify-content: center; gap: 20px; padding: 20px 0;">
+                            ${s.cards.map((c, i) => `
+                                <div style="cursor:pointer;" onclick="submitManualActionBtn('choose ${i}')">
+                                    ${createCardHTML(c, i)}
+                                </div>
+                            `).join('')}
+                        </div>`;
+                } else if (game.screen_type === "REST") {
+                    document.getElementById('context-body').innerHTML = `
+                        <div style="display:grid; gap:8px;">
+                            ${s.rest_options.map((o, i) => `
+                                <div class="event-option" onclick="submitManualActionBtn('choose ${i}')">
+                                    <div style="font-weight:700;">${o.label}</div>
+                                    <div style="font-size:0.8rem; opacity:0.8;">${o.description || ''}</div>
+                                </div>
+                            `).join('')}
+                        </div>`;
+                } else if (game.screen_type === "GRID" || game.screen_type === "HAND_SELECT") {
+                    const cards = s.cards || s.hand;
+                    document.getElementById('context-body').innerHTML = `
+                        <div style="margin-bottom:10px; font-weight:700; color:var(--accent-primary);">Pick ${s.num_cards || 1} card(s)</div>
+                        <div class="card-container" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap:15px;">
+                            ${cards.map((c, i) => `
+                                <div style="cursor:pointer;" onclick="submitManualActionBtn('choose ${i}')">
+                                    ${createCardHTML(c, i)}
+                                </div>
+                            `).join('')}
+                        </div>`;
+                } else if (game.screen_type === "SHOP") {
+                    document.getElementById('context-body').innerHTML = `
+                        <div style="margin-bottom:15px;">Gold: ${game.gold}</div>
+                        <div style="display:grid; gap:20px;">
+                            <div>
+                                <h3 style="font-size:0.8rem; text-transform:uppercase;">Cards</h3>
+                                <div class="card-container" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap:10px;">
+                                    ${s.store_cards.map((c, i) => `
+                                        <div style="cursor:pointer;" onclick="submitManualActionBtn('choose ${i}')">
+                                            ${createCardHTML(c, i)}
+                                            <div style="text-align:center; font-weight:700; color:var(--accent-primary); margin-top:5px;">${c.price} Gold</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            <div>
+                                <h3 style="font-size:0.8rem; text-transform:uppercase;">Relics & Potions</h3>
+                                <div style="display:flex; flex-wrap:wrap; gap:10px;">
+                                    ${s.store_relics.map((r, i) => `
+                                        <div class="event-option" style="flex:1; min-width:120px;" onclick="submitManualActionBtn('choose ${s.store_cards.length + i}')">
+                                            <div style="font-weight:700;">${r.name}</div>
+                                            <div style="color:var(--accent-primary);">${r.price} Gold</div>
+                                        </div>
+                                    `).join('')}
+                                    ${s.store_potions.map((p, i) => `
+                                        <div class="event-option" style="flex:1; min-width:120px;" onclick="submitManualActionBtn('choose ${s.store_cards.length + s.store_relics.length + i}')">
+                                            <div style="font-weight:700;">${p.name}</div>
+                                            <div style="color:var(--accent-primary);">${p.price} Gold</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>`;
+                } else if (game.screen_type === "TREASURE") {
+                     document.getElementById('context-body').innerHTML = `<button class="btn-primary" style="width:100%;" onclick="submitManualActionBtn('choose 0')">Open Chest</button>`;
+                }
+            } else { ctx.style.display = 'none'; dck.style.display = 'block'; mst.style.display = 'block'; }
         }
     </script>
 </body>

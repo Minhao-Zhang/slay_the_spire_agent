@@ -26,11 +26,19 @@ def generate_one_off(prompt: str, system_prompt: Optional[str] = None, use_reaso
     messages.append({"role": "user", "content": prompt})
 
     try:
-        response = client.chat.completions.create(
+        response = client.responses.create(
             model=model_name,
-            messages=messages
+            input=messages
         )
-        return response.choices[0].message.content
+        
+        text_blocks = []
+        for item in response.output:
+            if getattr(item, "type", "") == "message":
+                for content_block in getattr(item, "content", []):
+                    if getattr(content_block, "type", "") == "output_text":
+                        text_blocks.append(content_block.text)
+                        
+        return "".join(text_blocks)
     except Exception as e:
         print(f"Error calling LLM: {e}")
         return ""
@@ -59,11 +67,20 @@ class ChatSession:
         model_name = config.model_reasoning if use_reasoning_model else config.model_fast
 
         try:
-            response = client.chat.completions.create(
+            response = client.responses.create(
                 model=model_name,
-                messages=self.history
+                input=self.history
             )
-            response_text = response.choices[0].message.content
+            
+            text_blocks = []
+            for item in response.output:
+                if getattr(item, "type", "") == "message":
+                    for content_block in getattr(item, "content", []):
+                        if getattr(content_block, "type", "") == "output_text":
+                            text_blocks.append(content_block.text)
+                            
+            response_text = "".join(text_blocks)
+            
             # Automatically append the assistant's reply to state
             self.add_assistant_message(response_text)
             return response_text

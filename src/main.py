@@ -21,6 +21,16 @@ def notify_dashboard(endpoint: str, data: dict):
             pass # Dashboard is offline, ignore gracefully
     threading.Thread(target=send, daemon=True).start()
 
+def get_dashboard_action() -> str | None:
+    """Polls the dashboard for any manual queued actions."""
+    try:
+        response = requests.get(f"{DASHBOARD_URL}/get_action", timeout=0.2)
+        if response.status_code == 200:
+            return response.json().get("action")
+    except requests.exceptions.RequestException:
+        pass
+    return None
+
 def enforce_log_limit(log_dir: str, limit: int = 20):
     """Ensures no more than `limit` log directories exist, deleting the oldest ones."""
     if not os.path.exists(log_dir):
@@ -82,14 +92,16 @@ def main():
             print("wait 10", flush=True)
             continue
 
-        if state == last_logged_state:
+        manual_action = get_dashboard_action()
+
+        if not manual_action and state == last_logged_state:
             print("wait 10", flush=True)
             continue
             
         last_logged_state = copy.deepcopy(state)
         
-        # We have a valid, actionable state.
-        action = "wait 10"  # We just wait 10 frames and observe again for now
+        # Action is either the manual action we just pulled, or default wait
+        action = manual_action if manual_action else "wait 10"
         
         # Log to disk
         path = os.path.join(run_dir, f"{event_index:04d}.json")
