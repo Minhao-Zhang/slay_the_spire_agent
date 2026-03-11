@@ -1,0 +1,364 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slay the Spire Agent Debugger</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1a1a1a; color: #e0e0e0; margin: 0; padding: 20px; }
+        h1, h2, h3 { color: #87CEFA; margin-top: 5px; margin-bottom: 10px; }
+        .dashboard { display: flex; flex-direction: column; gap: 20px; max-width: 1400px; margin: 0 auto; }
+        
+        /* Top Bar: Player Status */
+        .top-bar { display: flex; justify-content: space-between; align-items: center; background: #262626; padding: 15px 25px; border-radius: 8px; border: 1px solid #333; min-height: 60px; }
+        .stats-group { display: flex; gap: 20px; font-size: 1.1em; }
+        .stat-item { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 80px; }
+        .stat-label { font-size: 0.75em; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+        .stat-value { font-weight: bold; color: #4ec9b0; }
+        
+        /* Relics and Potions Bar */
+        .inventory-bar { display: flex; gap: 30px; background: #222; padding: 15px; border-radius: 8px; border: 1px solid #333; min-height: 50px; }
+        .inventory-section { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+        .item-list { display: flex; flex-wrap: wrap; gap: 10px; min-height: 24px; }
+        .relic-badge, .potion-badge { background: #333; padding: 4px 10px; border-radius: 12px; font-size: 0.85em; color: #ddd; border: 1px solid #444; }
+        .potion-empty { color: #666; font-style: italic; background: #2a2a2a; }
+
+        /* Main Game Area */
+        .game-area { display: flex; gap: 20px; }
+        .panel { flex: 1; background: #262626; padding: 15px; border-radius: 8px; border: 1px solid #333; min-height: 600px; }
+        .deck-panel { flex: 1.5; }
+        
+        /* Card Styling */
+        .card-container { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+        .card { 
+            background: #2d2d30; border: 1px solid #3e3e42; border-radius: 6px; padding: 8px 12px; 
+            display: flex; flex-direction: column; transition: background 0.2s; position: relative;
+        }
+        .card:hover { background: #3e3e42; }
+        .card-header { display: flex; align-items: center; gap: 10px; cursor: default; }
+        .card-cost { 
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 24px; height: 24px; background: #007acc; color: white; 
+            border-radius: 50%; font-weight: bold; font-size: 0.9em;
+        }
+        .card-name { font-weight: bold; font-size: 1.05em; color: #fff; }
+        .card-type { margin-left: auto; font-size: 0.8em; color: #9cdcfe; background: #1e1e1e; padding: 2px 6px; border-radius: 4px; }
+        
+        /* Hidden Card Details */
+        .card-details { 
+            display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #444; 
+            font-size: 0.85em; color: #aaa; background: #1a1a1a; padding: 8px; border-radius: 4px;
+        }
+        .card:hover .card-details { display: block; }
+        
+        .card-detail-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+        .card-detail-label { color: #777; }
+        .card-detail-value { color: #ce9178; font-family: monospace; }
+        
+        /* Piles (Details/Summary) */
+        details { background: #2a2a2d; margin-bottom: 10px; border-radius: 6px; border: 1px solid #333; }
+        summary { 
+            padding: 10px 15px; cursor: pointer; font-weight: bold; color: #ccc; 
+            list-style: none; display: flex; justify-content: space-between;
+        }
+        summary::-webkit-details-marker { display: none; }
+        details[open] summary { border-bottom: 1px solid #444; background: #333; }
+        .pile-content { padding: 10px; max-height: 400px; overflow-y: auto; }
+        .pile-count { background: #555; padding: 2px 8px; border-radius: 10px; font-size: 0.8em; }
+
+        /* Monster Styling */
+        .monster { margin-bottom: 15px; padding: 12px; border: 1px solid #5c2b29; background: #331c1b; border-radius: 6px; }
+        .monster-header { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 5px; }
+        .monster-name { color: #f48771; font-size: 1.1em; }
+        .monster-hp { color: #4ec9b0; }
+        .monster-block { color: #569cd6; font-size: 0.9em; margin-left: 10px; }
+        .monster-intent { font-weight: bold; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #5c2b29; }
+        .intent-attack { color: #f44336; }
+        .intent-buff { color: #c586c0; }
+
+        /* Logs */
+        .log-box { height: 200px; overflow-y: auto; background: #000; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 0.9em; border: 1px solid #333;}
+        .log-entry { margin-bottom: 6px; color: #d4d4d4; }
+        .log-time { color: #569cd6; margin-right: 10px; }
+        .action { color: #b5cea8; font-weight: bold; background: #1e1e1e; padding: 0 4px; border-radius: 3px;}
+        
+        #connection-status { margin-left: auto; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard">
+        <!-- Top Status Bar -->
+        <div class="top-bar">
+            <h2>STS Agent UI Tracker</h2>
+            <div class="stats-group">
+                <div class="stat-item"><span class="stat-label">Class</span><span class="stat-value" id="player-class">-</span></div>
+                <div class="stat-item"><span class="stat-label">Floor</span><span class="stat-value" id="player-floor">-</span></div>
+                <div class="stat-item"><span class="stat-label">HP</span><span class="stat-value" id="player-hp">- / -</span></div>
+                <div class="stat-item"><span class="stat-label">Gold</span><span class="stat-value" id="player-gold">-</span></div>
+                <div class="stat-item"><span class="stat-label">Energy</span><span class="stat-value" id="player-energy">-</span></div>
+                <div class="stat-item"><span class="stat-label">Turn</span><span class="stat-value" id="combat-turn">-</span></div>
+            </div>
+            <div id="connection-status" style="color: yellow;">Connecting...</div>
+        </div>
+
+        <!-- Relics and Potions -->
+        <div class="inventory-bar">
+            <div class="inventory-section">
+                <span class="stat-label">Relics</span>
+                <div class="item-list" id="relics-list"><span class="relic-badge">Waiting for state...</span></div>
+            </div>
+            <div class="inventory-section">
+                <span class="stat-label">Potions</span>
+                <div class="item-list" id="potions-list"><span class="potion-badge">Waiting for state...</span></div>
+            </div>
+        </div>
+
+        <!-- Main Workspace -->
+        <div class="game-area">
+            
+            <!-- Cards Panel -->
+            <div class="panel deck-panel">
+                <h3>Current Hand (<span id="hand-count">0</span>)</h3>
+                <div class="card-container" id="hand-list" style="margin-bottom: 30px;">
+                    <div style="color: #666;">Waiting for combat...</div>
+                </div>
+
+                <h3>Card Piles</h3>
+                <details>
+                    <summary>Draw Pile <span class="pile-count" id="draw-count">0</span></summary>
+                    <div class="pile-content card-container" id="draw-list"></div>
+                </details>
+                <details>
+                    <summary>Discard Pile <span class="pile-count" id="discard-count">0</span></summary>
+                    <div class="pile-content card-container" id="discard-list"></div>
+                </details>
+                <details>
+                    <summary>Exhaust Pile <span class="pile-count" id="exhaust-count">0</span></summary>
+                    <div class="pile-content card-container" id="exhaust-list"></div>
+                </details>
+            </div>
+
+            <!-- Enemies Panel -->
+            <div class="panel">
+                <h3>Monsters</h3>
+                <div id="monster-list">
+                    <div style="color: #666;">Waiting for combat...</div>
+                </div>
+            </div>
+            
+        </div>
+
+        <!-- Logs -->
+        <div class="log-box" id="log-box">
+            <div class="log-entry" style="color: #6a9955;">// Agent action log will appear here</div>
+        </div>
+    </div>
+
+    <script>
+        const ws = new WebSocket(`ws://${location.host}/ws`);
+        const statusSpan = document.getElementById('connection-status');
+        const logBox = document.getElementById('log-box');
+
+        ws.onopen = () => {
+            statusSpan.textContent = 'Connected \u25CF';
+            statusSpan.style.color = '#4ec9b0';
+        };
+
+        ws.onclose = () => {
+            statusSpan.textContent = 'Disconnected \u25EF';
+            statusSpan.style.color = '#f44336';
+        };
+
+        function addLog(message, isAction=false) {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            const time = new Date().toLocaleTimeString();
+            
+            if (isAction) {
+                entry.innerHTML = `<span class="log-time">[${time}]</span> Agent executed: <span class="action">${message}</span>`;
+            } else {
+                entry.innerHTML = `<span class="log-time">[${time}]</span> ${message}`;
+            }
+            
+            logBox.appendChild(entry);
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === 'state') {
+                updateState(data.payload);
+            } else if (data.type === 'action') {
+                addLog(data.payload, true);
+            }
+        };
+
+        function createCardHTML(card, index, locationContext="") {
+            const targetInfo = card.has_target ? '<span style="color:#f48771;" title="Requires target"> \u2316</span>' : '';
+            const upgradeText = card.upgrades > 0 ? `+${card.upgrades}` : '';
+            
+            return `
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-cost">${card.cost}</span>
+                        <span class="card-name">${card.name}</span>
+                        ${targetInfo}
+                        <span class="card-type">${card.type || 'UNKNOWN'}</span>
+                    </div>
+                    <div class="card-details">
+                        <div class="card-detail-row"><span class="card-detail-label">ID:</span> <span class="card-detail-value">${card.id}${upgradeText}</span></div>
+                        <div class="card-detail-row"><span class="card-detail-label">UUID:</span> <span class="card-detail-value">${card.uuid}</span></div>
+                        <div class="card-detail-row"><span class="card-detail-label">Playable:</span> <span class="card-detail-value">${card.is_playable ? 'Yes' : 'No'}</span></div>
+                        <div class="card-detail-row"><span class="card-detail-label">Traits:</span> <span class="card-detail-value">${card.exhausts ? 'Exhaust ' : ''}${card.ethereal ? 'Ethereal ' : ''} [Pos: ${index}]</span></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPile(cardsArray, containerId, countId) {
+            const container = document.getElementById(containerId);
+            const countSpan = document.getElementById(countId);
+            
+            if (!cardsArray) return;
+            countSpan.textContent = cardsArray.length;
+            
+            if (cardsArray.length === 0) {
+                container.innerHTML = '<div style="color: #666; padding: 10px;">Empty</div>';
+            } else {
+                container.innerHTML = cardsArray.map((card, idx) => createCardHTML(card, idx + 1)).join('');
+            }
+        }
+
+        let lastGameStateString = "";
+
+        function updateState(stateWrapper) {
+            const stateString = JSON.stringify(stateWrapper);
+            if (stateString === lastGameStateString) {
+                return; // Prevent DOM tearing/CPU usage on duplicate frames
+            }
+            lastGameStateString = stateString;
+
+            const state = stateWrapper.state || stateWrapper;
+            
+            if (!state.in_game) {
+                document.getElementById('player-class').textContent = "Not in game";
+                return;
+            }
+
+            const game = state.game_state;
+            // Render Player Status
+            document.getElementById('player-class').textContent = game.class || "-";
+            
+            let playerHpText = `${game.current_hp} / ${game.max_hp}`;
+            if (game.combat_state && game.combat_state.player.block > 0) {
+                 playerHpText += ` (\u26E8 ${game.combat_state.player.block})`;
+            }
+            document.getElementById('player-hp').textContent = playerHpText;
+            
+            document.getElementById('player-gold').textContent = game.gold;
+            document.getElementById('player-floor').textContent = game.floor;
+
+            // Render Relics
+            const relicsContainer = document.getElementById('relics-list');
+            if (game.relics && game.relics.length > 0) {
+                relicsContainer.innerHTML = game.relics.map(r => 
+                    `<span class="relic-badge" title="${r.id} (Counter: ${r.counter})">${r.name}</span>`
+                ).join('');
+            } else {
+                relicsContainer.innerHTML = '<span class="potion-empty">None</span>';
+            }
+
+            // Render Potions
+            const potionsContainer = document.getElementById('potions-list');
+            if (game.potions && game.potions.length > 0) {
+                potionsContainer.innerHTML = game.potions.map(p => {
+                    const isEmpty = p.id === "Potion Slot";
+                    const className = isEmpty ? "potion-badge potion-empty" : "potion-badge";
+                    return `<span class="${className}" title="${p.can_use ? 'Usable' : 'Unusable'}">${isEmpty ? 'Empty Slot' : p.name}</span>`;
+                }).join('');
+            } else {
+                potionsContainer.innerHTML = '<span class="potion-empty">None</span>';
+            }
+
+            // --- Render Combat State ---
+            if (game.combat_state) {
+                const combat = game.combat_state;
+                document.getElementById('player-energy').textContent = combat.player.energy;
+                document.getElementById('combat-turn').textContent = combat.turn;
+
+                // Render Player Powers
+                const playerPowersContainer = document.getElementById('player-powers') || document.createElement('div');
+                if(!document.getElementById('player-powers')) {
+                    playerPowersContainer.id = 'player-powers';
+                    document.getElementById('player-hp').parentNode.appendChild(playerPowersContainer);
+                }
+                
+                if (combat.player.powers && combat.player.powers.length > 0) {
+                    playerPowersContainer.innerHTML = combat.player.powers.map(p => 
+                        `<span style="color:#c586c0; font-size:0.85em; margin-right:5px;" title="${p.id}">${p.name} (${p.amount})</span>`
+                    ).join('<br>');
+                } else {
+                    playerPowersContainer.innerHTML = "";
+                }
+
+                // Render Piles
+                renderPile(combat.hand, 'hand-list', 'hand-count');
+                renderPile(combat.draw_pile, 'draw-list', 'draw-count');
+                renderPile(combat.discard_pile, 'discard-list', 'discard-count');
+                renderPile(combat.exhaust_pile, 'exhaust-list', 'exhaust-count');
+
+                // Render Monsters
+                const monsterList = document.getElementById('monster-list');
+                monsterList.innerHTML = '';
+                if (combat.monsters && combat.monsters.length > 0) {
+                    combat.monsters.forEach(m => {
+                        if (m.is_gone || m.half_dead) return;
+                        
+                        const div = document.createElement('div');
+                        div.className = 'monster';
+                        
+                        let damageHTML = "";
+                        if (m.move_base_damage > 0) {
+                             damageHTML = `<span class="intent-attack">Attacking for ${m.move_base_damage} x ${m.move_hits}</span>`;
+                        } else {
+                             damageHTML = `<span class="intent-buff">Intent: ${m.intent}</span>`;
+                        }
+
+                        let powersHTML = "";
+                        if (m.powers && m.powers.length > 0) {
+                             powersHTML = "<div style='margin-top: 5px; font-size: 0.85em;'>" + m.powers.map(p => 
+                                 `<span style="color:#c586c0; margin-right:8px;">${p.name} (${p.amount})</span>`
+                             ).join('') + "</div>";
+                        }
+
+                        div.innerHTML = `
+                            <div class="monster-header">
+                                <span class="monster-name">${m.name}</span>
+                                <div><span class="monster-hp">${m.current_hp} / ${m.max_hp} HP</span> <span class="monster-block">${m.block > 0 ? `(\u26E8 ${m.block})` : ''}</span></div>
+                            </div>
+                            <div class="card-detail-row" style="font-size: 0.8em;"><span class="card-detail-label">ID:</span> <span class="card-detail-value">${m.id}</span></div>
+                            ${powersHTML}
+                            <div class="monster-intent">${damageHTML}</div>
+                        `;
+                        monsterList.appendChild(div);
+                    });
+                } else {
+                     monsterList.innerHTML = '<div style="color: #666;">No monsters present.</div>';
+                }
+            } else {
+                 document.getElementById('hand-list').innerHTML = '<div style="color: #666;">Not in combat</div>';
+                 document.getElementById('draw-list').innerHTML = '';
+                 document.getElementById('discard-list').innerHTML = '';
+                 document.getElementById('exhaust-list').innerHTML = '';
+                 document.getElementById('draw-count').textContent = '0';
+                 document.getElementById('discard-count').textContent = '0';
+                 document.getElementById('exhaust-count').textContent = '0';
+                 document.getElementById('hand-count').textContent = '0';
+                 document.getElementById('monster-list').innerHTML = '<div style="color: #666;">Not in combat</div>';
+                 document.getElementById('player-energy').textContent = "-";
+                 document.getElementById('combat-turn').textContent = "-";
+            }
+        }
+    </script>
+</body>
+</html>
