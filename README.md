@@ -26,7 +26,7 @@ This project manages Python dependencies using **uv**.
 
 1. **Install dependencies:**
    ```bash
-   uv pip sync requirements.txt
+   uv pip install -r requirements.txt
    ```
 
 2. **Configure Slay the Spire Communication Mod:**

@@ -1,8 +1,10 @@
 pandas
 python-dotenv
 openpyxl
-jupyter
+requests
+urllib3
 fastapi
 websockets
 uvicorn
 jinja2
+openai
