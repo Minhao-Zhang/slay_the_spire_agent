@@ -8,3 +8,6 @@ websockets
 uvicorn
 jinja2
 openai
+langchain-core
+langchain-openai
+langgraph

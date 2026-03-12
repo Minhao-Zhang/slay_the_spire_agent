@@ -58,7 +58,7 @@ This project manages Python dependencies using **uv**.
 To view the real-time agent tracker while playing the game, start the FastAPI dashboard in a separate terminal *before* launching Slay the Spire:
 
 ```bash
-uv run src/ui/dashboard.py
+uv run python -m src.ui.dashboard
 ```
 
 Once running, open your web browser to `http://localhost:8000/`. The dashboard will automatically update once you launch Slay the Spire and enter a combat encounter.

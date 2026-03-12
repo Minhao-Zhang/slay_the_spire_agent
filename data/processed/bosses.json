@@ -126,9 +126,18 @@
   {
     "name": "The Guardian",
     "hp": "240 (250)",
-    "moves": [],
-    "notes": null,
-    "ai": null,
+    "moves": [
+      "Charging Up",
+      "Fierce Bash",
+      "Vent Steam",
+      "Whirlwind",
+      "Roll Attack",
+      "Twin Slam",
+      "Close Up",
+      "Shield Bash"
+    ],
+    "notes": "Has two modes: Offensive Mode and Defensive Mode (Sharp Hide). Enters Defensive Mode after taking 30+ (40+) attack damage in a single turn. In Defensive Mode, gains Sharp Hide (deal 3 damage when attacked). Returns to Offensive Mode after using Twin Slam.",
+    "ai": "Offensive Mode: Cycles Charging Up -> Fierce Bash -> Vent Steam -> Whirlwind -> Charging Up... Switches to Defensive Mode when threshold reached. Defensive Mode: Cycles Roll Attack -> Close Up -> Roll Attack -> Close Up -> Twin Slam, then returns to Offensive Mode.",
     "ascension_20_ai": null
   },
   {

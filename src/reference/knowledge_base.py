@@ -15,6 +15,7 @@ class DataStore:
         self.monsters: Dict[str, dict] = {}
         self.bosses: Dict[str, dict] = {}
         self.events: Dict[str, dict] = {}
+        self.powers: Dict[str, dict] = {}
         
         self.is_loaded = False
 
@@ -30,12 +31,12 @@ class DataStore:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
 
-        # Build mappings keyed by lowercased name for reliable lookup
         self.cards = {c["name"].lower(): c for c in _load_json_list("cards.json")}
         self.relics = {r["name"].lower(): r for r in _load_json_list("relics.json")}
         self.monsters = {m["name"].lower(): m for m in _load_json_list("monsters.json")}
         self.bosses = {b["name"].lower(): b for b in _load_json_list("bosses.json")}
         self.events = {e["name"].lower(): e for e in _load_json_list("events.json")}
+        self.powers = {p["name"].lower(): p for p in _load_json_list("powers.json")}
         
         self.is_loaded = True
 
@@ -155,3 +156,25 @@ def get_event_info(name: str) -> Optional[dict]:
             return v
             
     return None
+
+def get_power_info(name: str) -> Optional[dict]:
+    """Retrieve details about a power (buff/debuff) by name."""
+    _ensure_loaded()
+    key = name.lower().replace("'", "").replace('"', '')
+    
+    if key in _store.powers:
+        return _store.powers[key]
+    
+    for k, v in _store.powers.items():
+        if key in k.replace("'", "") or k.replace("'", "") in key:
+            return v
+            
+    return None
+
+def get_potion_info(name: str) -> Optional[dict]:
+    """Retrieve details about a potion by name.
+    Returns a placeholder until a potions.json data file is added.
+    """
+    if not name or name == "Potion Slot":
+        return None
+    return {"name": name, "effect": "No data available.", "rarity": "Unknown"}

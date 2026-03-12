@@ -1,39 +1,37 @@
-# Slay the Spire Agent Architecture Plan
+# Slay the Spire Agent: Project Summary & Plan
 
-## 1. Overview
-The agent will use an exploratory, tool-calling architecture. It relies on a **Hybrid Context Strategy**: injecting immediate, tactical game state into the prompt every turn, while providing tools for the agent to look up static reference data (like card upgrades or boss mechanics) on demand.
+This document summarizes the major enhancements and logical improvements implemented for the Slay the Spire AI agent.
 
-The lifecycle of the agent should be managed as a state machine (e.g., using **LangGraph** or a custom OpenAI loop) to handle the cyclical nature of the ongoing game.
+## Core Milestones
 
-## 2. The Core Loop
-Every action the agent takes follows this loop:
-1. **Receive Raw State:** Game state JSON is received from CommunicationMod.
-2. **Translate to Text:** Python parses the JSON and injects crucial details (HP, current hand, current enemies) into a concise text prompt.
-3. **Agent Evaluation:** The LLM receives the prompt and decides if it has enough information to act.
-4. **Tool Use (Optional):** If the LLM needs more info (e.g., "What does this new relic do?"), it makes parallel tool calls. The Python harness fetches this static data from `knowledge_base.py` and returns it.
-5. **Decide Action:** The LLM uses Chain of Thought reasoning to output a final game command (e.g., `PLAY 1 0`).
-6. **Execution:** The harness sends the command to the game.
+### 1. Interactive Step-by-Step Control
+The agent features a granular, multi-stage interaction system for precision debugging.
+- **Preview Phase**: Dashboard streams real-time tactical context as the game advances.
+- **Thinking Stage**: Manual triggers allow for granular inspection of LLM reasoning.
+- **Execution Stage**: User-controlled action commitment ensures safe command execution.
+- **Non-blocking Loop**: The acting loop uses background keep-alive commands while paused, maintaining a responsive UI and continuous data stream.
 
-## 3. Context Management Strategy
+### 2. High-Fidelity Debug Dashboard
+The project includes a production-grade dashboard for monitoring and control.
+- **Real-time Streaming**: WebSockets provide instant updates for player health, floor, deck, and monster status.
+- **AI Debugger View**: Specialized workspace for inspecting system prompts, tactical context, and internal reasoning.
+- **Reasoning History (Backtrack)**: Historical log allows users to review a timeline of past decisions in the current session.
 
-### A. Injected Context (Provided Every Turn)
-*Crucial for immediate tactical awareness. Must be injected directly into the system prompt text.*
+### 3. AI Decision Enhancements
+Improved the "Game IQ" of the agent to reduce hallucinations and unnecessary LLM calls.
+- **Context Enrichment**: `PromptTranslator` now interprets Shops, Card Rewards, Grid Selection, and Events with high precision.
+- **Short-Circuiting**: Trivial states (Main Menu, single-exit Map nodes) now bypass the LLM for instant response.
+- **Action Chaining**: The agent automatically handles "Confirm" prompts following a choice, eliminating logical "stuttering."
 
-- **Player State:** Current HP, Max HP, Energy, Block, active Powers, Gold.
-- **Current Hand:** List of playable cards, their energy costs, and their base text.
-- **Current Enemies:** Names, current HP, Block, and their *current intentions* (e.g., attacking for 15).
-- **Enemy AI Rules:** The specific behavioral rules/probabilities for *only* the enemies currently on screen (pulled automatically from `monsters.json`).
-- **Valid Actions:** A list of the legally permitted CommunicationMod commands for this specific phase (e.g., Play, End, Potion).
+### 4. Structured Logging & Performance
+- **Session-Based Logs**: All turns are recorded in dated subfolders as structured JSON for detailed replay and analysis.
+- **Wait Optimization**: Screen transitions are optimized to avoid fixed pauses, providing a fluid interaction experience.
+- **Live Stream Integration**: Debug information is piped exclusively through the dashboard interface for real-time monitoring.
 
-### B. Tool Calls (Available On-Demand)
-*Used for exploration, long-term planning, and deep mechanics analysis to save context window tokens.*
+## Current Project State
+The agent is currently optimized for **Human-in-the-loop Debugging**. It defaults to PAUSED mode, requiring user triggers to think and act, which is ideal for fine-tuning the reasoning graph and verifying tactical context.
 
-- `get_card_details(card_name)`: Returns upgrade information and edge-case mechanics for specific cards (useful during draft screens).
-- `get_relic_details(relic_name)`: Returns specific mechanics for relics (useful in shops or chests).
-- `get_boss_info(act_number)`: Returns the AI behavior of the upcoming Act boss (crucial for long-term deckbuilding strategy).
-- `view_draw_pile()` / `view_discard_pile()`: Returns the list of cards remaining in the deck to calculate draw probabilities before playing actions.
-
-## 4. Required Next Steps
-1. **Enhance Prompts:** Build the Python translator function in `src/llm/` to parse the `0002.json` style logs into the condensed text format.
-2. **Integrate Tools:** Update the `ChatSession` in `src/llm/client.py` to support the OpenAI `tools` parameter and handle tool execution loops.
-3. **Test Loop:** Run the agent in a controlled combat encounter to verify it can reliably ask for a card's info and then play it successfully.
+## Next Steps (Proposed)
+- [ ] **Combat Strategy Refinement**: Enrich the tactical context with monster move patterns from the knowledge base.
+- [ ] **Artifact & Potion Logic**: Improve LLM understanding of non-card resources.
+- [ ] **Performance Benchmarking**: Automate runs to gather data on common failure points in the decision graph.
