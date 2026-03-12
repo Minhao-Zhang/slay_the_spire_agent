@@ -423,9 +423,22 @@
                     <span id="replay-status" style="font-size: 0.75rem; font-weight: 600;"></span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <button id="btn-prev" class="btn-secondary" style="padding: 4px 12px;" onclick="replayStep(-1)" disabled>&larr; Past</button>
-                    <span id="replay-counter" style="font-family: 'JetBrains Mono'; font-weight: 700; font-size: 0.85rem; min-width: 60px; text-align: center;">0 / 0</span>
-                    <button id="btn-next" class="btn-secondary" style="padding: 4px 12px;" onclick="replayStep(1)" disabled>Next &rarr;</button>
+                    <button id="btn-prev-10" class="btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="replayStep(-10)" title="Back 10 states" disabled>&laquo; 10</button>
+                    <button id="btn-prev" class="btn-secondary" style="padding: 4px 12px;" onclick="replayStep(-1)">&larr; Past</button>
+                    
+                    <div style="display: flex; align-items: center; gap: 5px; background: #f1f5f9; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border);">
+                        <input type="number" id="jump-input" value="1" min="1" step="1" 
+                               style="width: 50px; border: none; background: transparent; font-family: 'JetBrains Mono'; font-weight: 700; font-size: 0.85rem; text-align: right; outline: none;"
+                               onchange="jumpToState(this.value)"
+                               onkeypress="if(event.key === 'Enter') jumpToState(this.value)">
+                        <span style="font-family: 'JetBrains Mono'; font-weight: 700; font-size: 0.85rem; color: var(--text-muted);">/</span>
+                        <span id="replay-total" style="font-family: 'JetBrains Mono'; font-weight: 700; font-size: 0.85rem; min-width: 30px; color: var(--text-muted);">0</span>
+                    </div>
+
+                    <button id="btn-next" class="btn-secondary" style="padding: 4px 12px;" onclick="replayStep(1)">Next &rarr;</button>
+                    <button id="btn-next-10" class="btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="replayStep(10)" title="Forward 10 states" disabled>10 &raquo;</button>
+                    
+                    <span id="replay-counter" style="display:none;">0 / 0</span>
                 </div>
             </div>
         </div>
@@ -599,8 +612,6 @@
                 if (d.states && d.states.length > 0) {
                     replayStates = d.states; currentReplayIndex = 0; isReplayMode = true;
                     status.textContent = `Active: ${run}`; status.style.color = 'var(--accent-success)';
-                    document.getElementById('btn-prev').disabled = false;
-                    document.getElementById('btn-next').disabled = false;
                     renderReplayState();
                 }
             } catch (e) { status.textContent = "Load Failed"; status.style.color = 'var(--accent-danger)'; }
@@ -613,8 +624,30 @@
         }
 
         function renderReplayState() {
-            document.getElementById('replay-counter').textContent = `${currentReplayIndex + 1} / ${replayStates.length}`;
+            const total = replayStates.length;
+            const current = currentReplayIndex + 1;
+            
+            // Update counters and labels
+            document.getElementById('replay-counter').textContent = `${current} / ${total}`;
+            document.getElementById('replay-total').textContent = total;
+            document.getElementById('jump-input').value = current;
+            document.getElementById('jump-input').max = total;
+
+            // Update button states
+            document.getElementById('btn-prev').disabled = currentReplayIndex <= 0;
+            document.getElementById('btn-prev-10').disabled = currentReplayIndex <= 0;
+            document.getElementById('btn-next').disabled = currentReplayIndex >= total - 1;
+            document.getElementById('btn-next-10').disabled = currentReplayIndex >= total - 1;
+
             updateState(replayStates[currentReplayIndex]);
+        }
+
+        function jumpToState(val) {
+            if (!isReplayMode || !replayStates.length) return;
+            let idx = parseInt(val) - 1;
+            if (isNaN(idx)) return;
+            currentReplayIndex = Math.max(0, Math.min(replayStates.length - 1, idx));
+            renderReplayState();
         }
 
         async function submitManualAction() {
