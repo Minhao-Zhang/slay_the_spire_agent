@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spire Agent - AI Agent Debugger</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#f6f8fa;color:#1f2328;margin:0;padding:16px}
+.page{max-width:1400px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.panel{background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:16px}
+.header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.title{font-weight:700;font-size:1.1rem}
+.meta{font-family:ui-monospace,SFMono-Regular,monospace;font-size:.8rem;color:#656d76}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.section-title{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:#656d76;font-weight:700;margin-bottom:8px}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;background:#f6f8fa;border:1px solid #eaeef2;border-radius:6px;padding:12px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:.78rem;min-height:140px;max-height:320px;overflow:auto}
+.history{display:flex;flex-direction:column;gap:8px}
+.history-item{border:1px solid #eaeef2;border-radius:6px;padding:10px;background:#f6f8fa}
+.history-item strong{display:block}
+.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.action-input{flex:1;min-width:240px;padding:10px 12px;border:1px solid #d0d7de;border-radius:6px;background:#fff;font-family:ui-monospace,SFMono-Regular,monospace;font-size:.82rem}
+.mode-select{padding:10px 12px;border:1px solid #d0d7de;border-radius:6px;background:#fff;font-family:ui-monospace,SFMono-Regular,monospace;font-size:.82rem}
+.btn{padding:10px 14px;border:none;border-radius:6px;font-weight:700;cursor:pointer}
+.btn-approve{background:#1a7f37;color:#fff}
+.btn-reject{background:#cf222e;color:#fff}
+.status-line{font-size:.8rem;color:#656d76}
+@media (max-width: 900px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="page">
+    <div class="panel header">
+        <div>
+            <div class="title">AI Agent Debugger</div>
+            <div class="meta" id="trace-meta">Awaiting agent trace...</div>
+        </div>
+        <a href="/" style="color:#0969da;text-decoration:none;font-weight:600">Back to Dashboard</a>
+    </div>
+
+    <div class="panel">
+        <div class="section-title">Approval Controls</div>
+        <div class="controls">
+            <select id="ai-mode-select" class="mode-select" onchange="updateAiMode(this.value)">
+                <option value="manual">manual</option>
+                <option value="propose">propose</option>
+                <option value="auto">auto</option>
+            </select>
+            <input id="approve-action-input" class="action-input" type="text" placeholder="Optional edited action before approval">
+            <button class="btn btn-approve" onclick="approveAiAction()">Approve</button>
+            <button class="btn btn-reject" onclick="rejectAiAction()">Reject</button>
+        </div>
+        <div class="status-line" id="approval-status-line">No proposal selected yet.</div>
+    </div>
+
+    <div class="grid">
+        <div class="panel">
+            <div class="section-title">User Prompt</div>
+            <pre id="user-prompt">Awaiting trace...</pre>
+        </div>
+        <div class="panel">
+            <div class="section-title">Reasoning Summary</div>
+            <pre id="reasoning-summary">Awaiting trace...</pre>
+        </div>
+        <div class="panel">
+            <div class="section-title">Model Response</div>
+            <pre id="response-text">Awaiting trace...</pre>
+        </div>
+        <div class="panel">
+            <div class="section-title">Parsed Decision And Validation</div>
+            <pre id="parsed-decision">Awaiting trace...</pre>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="section-title">Recent Trace History</div>
+        <div class="history" id="trace-history"></div>
+    </div>
+</div>
+
+<script>
+const ws = new WebSocket('ws://' + location.host + '/ws');
+
+function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+function renderTrace(trace) {
+    if (!trace) return;
+    document.getElementById('trace-meta').textContent =
+        'decision=' + (trace.decision_id || '-') +
+        ' | state=' + (trace.state_id || '-') +
+        ' | status=' + (trace.status || '-') +
+        ' | approval=' + (trace.approval_status || '-') +
+        ' | action=' + (trace.final_decision || ((trace.parsed_proposal || {}).chosen_command || '-'));
+    document.getElementById('approval-status-line').textContent =
+        'Current proposal: ' + (trace.final_decision || ((trace.parsed_proposal || {}).chosen_command || '-')) +
+        ' | status=' + (trace.status || '-') +
+        ' | approval=' + (trace.approval_status || '-');
+    document.getElementById('user-prompt').textContent = trace.user_prompt || 'No prompt yet.';
+    document.getElementById('reasoning-summary').textContent =
+        trace.reasoning_summary_text || trace.reasoning_text || 'No reasoning summary available.';
+    document.getElementById('response-text').textContent =
+        trace.response_text || 'No response yet.';
+    document.getElementById('parsed-decision').textContent = JSON.stringify({
+        parsed_proposal: trace.parsed_proposal || null,
+        validation: trace.validation || null,
+        final_decision: trace.final_decision || null,
+        edited_action: trace.edited_action || null,
+        execution_outcome: trace.execution_outcome || null,
+        latency_ms: trace.latency_ms || null,
+        token_usage: trace.token_usage || null,
+        error: trace.error || null
+    }, null, 2);
+}
+
+function renderHistory(history) {
+    const box = document.getElementById('trace-history');
+    if (!history || history.length === 0) {
+        box.innerHTML = '<div class="meta">No traces yet.</div>';
+        return;
+    }
+    box.innerHTML = history.slice().reverse().map((trace) =>
+        '<div class="history-item">' +
+            '<strong>' + esc(trace.decision_id || '-') + '</strong>' +
+            '<div class="meta">status=' + esc(trace.status || '-') +
+            ' | action=' + esc(trace.final_decision || ((trace.parsed_proposal || {}).chosen_command || '-')) +
+            ' | approval=' + esc(trace.approval_status || '-') + '</div>' +
+            '<div style="margin-top:6px">' + esc((trace.reasoning_summary_text || trace.response_text || 'No text').slice(0, 220)) + '</div>' +
+        '</div>'
+    ).join('');
+}
+
+async function fetchAiState() {
+    const r = await fetch('/api/ai/state');
+    const d = await r.json();
+    document.getElementById('ai-mode-select').value = d.mode || 'manual';
+    renderTrace(d.latest_trace);
+    renderHistory(d.trace_history || []);
+}
+
+ws.onmessage = (event) => {
+    try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'agent_trace') {
+            renderTrace(data.payload);
+            fetchAiState();
+        } else if (data.type === 'agent_mode') {
+            document.getElementById('ai-mode-select').value = data.payload.mode;
+            document.getElementById('approval-status-line').textContent = 'AI mode set to ' + data.payload.mode + '.';
+        }
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+async function updateAiMode(mode) {
+    try {
+        const r = await fetch('/api/ai/mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode })
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        document.getElementById('approval-status-line').textContent = 'AI mode set to ' + mode + '.';
+    } catch (e) {
+        document.getElementById('approval-status-line').textContent = 'Mode update failed: ' + e.message;
+    }
+}
+
+async function approveAiAction() {
+    const edited = document.getElementById('approve-action-input').value.trim();
+    try {
+        const r = await fetch('/api/ai/approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: edited })
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        document.getElementById('approve-action-input').value = '';
+        document.getElementById('approval-status-line').textContent = 'AI action approved' + (edited ? ' with edit.' : '.');
+    } catch (e) {
+        document.getElementById('approval-status-line').textContent = 'Approval failed: ' + e.message;
+    }
+}
+
+async function rejectAiAction() {
+    try {
+        const r = await fetch('/api/ai/reject', { method: 'POST' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        document.getElementById('approval-status-line').textContent = 'AI action rejected.';
+    } catch (e) {
+        document.getElementById('approval-status-line').textContent = 'Reject failed: ' + e.message;
+    }
+}
+
+fetchAiState();
+</script>
+</body>
+</html>

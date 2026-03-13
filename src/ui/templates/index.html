@@ -154,6 +154,20 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .debug-section[open]>summary::before{transform:rotate(90deg)}
 .debug-section .debug-content{padding:12px 14px;border-top:1px solid var(--border);font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--text-muted)}
 
+/* AI panel */
+.ai-panel{display:flex;flex-direction:column;gap:8px;flex:1.4;min-width:320px}
+.ai-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ai-status{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)}
+.ai-mode-select{padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-panel);color:var(--text-primary);font-family:'JetBrains Mono',monospace;font-size:.75rem}
+.ai-trace-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;display:flex;flex-direction:column;gap:8px;min-height:220px}
+.ai-trace-meta{display:flex;gap:10px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:.68rem;color:var(--text-muted)}
+.ai-trace-label{font-size:.62rem;color:var(--text-muted);text-transform:uppercase;font-weight:700;letter-spacing:.05em}
+.ai-trace-pre{margin:0;background:var(--bg-panel);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:8px;white-space:pre-wrap;max-height:140px;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--text-secondary)}
+.ai-inline-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.ai-edit-input{flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:'JetBrains Mono',monospace;font-size:.78rem;background:var(--bg-panel);color:var(--text-primary)}
+.ai-link{font-size:.72rem;color:var(--accent-primary);text-decoration:none;font-weight:600}
+.ai-link:hover{text-decoration:underline}
+
 /* --- Comprehensive Log Panel --- */
 .log-panel{display:flex;flex-direction:column;flex:1.2;min-width:220px}
 .log-toolbar{display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap}
@@ -190,6 +204,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
         <div class="top-bar-left">
             <div class="top-bar-title">Spire Agent <span>&middot; Debug</span></div>
             <div id="connection-status"><span class="dot"></span> Connecting...</div>
+            <a class="ai-link" href="/ai" target="_blank" rel="noreferrer">AI Agent Debugger</a>
         </div>
         <div class="stats-group">
             <div class="stat-item"><span class="stat-label">Class</span><span class="stat-value" id="player-class">-</span></div>
@@ -297,6 +312,41 @@ button:disabled{opacity:.5;cursor:not-allowed}
                     <button class="btn-primary" onclick="submitManualAction()">Send</button>
                 </div>
             </div>
+            <div class="ai-panel">
+                <h2 class="section-title">AI Control</h2>
+                <div class="ai-toolbar">
+                    <span class="ai-status" id="ai-status">Idle</span>
+                    <select id="ai-mode-select" class="ai-mode-select" onchange="updateAiMode(this.value)">
+                        <option value="manual">manual</option>
+                        <option value="propose">propose</option>
+                        <option value="auto">auto</option>
+                    </select>
+                    <span id="ai-validation" class="ai-status">No proposal</span>
+                </div>
+                <div class="ai-trace-box">
+                    <div class="ai-trace-meta">
+                        <span id="ai-state-id">state: -</span>
+                        <span id="ai-decision-id">decision: -</span>
+                    </div>
+                    <div>
+                        <div class="ai-trace-label">Reasoning Summary</div>
+                        <pre id="ai-reasoning-summary" class="ai-trace-pre">No reasoning summary yet.</pre>
+                    </div>
+                    <div>
+                        <div class="ai-trace-label">Response</div>
+                        <pre id="ai-response" class="ai-trace-pre">Awaiting AI proposal...</pre>
+                    </div>
+                    <div class="ai-inline-row">
+                        <span class="ai-trace-label">Parsed Decision</span>
+                        <code id="ai-final-action">-</code>
+                    </div>
+                    <div class="ai-inline-row">
+                        <input type="text" id="ai-edit-action-input" class="ai-edit-input" placeholder="Edit approved action before send">
+                        <button class="btn-success" onclick="approveAiAction()">Approve</button>
+                        <button class="btn-danger" onclick="rejectAiAction()">Reject</button>
+                    </div>
+                </div>
+            </div>
             <div class="log-panel">
                 <h2 class="section-title">Session log</h2>
                 <div class="log-toolbar">
@@ -383,6 +433,7 @@ function clearLogs() {
 // --- WebSocket ---
 const ws = new WebSocket('ws://' + location.host + '/ws');
 const statusSpan = document.getElementById('connection-status');
+let latestAgentTrace = null;
 
 ws.onopen = () => {
     statusSpan.style.color = 'var(--accent-success)';
@@ -401,18 +452,39 @@ ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.type === 'state') {
             if (!isReplayMode) {
-                renderViewModel(data.payload);
-                log('State update received (floor ' + (data.payload.header?.floor || '?') + ')', 'state');
+                renderViewModel(data.payload.vm);
+                log('State update received (floor ' + (data.payload.vm.header?.floor || '?') + ')', 'state');
             }
         } else if (data.type === 'action') {
-            log('Action executed: ' + data.payload, 'action');
+            const actionText = typeof data.payload === 'string' ? data.payload : data.payload.action;
+            log('Action executed: ' + actionText, 'action');
         } else if (data.type === 'log') {
             log(data.payload, 'system');
+        } else if (data.type === 'agent_trace') {
+            latestAgentTrace = data.payload;
+            renderAgentTrace(data.payload);
+        } else if (data.type === 'agent_mode') {
+            document.getElementById('ai-mode-select').value = data.payload.mode;
         }
     } catch (e) {
         log('Failed to parse WS message: ' + e.message, 'error', 'error');
     }
 };
+
+async function fetchAiState() {
+    try {
+        const r = await fetch('/api/ai/state');
+        const d = await r.json();
+        document.getElementById('ai-mode-select').value = d.mode || 'manual';
+        if (d.latest_trace) {
+            latestAgentTrace = d.latest_trace;
+            renderAgentTrace(d.latest_trace);
+        }
+    } catch (e) {
+        log('Failed to fetch AI state: ' + e.message, 'error', 'error');
+    }
+}
+fetchAiState();
 
 // --- Replay ---
 let replayStates = [];
@@ -509,6 +581,62 @@ async function submitActionToServer(actionText, logPrefix) {
 
 window.submitManualActionBtn = function(a) { submitActionToServer(a, 'Button'); };
 document.getElementById('manual-action-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') submitManualAction(); });
+
+async function updateAiMode(mode) {
+    try {
+        const r = await fetch('/api/ai/mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode })
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        log('AI mode set to ' + mode, 'system');
+    } catch (e) {
+        log('Failed to update AI mode: ' + e.message, 'error', 'error');
+    }
+}
+
+async function approveAiAction() {
+    const edited = document.getElementById('ai-edit-action-input').value.trim();
+    try {
+        const r = await fetch('/api/ai/approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: edited })
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        document.getElementById('ai-edit-action-input').value = '';
+        log('AI action approved' + (edited ? ' with manual edit' : ''), 'action');
+    } catch (e) {
+        log('AI approve failed: ' + e.message, 'error', 'error');
+    }
+}
+
+async function rejectAiAction() {
+    try {
+        const r = await fetch('/api/ai/reject', { method: 'POST' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        log('AI action rejected', 'action');
+    } catch (e) {
+        log('AI reject failed: ' + e.message, 'error', 'error');
+    }
+}
+
+function renderAgentTrace(trace) {
+    if (!trace) return;
+    document.getElementById('ai-status').textContent = trace.status || 'idle';
+    document.getElementById('ai-validation').textContent =
+        trace.validation && trace.validation.valid
+            ? 'Valid action'
+            : ((trace.validation && trace.validation.error) || 'No validated action');
+    document.getElementById('ai-state-id').textContent = 'state: ' + (trace.state_id || '-');
+    document.getElementById('ai-decision-id').textContent = 'decision: ' + (trace.decision_id || '-');
+    document.getElementById('ai-reasoning-summary').textContent =
+        trace.reasoning_summary_text || trace.reasoning_text || 'No reasoning summary yet.';
+    document.getElementById('ai-response').textContent =
+        trace.response_text || 'No response yet.';
+    document.getElementById('ai-final-action').textContent = trace.final_decision || ((trace.parsed_proposal || {}).chosen_command || '-');
+}
 
 // --- Card HTML builder ---
 function cardHTML(card, index) {

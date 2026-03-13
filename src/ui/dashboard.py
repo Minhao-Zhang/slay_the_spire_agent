@@ -1,11 +1,13 @@
 import json
 import os
+from copy import deepcopy
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from src.agent.config import get_agent_config, load_system_prompt
 from src.ui.state_processor import process_state
 
 app = FastAPI()
@@ -14,6 +16,17 @@ manual_actions_queue = []
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
+LOGS_DIR = os.path.join(BASE_DIR, "..", "..", "logs")
+AGENT_CONFIG = get_agent_config()
+SYSTEM_PROMPT = load_system_prompt()
+
+ai_runtime = {
+    "mode": AGENT_CONFIG.default_mode,
+    "latest_state_id": "",
+    "latest_trace": None,
+    "trace_history": [],
+    "approved_action": None,
+}
 
 
 class ConnectionManager:
@@ -35,12 +48,74 @@ class ConnectionManager:
             except Exception:
                 pass
 
+
 manager = ConnectionManager()
+
+
+async def broadcast_event(event_type: str, payload):
+    await manager.broadcast(json.dumps({"type": event_type, "payload": payload}))
+
+
+def _replace_trace(trace: dict):
+    trace_history = ai_runtime["trace_history"]
+    decision_id = trace.get("decision_id")
+    incoming_seq = int(trace.get("update_seq", 0))
+    for idx, item in enumerate(trace_history):
+        if item.get("decision_id") == decision_id:
+            existing_seq = int(item.get("update_seq", 0))
+            if incoming_seq < existing_seq:
+                return False
+            trace_history[idx] = trace
+            break
+    else:
+        trace_history.append(trace)
+    ai_runtime["trace_history"] = trace_history[-50:]
+    latest = ai_runtime["latest_trace"]
+    if not latest:
+        ai_runtime["latest_trace"] = trace
+    elif latest.get("decision_id") == decision_id:
+        if incoming_seq >= int(latest.get("update_seq", 0)):
+            ai_runtime["latest_trace"] = trace
+    else:
+        ai_runtime["latest_trace"] = trace
+    return True
+
+
+def _mark_trace_stale():
+    trace = ai_runtime.get("latest_trace")
+    if not trace:
+        return None
+    if trace.get("approval_status") in {"approved", "edited"}:
+        return None
+    if trace.get("status") in {"awaiting_approval", "running", "building_prompt"}:
+        stale = deepcopy(trace)
+        stale["update_seq"] = int(stale.get("update_seq", 0)) + 1
+        stale["status"] = "stale"
+        stale["approval_status"] = "stale"
+        _replace_trace(stale)
+        return stale
+    return None
 
 
 @app.get("/", response_class=HTMLResponse)
 async def get_dashboard(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.get("/ai", response_class=HTMLResponse)
+async def get_ai_debugger(request: Request):
+    return templates.TemplateResponse("ai_debugger.html", {"request": request})
+
+
+@app.get("/api/ai/state")
+async def get_ai_state():
+    return {
+        "mode": ai_runtime["mode"],
+        "system_prompt": SYSTEM_PROMPT,
+        "latest_state_id": ai_runtime["latest_state_id"],
+        "latest_trace": ai_runtime["latest_trace"],
+        "trace_history": ai_runtime["trace_history"],
+    }
 
 
 @app.websocket("/ws")
@@ -57,21 +132,24 @@ async def websocket_endpoint(websocket: WebSocket):
 async def update_state(request: Request):
     try:
         data = await request.json()
+        meta = data.get("meta", {})
+        state_id = meta.get("state_id", "")
+        if state_id and state_id != ai_runtime["latest_state_id"]:
+            stale_trace = _mark_trace_stale()
+            ai_runtime["latest_state_id"] = state_id
+            ai_runtime["approved_action"] = None
+            if stale_trace:
+                await broadcast_event("agent_trace", stale_trace)
+
         vm = process_state(data)
-        message = json.dumps({"type": "state", "payload": vm})
-        await manager.broadcast(message)
+        await broadcast_event("state", {"vm": vm, "state_id": state_id})
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
-# --- Local Replay API ---
-LOGS_DIR = os.path.join(BASE_DIR, "..", "..", "logs")
-
-
 @app.get("/api/runs")
 async def get_runs():
-    """Returns a list of all available run directories in the logs folder."""
     try:
         if not os.path.exists(LOGS_DIR):
             return {"runs": []}
@@ -84,18 +162,17 @@ async def get_runs():
 
 @app.get("/api/runs/{run_name}")
 async def get_run_states(run_name: str):
-    """Returns an ordered list of processed view-model payloads for a run."""
     try:
         run_path = os.path.join(LOGS_DIR, run_name)
         if not os.path.exists(run_path):
             return {"status": "error", "message": "Run not found"}
 
         states = []
-        files = [f for f in os.listdir(run_path) if f.endswith('.json')]
+        files = [f for f in os.listdir(run_path) if f.endswith(".json")]
         files.sort()
 
         for file in files:
-            with open(os.path.join(run_path, file), 'r', encoding='utf-8') as f:
+            with open(os.path.join(run_path, file), "r", encoding="utf-8") as f:
                 data = json.load(f)
                 states.append(process_state(data))
 
@@ -106,9 +183,12 @@ async def get_run_states(run_name: str):
 
 @app.get("/poll_instruction")
 async def poll_instruction():
-    """Called by main.py to see what it should do."""
+    approved = ai_runtime["approved_action"]
+    ai_runtime["approved_action"] = None
     return {
-        "manual_action": manual_actions_queue.pop(0) if manual_actions_queue else None
+        "manual_action": manual_actions_queue.pop(0) if manual_actions_queue else None,
+        "approved_action": approved,
+        "agent_mode": ai_runtime["mode"],
     }
 
 
@@ -117,8 +197,7 @@ async def log_message(request: Request):
     try:
         data = await request.json()
         message = data.get("message", "")
-        ws_msg = json.dumps({"type": "log", "payload": message})
-        await manager.broadcast(ws_msg)
+        await broadcast_event("log", message)
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -128,9 +207,20 @@ async def log_message(request: Request):
 async def action_taken(request: Request):
     try:
         data = await request.json()
-        action = data.get("action", "")
-        message = json.dumps({"type": "action", "payload": action})
-        await manager.broadcast(message)
+        await broadcast_event("action", data)
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/agent_trace")
+async def update_agent_trace(request: Request):
+    try:
+        trace = await request.json()
+        replaced = _replace_trace(trace)
+        if not replaced:
+            return {"status": "ignored", "reason": "stale_trace"}
+        await broadcast_event("agent_trace", trace)
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -140,9 +230,16 @@ class ManualAction(BaseModel):
     action: str
 
 
+class ModeUpdate(BaseModel):
+    mode: str
+
+
+class ApprovalRequest(BaseModel):
+    action: str = ""
+
+
 @app.post("/submit_action")
 async def submit_action(cmd: ManualAction):
-    """Called by the frontend UI to queue a manual action."""
     action_str = cmd.action.strip()
     if action_str:
         manual_actions_queue.append(action_str)
@@ -150,6 +247,59 @@ async def submit_action(cmd: ManualAction):
     return {"status": "ignored"}
 
 
+@app.post("/api/ai/mode")
+async def set_ai_mode(cmd: ModeUpdate):
+    mode = cmd.mode.strip().lower()
+    if mode not in {"manual", "propose", "auto"}:
+        return {"status": "error", "message": "Invalid mode"}
+    ai_runtime["mode"] = mode
+    await broadcast_event("agent_mode", {"mode": mode})
+    return {"status": "success", "mode": mode}
+
+
+@app.post("/api/ai/approve")
+async def approve_ai_action(cmd: ApprovalRequest):
+    trace = ai_runtime.get("latest_trace")
+    if not trace:
+        return {"status": "error", "message": "No proposal available"}
+
+    action = cmd.action.strip() or trace.get("final_decision") or (trace.get("parsed_proposal") or {}).get("chosen_command", "")
+    if not action:
+        return {"status": "error", "message": "No action available to approve"}
+
+    ai_runtime["approved_action"] = {
+        "state_id": ai_runtime["latest_state_id"],
+        "action": action,
+        "edited": bool(cmd.action.strip()),
+    }
+    updated = deepcopy(trace)
+    updated["status"] = "approved"
+    updated["approval_status"] = "edited" if cmd.action.strip() else "approved"
+    updated["update_seq"] = int(updated.get("update_seq", 0)) + 1
+    if cmd.action.strip():
+        updated["edited_action"] = action
+    updated["final_decision"] = action
+    _replace_trace(updated)
+    await broadcast_event("agent_trace", updated)
+    return {"status": "success", "action": action}
+
+
+@app.post("/api/ai/reject")
+async def reject_ai_action():
+    trace = ai_runtime.get("latest_trace")
+    if not trace:
+        return {"status": "ignored"}
+    updated = deepcopy(trace)
+    updated["update_seq"] = int(updated.get("update_seq", 0)) + 1
+    updated["status"] = "rejected"
+    updated["approval_status"] = "rejected"
+    ai_runtime["approved_action"] = None
+    _replace_trace(updated)
+    await broadcast_event("agent_trace", updated)
+    return {"status": "success"}
+
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
