@@ -40,7 +40,6 @@ class InspectExhaustPileTool(BaseModel):
 
 class FinalDecision(BaseModel):
     chosen_command: str
-    why: str = ""
 
 
 class ParsedAgentTurn(BaseModel):

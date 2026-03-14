@@ -47,7 +47,7 @@ Rules:
 Write your normal visible assistant reply first, then return exactly one of the following:
 
 <final_decision>
-{"chosen_command":"PLAY 1 0","why":"Use the first card on the first monster because it is the highest-value legal attack right now."}
+{"chosen_command":"PLAY 1 0"}
 </final_decision>
 
 Requirements for `chosen_command`:

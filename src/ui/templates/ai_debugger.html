@@ -11,10 +11,11 @@ body{font-family:system-ui,sans-serif;background:#f6f8fa;color:#1f2328;margin:0;
 .header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .title{font-weight:700;font-size:1.1rem}
 .meta{font-family:ui-monospace,SFMono-Regular,monospace;font-size:.8rem;color:#656d76}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid-output{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .section-title{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:#656d76;font-weight:700;margin-bottom:8px}
 pre{margin:0;white-space:pre-wrap;word-break:break-word;background:#f6f8fa;border:1px solid #eaeef2;border-radius:6px;padding:12px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:.78rem;min-height:140px;max-height:320px;overflow:auto}
-.history{display:flex;flex-direction:column;gap:8px}
+#user-prompt{max-height:360px}
+.history{display:flex;flex-direction:column;gap:8px;max-height:280px;overflow:auto}
 .history-item{border:1px solid #eaeef2;border-radius:6px;padding:10px;background:#f6f8fa}
 .history-item strong{display:block}
 .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -24,7 +25,7 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;background:#f6f8fa;borde
 .btn-approve{background:#1a7f37;color:#fff}
 .btn-reject{background:#cf222e;color:#fff}
 .status-line{font-size:.8rem;color:#656d76}
-@media (max-width: 900px){.grid{grid-template-columns:1fr}}
+@media (max-width: 900px){.grid-output{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -52,15 +53,11 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;background:#f6f8fa;borde
         <div class="status-line" id="approval-status-line">No proposal selected yet.</div>
     </div>
 
-    <div class="grid">
-        <div class="panel">
-            <div class="section-title">User Prompt</div>
-            <pre id="user-prompt">Awaiting trace...</pre>
-        </div>
-        <div class="panel">
-            <div class="section-title">Reasoning Summary</div>
-            <pre id="reasoning-summary">Awaiting trace...</pre>
-        </div>
+    <div class="panel">
+        <div class="section-title">User Prompt</div>
+        <pre id="user-prompt">Awaiting trace...</pre>
+    </div>
+    <div class="grid-output">
         <div class="panel">
             <div class="section-title">Model Response</div>
             <pre id="response-text">Awaiting trace...</pre>
@@ -99,8 +96,6 @@ function renderTrace(trace) {
         ' | status=' + (trace.status || '-') +
         ' | approval=' + (trace.approval_status || '-');
     document.getElementById('user-prompt').textContent = trace.user_prompt || 'No prompt yet.';
-    document.getElementById('reasoning-summary').textContent =
-        trace.reasoning_summary_text || trace.reasoning_text || 'No reasoning summary available.';
     document.getElementById('response-text').textContent =
         trace.response_text || 'No response yet.';
     document.getElementById('parsed-decision').textContent = JSON.stringify({
@@ -137,7 +132,7 @@ function renderHistory(history) {
             '<div class="meta">status=' + esc(trace.status || '-') +
             ' | action=' + esc(trace.final_decision || ((trace.parsed_proposal || {}).chosen_command || '-')) +
             ' | approval=' + esc(trace.approval_status || '-') + '</div>' +
-            '<div style="margin-top:6px">' + esc((trace.reasoning_summary_text || trace.response_text || 'No text').slice(0, 220)) + '</div>' +
+            '<div style="margin-top:6px">' + esc((trace.response_text || 'No text').slice(0, 220)) + '</div>' +
         '</div>'
     ).join('');
 }

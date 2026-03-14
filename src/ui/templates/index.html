@@ -329,10 +329,6 @@ button:disabled{opacity:.5;cursor:not-allowed}
                         <span id="ai-decision-id">decision: -</span>
                     </div>
                     <div>
-                        <div class="ai-trace-label">Reasoning Summary</div>
-                        <pre id="ai-reasoning-summary" class="ai-trace-pre">No reasoning summary yet.</pre>
-                    </div>
-                    <div>
                         <div class="ai-trace-label">Response</div>
                         <pre id="ai-response" class="ai-trace-pre">Awaiting AI proposal...</pre>
                     </div>
@@ -646,8 +642,6 @@ function renderAgentTrace(trace) {
             : ((trace.validation && trace.validation.error) || 'No validated action');
     document.getElementById('ai-state-id').textContent = 'state: ' + (trace.state_id || '-');
     document.getElementById('ai-decision-id').textContent = 'decision: ' + (trace.decision_id || '-');
-    document.getElementById('ai-reasoning-summary').textContent =
-        trace.reasoning_summary_text || trace.reasoning_text || 'No reasoning summary yet.';
     document.getElementById('ai-response').textContent =
         trace.response_text || 'No response yet.';
     document.getElementById('ai-final-action').textContent = trace.final_decision || ((trace.parsed_proposal || {}).chosen_command || '-');
