@@ -10,7 +10,7 @@ from src.agent.llm_client import LLMClient
 from src.agent.policy import inspect_pile, parse_agent_output, validate_final_decision
 from src.agent.prompt_builder import build_user_prompt, format_pile_tool_result
 from src.agent.schemas import AgentMode, AgentTrace, ParsedAgentTurn
-from src.agent.session_state import TurnConversation
+from src.agent.session_state import TurnConversation, format_executed_action
 from src.agent.tracing import create_trace
 
 
@@ -118,17 +118,14 @@ class SpireDecisionAgent:
     def _build_prompt(self, state: GraphState) -> GraphState:
         vm = state["vm"]
         turn_key = state["trace"].turn_key
-        if self.session.turn_key != turn_key and self.session.messages and self.llm:
-            summary = self.llm.summarize_for_next_scene(list(self.session.messages))
+        self.session.set_scene(turn_key)
+        if self.llm and self.session.needs_compaction(self.config.history_compact_token_threshold):
+            keep_recent = min(self.config.history_keep_recent, max(len(self.session.messages) - 1, 0))
+            older_messages = self.session.messages[:-keep_recent] if keep_recent else list(self.session.messages)
+            summary = self.llm.summarize_history_compaction(older_messages)
             if summary:
-                self.session.previous_scene_summary = summary
-        self.session.reset_for_turn(turn_key)
+                self.session.compact_history(summary, self.config.history_keep_recent)
         user_prompt = build_user_prompt(vm, state["state_id"], self.session.action_history)
-        if self.session.previous_scene_summary:
-            user_prompt = (
-                f"## PREVIOUS SCENE SUMMARY\n{self.session.previous_scene_summary}\n\n{user_prompt}"
-            )
-            self.session.previous_scene_summary = ""
         state["trace"].status = "running"
         state["trace"].user_prompt = user_prompt
         state["messages"] = self.session.messages + [{"role": "user", "content": user_prompt}]
@@ -275,9 +272,14 @@ class SpireDecisionAgent:
             self.session.append_assistant(result["trace"].raw_output)
         return result["trace"]
 
-    def remember_executed_action(self, trace: AgentTrace | None, action: str) -> None:
+    def remember_executed_action(
+        self,
+        trace: AgentTrace | None,
+        action: str,
+        legal_actions: list[dict[str, Any]] | None = None,
+    ) -> None:
         if not action:
             return
-        if trace and trace.turn_key == self.session.turn_key:
-            self.session.remember_action(action)
+        if trace and trace.turn_key == self.session.scene_key:
+            self.session.remember_action(format_executed_action(action, legal_actions))
 

@@ -25,6 +25,8 @@ class AgentConfig(BaseModel):
     probe_timeout_seconds: float = Field(default=6.0, gt=0)
     max_retries: int = Field(default=0, ge=0, le=2)
     proposal_timeout_seconds: float = Field(default=20.0, gt=0)
+    history_compact_token_threshold: int = Field(default=100_000, ge=0)
+    history_keep_recent: int = Field(default=6, ge=0)
 
     @property
     def enabled(self) -> bool:
@@ -47,6 +49,10 @@ def get_agent_config() -> AgentConfig:
         probe_timeout_seconds=float(os.getenv("LLM_PROBE_TIMEOUT_SECONDS", "6")),
         max_retries=int(os.getenv("LLM_MAX_RETRIES", "0")),
         proposal_timeout_seconds=float(os.getenv("LLM_PROPOSAL_TIMEOUT_SECONDS", "20")),
+        history_compact_token_threshold=int(
+            os.getenv("LLM_HISTORY_COMPACT_TOKEN_THRESHOLD", "100000")
+        ),
+        history_keep_recent=int(os.getenv("LLM_HISTORY_KEEP_RECENT", "6")),
     )
 
 

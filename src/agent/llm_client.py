@@ -476,8 +476,8 @@ class LLMClient:
             "token_usage": usage,
         }
 
-    def summarize_for_next_scene(self, messages: list[dict[str, Any]]) -> str:
-        """Use the fast model to summarize a scene's conversation for context in the next scene."""
+    def summarize_history_compaction(self, messages: list[dict[str, Any]]) -> str:
+        """Summarize older conversation turns before compacting them into memory."""
         if not messages:
             return ""
         if not self.available or not self.client:
@@ -491,9 +491,10 @@ class LLMClient:
             if not transcript.strip():
                 return ""
             prompt = (
-                "Summarize this Slay the Spire agent conversation in 2-3 short sentences. "
-                "Focus on: key decisions made, current state (HP, relics, deck), and what the player is about to do next. "
-                "Omit game state details that will appear in the next prompt."
+                "Summarize these older Slay the Spire agent turns into a compact memory block. "
+                "Keep it to 4 short bullet points maximum. Focus on persistent strategy context: deck direction, "
+                "important relics or scaling pieces, pathing goals, boss preparation, and unusual constraints. "
+                "Do not restate routine board-state details that will appear in the live prompt."
             )
             completion = self.client.chat.completions.create(
                 model=self.config.fast_model,

@@ -69,6 +69,9 @@ class PersistedAiLog(BaseModel):
     status: str = ""
     final_decision: Optional[str] = None
     approval_status: str = ""
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
     error: str = ""
 
 

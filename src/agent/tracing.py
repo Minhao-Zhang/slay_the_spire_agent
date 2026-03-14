@@ -23,8 +23,9 @@ def build_decision_id(state_id: str) -> str:
 
 
 def build_turn_key(vm: dict) -> str:
-    """History is reset when this key changes. Key is per scene-type (and floor):
-    - In combat: one key per fight (same history for all turns in that fight).
+    """Build a scene identifier for traces and scene-scoped prompt context.
+
+    - In combat: one key per fight (same key for all turns in that fight).
     - Out of combat: one key per (floor, screen type), e.g. MAP, COMBAT_REWARD, GRID.
     """
     header = vm.get("header") or {}
@@ -32,7 +33,7 @@ def build_turn_key(vm: dict) -> str:
     combat = vm.get("combat")
     floor = header.get("floor", "?")
     if combat:
-        # One history per combat (whole fight); turn not included so turns share context.
+        # One scene key per combat; turn is omitted so the whole fight shares the same key.
         return f"COMBAT:{floor}"
     scene_type = screen.get("type", "NONE")
     return f"{scene_type}:{floor}"
@@ -63,6 +64,9 @@ def build_persisted_ai_log(trace: AgentTrace) -> PersistedAiLog:
         status=trace.status,
         final_decision=trace.final_decision,
         approval_status=trace.approval_status,
+        input_tokens=trace.token_usage.input_tokens,
+        output_tokens=trace.token_usage.output_tokens,
+        total_tokens=trace.token_usage.total_tokens,
         error=trace.error,
     )
 

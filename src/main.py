@@ -10,6 +10,7 @@ from pathlib import Path
 import requests
 
 from src.agent.graph import SpireDecisionAgent
+from src.agent.session_state import is_command_failure_state, mark_trace_command_failed
 from src.agent.schemas import AgentTrace
 from src.agent.tracing import build_state_id, write_ai_log
 from src.ui.state_processor import process_state
@@ -83,6 +84,12 @@ def main():
     last_proposed_state_id = None
     trace_cache: dict[str, AgentTrace] = {}
     state_log_paths: dict[str, Path] = {}
+    last_ai_execution: dict[str, object | None] = {
+        "trace": None,
+        "state_id": None,
+        "action": None,
+        "source": None,
+    }
     proposal_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="spire-ai")
     proposal_state: dict[str, object] = {
         "token": 0,
@@ -223,7 +230,14 @@ def main():
     last_log_signature = None
     duplicate_run_length = 0
 
-    def finalize_ai_execution(trace, state_id: str, action: str, approval_status: str, source: str):
+    def finalize_ai_execution(
+        trace,
+        state_id: str,
+        action: str,
+        approval_status: str,
+        source: str,
+        legal_actions: list[dict] | None = None,
+    ):
         trace.status = "executed"
         trace.approval_status = approval_status
         trace.final_decision = action
@@ -233,7 +247,11 @@ def main():
         state_log_path = state_log_paths.get(state_id)
         if state_log_path:
             write_ai_log(state_log_path, trace)
-        agent.remember_executed_action(trace, action)
+        agent.remember_executed_action(trace, action, legal_actions)
+        last_ai_execution["trace"] = trace
+        last_ai_execution["state_id"] = state_id
+        last_ai_execution["action"] = action
+        last_ai_execution["source"] = source
         execute_action(action, source)
 
     while True:
@@ -250,7 +268,39 @@ def main():
             print("state", flush=True)
             continue
 
+        command_failure = is_command_failure_state(state)
+        if command_failure and last_ai_execution.get("trace") and str(last_ai_execution.get("source", "")).startswith("ai"):
+            failed_trace = mark_trace_command_failed(
+                last_ai_execution["trace"],
+                command_failure,
+                str(last_ai_execution.get("action") or ""),
+            )
+            notify_dashboard("/agent_trace", failed_trace.model_dump(mode="json"))
+            failed_state_id = str(last_ai_execution.get("state_id") or "")
+            failed_state_log_path = state_log_paths.get(failed_state_id)
+            if failed_state_log_path:
+                write_ai_log(failed_state_log_path, failed_trace)
+            notify_dashboard(
+                "/log",
+                {
+                    "message": (
+                        f"AI command failed and can be retried on the next valid state: "
+                        f"{last_ai_execution.get('action')} ({command_failure})"
+                    )
+                },
+            )
+            trace_cache[failed_state_id] = failed_trace
+            last_proposed_state_id = None
+            last_ai_execution = {"trace": None, "state_id": None, "action": None, "source": None}
+
         state_id = build_state_id(state)
+        if (
+            not command_failure
+            and last_ai_execution.get("trace")
+            and str(last_ai_execution.get("source", "")).startswith("ai")
+            and state_id != str(last_ai_execution.get("state_id") or "")
+        ):
+            last_ai_execution = {"trace": None, "state_id": None, "action": None, "source": None}
         vm = process_state(state)
         notify_dashboard("/update_state", {"state": state, "meta": {"state_id": state_id}})
 
@@ -283,6 +333,7 @@ def main():
                     pending_trace.final_decision,
                     "auto_approved",
                     "ai-auto",
+                    vm.get("actions", []),
                 )
                 last_proposed_state_id = None
                 last_state_snapshot = None
@@ -302,6 +353,7 @@ def main():
                         action,
                         "edited" if approved_action.get("edited") else "approved",
                         "ai",
+                        vm.get("actions", []),
                     )
                 else:
                     execute_action(action, "ai")
@@ -363,6 +415,7 @@ def main():
 
         if manual_action:
             execute_action(manual_action, "manual")
+            last_ai_execution = {"trace": None, "state_id": None, "action": None, "source": None}
             last_proposed_state_id = None
             last_state_snapshot = None
             last_log_signature = None
