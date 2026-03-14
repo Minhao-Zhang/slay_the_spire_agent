@@ -102,6 +102,60 @@ def _map_planning_lines(vm: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _map_scene_lines(vm: dict[str, Any]) -> list[str]:
+    """Build a text map scene (layout, connections, current, next choices) for path selection."""
+    screen = vm.get("screen") or {}
+    if screen.get("type") != "MAP":
+        return []
+
+    map_state = vm.get("map") or {}
+    nodes = map_state.get("nodes") or []
+    current_node = map_state.get("current_node")
+    next_nodes = map_state.get("next_nodes") or []
+    boss_available = bool(map_state.get("boss_available", False))
+
+    lines: list[str] = []
+
+    if nodes:
+        by_y: dict[int, list[dict[str, Any]]] = {}
+        for n in nodes:
+            y = n.get("y", 0)
+            by_y.setdefault(y, []).append(n)
+        layout_parts = []
+        for y in sorted(by_y):
+            row = sorted(by_y[y], key=lambda n: (n.get("x", 0), n.get("y", 0)))
+            cells = [f"({n.get('x','?')},{n.get('y','?')})={n.get('symbol','?')}" for n in row]
+            layout_parts.append(f"y={y}: " + " ".join(cells))
+        lines.append("layout: " + " | ".join(layout_parts))
+
+        connections: list[str] = []
+        for n in nodes:
+            x, y = n.get("x"), n.get("y")
+            for c in (n.get("children") or []):
+                cx, cy = c.get("x"), c.get("y")
+                connections.append(f"({x},{y})->({cx},{cy})")
+        if connections:
+            lines.append("connections: " + ", ".join(connections))
+
+    if current_node is not None:
+        x, y = current_node.get("x", "?"), current_node.get("y", "?")
+        sym = current_node.get("symbol", "?")
+        lines.append(f"you_are_here: ({x},{y}) [{sym}]")
+    else:
+        lines.append("you_are_here: Selecting first node")
+
+    if next_nodes:
+        choice_parts = [
+            f"{i}. ({n.get('x','?')},{n.get('y','?')})={n.get('symbol','?')} -> choose {i}"
+            for i, n in enumerate(next_nodes)
+        ]
+        lines.append("next_choices: " + " | ".join(choice_parts))
+    if boss_available:
+        lines.append("boss: available -> choose boss")
+
+    return lines
+
+
 def _valid_play_lines(legal_actions: list[dict[str, Any]]) -> list[str]:
     lines: list[str] = []
     for action in legal_actions:
@@ -187,6 +241,9 @@ def build_user_prompt(vm: dict[str, Any], _state_id: str, recent_actions: list[s
     ]
     if map_lines:
         sections.insert(8, ("MAP PLANNING", _fmt_list(map_lines)))
+    map_scene = _map_scene_lines(vm)
+    if map_scene:
+        sections.insert(9, ("MAP SCENE", _fmt_list(map_scene)))
 
     return "\n\n".join(f"## {title}\n{body}" for title, body in sections) + "\n"
 

@@ -12,6 +12,7 @@ Gameplay guidance:
 6. Prefer upgrades and relic choices that create large power spikes, meaningful scaling, or solve a known problem.
 7. Make sure the deck has scaling. In longer fights, you need damage scaling, defensive scaling, or stronger energy and draw engines.
 8. Be willing to make uncomfortable but strong choices if the situation calls for them. Do not default to "safe" lines without checking whether they are actually strongest.
+9. In this game, healing HP is very rare. Always be conservative with your life total—avoid unnecessary damage and value sustain (rest sites, potions, relics) highly.
 
 Elite guidance:
 

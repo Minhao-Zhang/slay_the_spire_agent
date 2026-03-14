@@ -12,7 +12,7 @@ import requests
 from src.agent.graph import SpireDecisionAgent
 from src.agent.session_state import is_command_failure_state, mark_trace_command_failed
 from src.agent.schemas import AgentTrace
-from src.agent.tracing import build_state_id, write_ai_log
+from src.agent.tracing import build_state_id, create_trace, write_ai_log
 from src.ui.state_processor import process_state
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -371,7 +371,36 @@ def main():
             and state_id != last_proposed_state_id
             and proposal_state.get("future") is None
         )
-        if should_start_proposal:
+        actions_list = vm.get("actions") or []
+        single_action_short_circuit = (
+            should_start_proposal
+            and len(actions_list) == 1
+        )
+        if single_action_short_circuit:
+            only_command = actions_list[0].get("command", "")
+            trace = create_trace(vm, state_id, agent_mode, "", "")
+            trace.status = "awaiting_approval"
+            trace.final_decision = only_command
+            trace.response_text = "(Single legal action; no LLM call.)"
+            trace_cache[state_id] = trace
+            notify_dashboard("/agent_trace", trace.model_dump(mode="json"))
+            if agent_mode == "auto":
+                finalize_ai_execution(
+                    trace,
+                    state_id,
+                    only_command,
+                    "auto_approved",
+                    "ai-auto",
+                    actions_list,
+                )
+                last_proposed_state_id = None
+                last_state_snapshot = None
+                last_log_signature = None
+                duplicate_run_length = 0
+                notify_dashboard("/log", {"message": f"Single action for state {state_id}: {only_command!r} (no LLM)."})
+                continue
+            last_proposed_state_id = state_id
+        elif should_start_proposal:
             start_proposal(vm, state_id, agent_mode)
             last_proposed_state_id = state_id
 
