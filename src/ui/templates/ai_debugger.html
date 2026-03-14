@@ -115,6 +115,16 @@ function renderTrace(trace) {
     }, null, 2);
 }
 
+function renderAiRuntimeStatus(payload) {
+    if (!payload) return;
+    const parts = [
+        'AI status=' + (payload.status || 'unknown'),
+        payload.api_style ? 'api=' + payload.api_style : '',
+        payload.message || ''
+    ].filter(Boolean);
+    document.getElementById('approval-status-line').textContent = parts.join(' | ');
+}
+
 function renderHistory(history) {
     const box = document.getElementById('trace-history');
     if (!history || history.length === 0) {
@@ -136,6 +146,11 @@ async function fetchAiState() {
     const r = await fetch('/api/ai/state');
     const d = await r.json();
     document.getElementById('ai-mode-select').value = d.mode || 'manual';
+    renderAiRuntimeStatus({
+        status: d.ai_status,
+        api_style: d.ai_api_style,
+        message: d.ai_status_message
+    });
     renderTrace(d.latest_trace);
     renderHistory(d.trace_history || []);
 }
@@ -146,6 +161,8 @@ ws.onmessage = (event) => {
         if (data.type === 'agent_trace') {
             renderTrace(data.payload);
             fetchAiState();
+        } else if (data.type === 'ai_status') {
+            renderAiRuntimeStatus(data.payload);
         } else if (data.type === 'agent_mode') {
             document.getElementById('ai-mode-select').value = data.payload.mode;
             document.getElementById('approval-status-line').textContent = 'AI mode set to ' + data.payload.mode + '.';

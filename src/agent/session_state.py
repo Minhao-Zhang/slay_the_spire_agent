@@ -8,6 +8,7 @@ class TurnConversation:
     turn_key: str | None = None
     messages: list[dict[str, str]] = field(default_factory=list)
     action_history: list[str] = field(default_factory=list)
+    previous_scene_summary: str = ""
 
     def reset_for_turn(self, turn_key: str) -> None:
         if self.turn_key == turn_key:

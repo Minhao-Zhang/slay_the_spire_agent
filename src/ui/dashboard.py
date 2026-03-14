@@ -26,6 +26,10 @@ ai_runtime = {
     "latest_trace": None,
     "trace_history": [],
     "approved_action": None,
+    "ai_enabled": False,
+    "ai_status": "unknown",
+    "ai_api_style": "",
+    "ai_status_message": "",
 }
 
 
@@ -115,6 +119,10 @@ async def get_ai_state():
         "latest_state_id": ai_runtime["latest_state_id"],
         "latest_trace": ai_runtime["latest_trace"],
         "trace_history": ai_runtime["trace_history"],
+        "ai_enabled": ai_runtime["ai_enabled"],
+        "ai_status": ai_runtime["ai_status"],
+        "ai_api_style": ai_runtime["ai_api_style"],
+        "ai_status_message": ai_runtime["ai_status_message"],
     }
 
 
@@ -168,7 +176,7 @@ async def get_run_states(run_name: str):
             return {"status": "error", "message": "Run not found"}
 
         states = []
-        files = [f for f in os.listdir(run_path) if f.endswith(".json")]
+        files = [f for f in os.listdir(run_path) if f.endswith(".json") and not f.endswith(".ai.json")]
         files.sort()
 
         for file in files:
@@ -238,6 +246,28 @@ class ApprovalRequest(BaseModel):
     action: str = ""
 
 
+class AiStatusUpdate(BaseModel):
+    enabled: bool = False
+    status: str = "unknown"
+    api_style: str = ""
+    message: str = ""
+
+
+async def _store_ai_status(payload: dict) -> dict:
+    ai_runtime["ai_enabled"] = payload.get("enabled", ai_runtime["ai_enabled"])
+    ai_runtime["ai_status"] = payload.get("status", ai_runtime["ai_status"])
+    ai_runtime["ai_api_style"] = payload.get("api_style", ai_runtime["ai_api_style"])
+    ai_runtime["ai_status_message"] = payload.get("message", ai_runtime["ai_status_message"])
+    merged = {
+        "enabled": ai_runtime["ai_enabled"],
+        "status": ai_runtime["ai_status"],
+        "api_style": ai_runtime["ai_api_style"],
+        "message": ai_runtime["ai_status_message"],
+    }
+    await broadcast_event("ai_status", merged)
+    return merged
+
+
 @app.post("/submit_action")
 async def submit_action(cmd: ManualAction):
     action_str = cmd.action.strip()
@@ -297,6 +327,18 @@ async def reject_ai_action():
     _replace_trace(updated)
     await broadcast_event("agent_trace", updated)
     return {"status": "success"}
+
+
+@app.post("/api/ai/status")
+async def update_ai_status(cmd: AiStatusUpdate):
+    payload = {
+        "enabled": cmd.enabled,
+        "status": cmd.status,
+        "api_style": cmd.api_style,
+        "message": cmd.message,
+    }
+    stored = await _store_ai_status(payload)
+    return {"status": "success", **stored}
 
 
 if __name__ == "__main__":

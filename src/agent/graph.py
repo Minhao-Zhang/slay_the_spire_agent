@@ -34,7 +34,60 @@ class SpireDecisionAgent:
         self.system_prompt = load_system_prompt()
         self.session = TurnConversation()
         self.llm = LLMClient(self.config) if self.config.enabled else None
+        self.ai_enabled = False
+        self.ai_status = "disabled"
+        self.ai_api_style = ""
+        if not self.config.api_key:
+            self.ai_disabled_reason = "LLM mis-configured: missing LLM_API_KEY."
+            self.ai_status = "disabled"
+        elif not self.config.reasoning_model:
+            self.ai_disabled_reason = "LLM mis-configured: missing LLM_MODEL_REASONING."
+            self.ai_status = "disabled"
+        elif self.llm:
+            self.ai_disabled_reason = "Checking LLM configuration..."
+            self.ai_status = "checking"
+        else:
+            self.ai_disabled_reason = "LLM is not configured."
+            self.ai_status = "disabled"
         self.graph = self._build_graph()
+
+    def set_ai_unavailable(self, status: str, reason: str) -> None:
+        self.ai_enabled = False
+        self.ai_status = status
+        self.ai_disabled_reason = reason
+
+    def initialize_ai_runtime(self) -> dict[str, str | bool]:
+        if not self.llm:
+            self.ai_enabled = False
+            self.ai_status = "disabled"
+            return {
+                "enabled": False,
+                "status": self.ai_status,
+                "api_style": "",
+                "message": self.ai_disabled_reason,
+            }
+
+        self.llm.check_api_capabilities()
+        self.ai_enabled = self.llm.available
+        self.ai_api_style = self.llm.api_style or ""
+        if self.ai_enabled:
+            self.ai_disabled_reason = ""
+            self.ai_status = "ready"
+            return {
+                "enabled": True,
+                "status": self.ai_status,
+                "api_style": self.ai_api_style,
+                "message": f"LLM connected via {self.ai_api_style}.",
+            }
+
+        self.ai_disabled_reason = self.llm.disabled_reason or "LLM is unavailable."
+        self.ai_status = "failed" if self.llm.capability_state == "failed" else "disabled"
+        return {
+            "enabled": False,
+            "status": self.ai_status,
+            "api_style": "",
+            "message": self.ai_disabled_reason,
+        }
 
     def _build_graph(self):
         graph = StateGraph(GraphState)
@@ -65,8 +118,17 @@ class SpireDecisionAgent:
     def _build_prompt(self, state: GraphState) -> GraphState:
         vm = state["vm"]
         turn_key = state["trace"].turn_key
+        if self.session.turn_key != turn_key and self.session.messages and self.llm:
+            summary = self.llm.summarize_for_next_scene(list(self.session.messages))
+            if summary:
+                self.session.previous_scene_summary = summary
         self.session.reset_for_turn(turn_key)
         user_prompt = build_user_prompt(vm, state["state_id"], self.session.action_history)
+        if self.session.previous_scene_summary:
+            user_prompt = (
+                f"## PREVIOUS SCENE SUMMARY\n{self.session.previous_scene_summary}\n\n{user_prompt}"
+            )
+            self.session.previous_scene_summary = ""
         state["trace"].status = "running"
         state["trace"].user_prompt = user_prompt
         state["messages"] = self.session.messages + [{"role": "user", "content": user_prompt}]
@@ -75,9 +137,9 @@ class SpireDecisionAgent:
         return state
 
     def _run_agent(self, state: GraphState) -> GraphState:
-        if not self.llm:
+        if not self.ai_enabled or not self.llm:
             state["trace"].status = "disabled"
-            state["trace"].error = "LLM is not configured. Set LLM_API_KEY to enable AI proposals."
+            state["trace"].error = self.ai_disabled_reason
             return state
 
         trace = state["trace"]
@@ -98,13 +160,19 @@ class SpireDecisionAgent:
             trace.response_text = (trace.response_text + f"\n\n[Tool requested: {tool_name}]").strip()
             self._emit_trace(trace)
 
-        result = self.llm.run_streaming_turn(
-            system_prompt=state["system_prompt"],
-            input_items=state["messages"],
-            previous_response_id=state.get("previous_response_id"),
-            on_delta=on_delta,
-            on_tool=on_tool,
-        )
+        try:
+            result = self.llm.run_streaming_turn(
+                system_prompt=state["system_prompt"],
+                input_items=state["messages"],
+                previous_response_id=state.get("previous_response_id"),
+                on_delta=on_delta,
+                on_tool=on_tool,
+            )
+        except Exception as exc:  # noqa: BLE001
+            trace.status = "error"
+            trace.error = f"LLM call failed: {exc}"
+            self._emit_trace(trace)
+            return state
         parsed_turn = parse_agent_output(result["raw_output"])
         trace.raw_output = result["raw_output"]
         trace.reasoning_text = result["reasoning_summary_text"] or parsed_turn.reasoning

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
+import httpx
 from openai import OpenAI
 
 from src.agent.config import AgentConfig
@@ -17,6 +19,8 @@ from src.agent.schemas import (
 
 TraceCallback = Callable[[str], None]
 ToolCallback = Callable[[str], None]
+ApiStyle = Literal["responses", "chat_completions"]
+CapabilityState = Literal["unchecked", "checking", "ready", "failed"]
 
 
 def _build_function_tool(schema_model: type) -> dict[str, Any]:
@@ -62,18 +66,203 @@ def _extract_reasoning_summary(response: Any) -> str:
     return "\n\n".join(summaries).strip()
 
 
+def _to_chat_tool_schema(response_tool: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "function",
+        "function": {
+            "name": response_tool.get("name", ""),
+            "description": response_tool.get("description", ""),
+            "parameters": response_tool.get("parameters", {"type": "object", "properties": {}}),
+            "strict": bool(response_tool.get("strict", False)),
+        },
+    }
+
+
+def build_llm_check_result(config: AgentConfig) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "enabled": False,
+        "status": "disabled",
+        "api_style": "",
+        "message": "",
+        "config": {
+            "base_url": config.base_url,
+            "reasoning_model": config.reasoning_model,
+            "api_key_present": bool(config.api_key),
+        },
+    }
+    if not config.api_key:
+        result["message"] = "LLM mis-configured: missing LLM_API_KEY."
+        return result
+    if not config.reasoning_model:
+        result["message"] = "LLM mis-configured: missing LLM_MODEL_REASONING."
+        return result
+
+    llm = LLMClient(config)
+    llm.check_api_capabilities()
+    if llm.available:
+        result["enabled"] = True
+        result["status"] = "ready"
+        result["api_style"] = llm.api_style or ""
+        result["message"] = f"LLM connected via {llm.api_style}."
+        return result
+
+    result["status"] = "failed" if llm.capability_state == "failed" else "disabled"
+    result["message"] = llm.disabled_reason or "LLM is unavailable."
+    return result
+
+
 class LLMClient:
     def __init__(self, config: AgentConfig):
         self.config = config
+        self.request_timeout = httpx.Timeout(
+            timeout=config.request_timeout_seconds,
+            connect=config.connect_timeout_seconds,
+        )
+        self.probe_timeout = httpx.Timeout(
+            timeout=config.probe_timeout_seconds,
+            connect=min(config.connect_timeout_seconds, config.probe_timeout_seconds),
+        )
         self.client = OpenAI(
             api_key=config.api_key or "missing-key",
             base_url=config.base_url,
+            timeout=self.request_timeout,
+            max_retries=config.max_retries,
+        )
+        self.probe_client = OpenAI(
+            api_key=config.api_key or "missing-key",
+            base_url=config.base_url,
+            timeout=self.probe_timeout,
+            max_retries=0,
         )
         self.tools = [
             _build_function_tool(InspectDrawPileTool),
             _build_function_tool(InspectDiscardPileTool),
             _build_function_tool(InspectExhaustPileTool),
         ]
+        self.chat_tools = [_to_chat_tool_schema(tool) for tool in self.tools]
+        self.api_style: ApiStyle | None = None
+        self.available = False
+        self.disabled_reason = ""
+        self.capability_state: CapabilityState = "unchecked"
+        self._chat_history: list[dict[str, Any]] = []
+        self._capability_lock = threading.Lock()
+
+    def check_api_capabilities(self) -> None:
+        if self.capability_state in {"ready", "failed"}:
+            return
+        with self._capability_lock:
+            if self.capability_state in {"ready", "failed"}:
+                return
+
+            self.capability_state = "checking"
+            self.available = False
+            self.api_style = None
+            self.disabled_reason = ""
+
+            if not self.config.api_key:
+                self.capability_state = "failed"
+                self.disabled_reason = "LLM mis-configured: missing LLM_API_KEY."
+                return
+            if not self.config.reasoning_model:
+                self.capability_state = "failed"
+                self.disabled_reason = "LLM mis-configured: missing LLM_MODEL_REASONING."
+                return
+
+            responses_error = self._probe_responses_api()
+            if responses_error and self._should_retry_probe(responses_error):
+                responses_error = self._verify_responses_api()
+            if not responses_error:
+                self.api_style = "responses"
+                self.available = True
+                self.capability_state = "ready"
+                return
+
+            chat_error = self._probe_chat_completions_api()
+            if chat_error and self._should_retry_probe(chat_error):
+                chat_error = self._verify_chat_completions_api()
+            if not chat_error:
+                self.api_style = "chat_completions"
+                self.available = True
+                self.capability_state = "ready"
+                return
+
+            self.capability_state = "failed"
+            self.disabled_reason = (
+                "LLM mis-configured: both Responses API and Chat Completions API checks failed. "
+                f"responses={responses_error}; chat_completions={chat_error}"
+            )
+
+    @staticmethod
+    def _summarize_exception(exc: Exception) -> str:
+        status_code = getattr(exc, "status_code", None)
+        message = str(exc).strip() or exc.__class__.__name__
+        if isinstance(status_code, int):
+            return f"HTTP {status_code}: {message}"
+        return message
+
+    @staticmethod
+    def _should_retry_probe(error: str) -> bool:
+        lowered = error.lower()
+        return "timed out" in lowered or "timeout" in lowered
+
+    def _probe_responses_api(self) -> str | None:
+        try:
+            self._basic_responses_text(self.probe_client, "ping")
+            return None
+        except Exception as exc:  # noqa: BLE001
+            return self._summarize_exception(exc)
+
+    def _probe_chat_completions_api(self) -> str | None:
+        try:
+            self._basic_chat_text(self.probe_client, "ping")
+            return None
+        except Exception as exc:  # noqa: BLE001
+            return self._summarize_exception(exc)
+
+    def _verify_responses_api(self) -> str | None:
+        try:
+            self._basic_responses_text(self.client, "ping")
+            return None
+        except Exception as exc:  # noqa: BLE001
+            return self._summarize_exception(exc)
+
+    def _verify_chat_completions_api(self) -> str | None:
+        try:
+            self._basic_chat_text(self.client, "ping")
+            return None
+        except Exception as exc:  # noqa: BLE001
+            return self._summarize_exception(exc)
+
+    def _basic_chat_text(self, client: OpenAI, message: str) -> str:
+        completion = client.chat.completions.create(
+            model=self.config.reasoning_model,
+            messages=[{"role": "user", "content": message}],
+        )
+        choices = getattr(completion, "choices", None) or []
+        if not choices:
+            return ""
+        choice_message = getattr(choices[0], "message", None)
+        return (getattr(choice_message, "content", None) or "").strip()
+
+    def _basic_responses_text(self, client: OpenAI, message: str) -> str:
+        response = client.responses.create(
+            model=self.config.reasoning_model,
+            input=[{"role": "user", "content": message}],
+        )
+        return (getattr(response, "output_text", None) or "").strip()
+
+    def run_basic_text_check(self, message: str = "hello") -> str:
+        self.check_api_capabilities()
+        if not self.available or not self.api_style:
+            raise RuntimeError(self.disabled_reason or "LLM is unavailable for this run.")
+
+        return self.run_basic_text_check_with_style(self.api_style, message)
+
+    def run_basic_text_check_with_style(self, api_style: ApiStyle, message: str = "hello") -> str:
+        if api_style == "chat_completions":
+            return self._basic_chat_text(self.client, message)
+
+        return self._basic_responses_text(self.client, message)
 
     def _stream_response(
         self,
@@ -91,7 +280,32 @@ class LLMClient:
             reasoning={"summary": "auto"},
         )
 
-    def run_streaming_turn(
+    def _to_chat_messages(self, system_prompt: str, input_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        has_role_messages = any("role" in item for item in input_items)
+        if has_role_messages:
+            messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
+            for item in input_items:
+                role = item.get("role")
+                content = item.get("content", "")
+                if role in {"user", "assistant"}:
+                    messages.append({"role": role, "content": content})
+            self._chat_history = messages
+            return self._chat_history
+
+        # Tool continuation for the active in-memory thread.
+        for item in input_items:
+            if item.get("type") != "function_call_output":
+                continue
+            self._chat_history.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": item.get("call_id", ""),
+                    "content": item.get("output", ""),
+                }
+            )
+        return self._chat_history
+
+    def _run_streaming_turn_responses(
         self,
         *,
         system_prompt: str,
@@ -99,7 +313,7 @@ class LLMClient:
         previous_response_id: str | None = None,
         on_delta: TraceCallback | None = None,
         on_tool: ToolCallback | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         started = time.perf_counter()
         raw_chunks: list[str] = []
 
@@ -155,4 +369,173 @@ class LLMClient:
             "latency_ms": latency_ms,
             "token_usage": usage,
         }
+
+    def _run_streaming_turn_chat_completions(
+        self,
+        *,
+        system_prompt: str,
+        input_items: list[dict[str, Any]],
+        on_delta: TraceCallback | None = None,
+        on_tool: ToolCallback | None = None,
+    ) -> dict[str, Any]:
+        started = time.perf_counter()
+        raw_chunks: list[str] = []
+        response_id = ""
+        usage = TraceTokenUsage()
+        tool_deltas: dict[int, dict[str, Any]] = {}
+
+        messages = self._to_chat_messages(system_prompt, input_items)
+        stream = self.client.chat.completions.create(
+            model=self.config.reasoning_model,
+            messages=messages,
+            tools=self.chat_tools,
+            stream=True,
+            tool_choice="auto",
+        )
+
+        for chunk in stream:
+            if not response_id:
+                response_id = getattr(chunk, "id", "") or ""
+
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage:
+                usage = TraceTokenUsage(
+                    input_tokens=getattr(chunk_usage, "prompt_tokens", None),
+                    output_tokens=getattr(chunk_usage, "completion_tokens", None),
+                    total_tokens=getattr(chunk_usage, "total_tokens", None),
+                )
+
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+            delta = getattr(choices[0], "delta", None)
+            if not delta:
+                continue
+
+            content_delta = getattr(delta, "content", None) or ""
+            if content_delta:
+                raw_chunks.append(content_delta)
+                if on_delta:
+                    on_delta(content_delta)
+
+            for tool_call in getattr(delta, "tool_calls", None) or []:
+                index = getattr(tool_call, "index", 0)
+                entry = tool_deltas.setdefault(
+                    index,
+                    {
+                        "id": "",
+                        "type": "function",
+                        "function": {"name": "", "arguments": ""},
+                    },
+                )
+                tool_id = getattr(tool_call, "id", None)
+                if tool_id:
+                    entry["id"] = tool_id
+
+                function_data = getattr(tool_call, "function", None)
+                if function_data:
+                    function_name = getattr(function_data, "name", None)
+                    function_arguments = getattr(function_data, "arguments", None)
+                    if function_name:
+                        entry["function"]["name"] = function_name
+                        if on_tool:
+                            on_tool(function_name)
+                    if function_arguments:
+                        entry["function"]["arguments"] += function_arguments
+
+        output_text = "".join(raw_chunks)
+        sorted_tool_calls = [tool_deltas[idx] for idx in sorted(tool_deltas)]
+        tool_events: list[dict[str, Any]] = []
+        for tool_call in sorted_tool_calls:
+            function_data = tool_call.get("function") or {}
+            arguments = function_data.get("arguments", "") or ""
+            tool_events.append(
+                {
+                    "id": tool_call.get("id", ""),
+                    "call_id": tool_call.get("id", ""),
+                    "name": function_data.get("name", ""),
+                    "arguments": arguments,
+                    "parsed_arguments": _parse_tool_arguments(arguments),
+                }
+            )
+
+        if output_text or tool_events:
+            assistant_message: dict[str, Any] = {"role": "assistant", "content": output_text}
+            if sorted_tool_calls:
+                assistant_message["tool_calls"] = sorted_tool_calls
+            self._chat_history.append(assistant_message)
+
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        return {
+            "response_id": response_id,
+            "raw_output": output_text,
+            "assistant_content": output_text,
+            "tool_calls": tool_events,
+            "reasoning_summary_text": "",
+            "latency_ms": latency_ms,
+            "token_usage": usage,
+        }
+
+    def summarize_for_next_scene(self, messages: list[dict[str, Any]]) -> str:
+        """Use the fast model to summarize a scene's conversation for context in the next scene."""
+        if not messages:
+            return ""
+        if not self.available or not self.client:
+            return ""
+        try:
+            transcript = "\n\n".join(
+                f"{m.get('role', '?')}: {m.get('content', '')[:500]}"
+                for m in messages
+                if m.get("role") in ("user", "assistant") and m.get("content")
+            )
+            if not transcript.strip():
+                return ""
+            prompt = (
+                "Summarize this Slay the Spire agent conversation in 2-3 short sentences. "
+                "Focus on: key decisions made, current state (HP, relics, deck), and what the player is about to do next. "
+                "Omit game state details that will appear in the next prompt."
+            )
+            completion = self.client.chat.completions.create(
+                model=self.config.fast_model,
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": transcript},
+                ],
+            )
+            choices = getattr(completion, "choices", None) or []
+            if not choices:
+                return ""
+            content = getattr(choices[0].message, "content", None) or ""
+            return content.strip()
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def run_streaming_turn(
+        self,
+        *,
+        system_prompt: str,
+        input_items: list[dict[str, Any]],
+        previous_response_id: str | None = None,
+        on_delta: TraceCallback | None = None,
+        on_tool: ToolCallback | None = None,
+    ) -> dict:
+        self.check_api_capabilities()
+        if self.capability_state == "checking":
+            raise RuntimeError("LLM configuration check is still running.")
+        if not self.available or not self.api_style:
+            raise RuntimeError(self.disabled_reason or "LLM is unavailable for this run.")
+        if self.api_style == "chat_completions":
+            return self._run_streaming_turn_chat_completions(
+                system_prompt=system_prompt,
+                input_items=input_items,
+                on_delta=on_delta,
+                on_tool=on_tool,
+            )
+        return self._run_streaming_turn_responses(
+            system_prompt=system_prompt,
+            input_items=input_items,
+            previous_response_id=previous_response_id,
+            on_delta=on_delta,
+            on_tool=on_tool,
+        )
 

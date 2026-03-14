@@ -20,6 +20,11 @@ class AgentConfig(BaseModel):
     system_prompt_path: str = str(DEFAULT_PROMPT_PATH)
     default_mode: str = "propose"
     max_tool_roundtrips: int = Field(default=3, ge=0, le=5)
+    request_timeout_seconds: float = Field(default=20.0, gt=0)
+    connect_timeout_seconds: float = Field(default=5.0, gt=0)
+    probe_timeout_seconds: float = Field(default=6.0, gt=0)
+    max_retries: int = Field(default=0, ge=0, le=2)
+    proposal_timeout_seconds: float = Field(default=20.0, gt=0)
 
     @property
     def enabled(self) -> bool:
@@ -37,7 +42,17 @@ def get_agent_config() -> AgentConfig:
         system_prompt_path=os.getenv("LLM_SYSTEM_PROMPT_PATH", str(DEFAULT_PROMPT_PATH)),
         default_mode=os.getenv("AGENT_MODE", "propose"),
         max_tool_roundtrips=int(os.getenv("LLM_MAX_TOOL_ROUNDTRIPS", "3")),
+        request_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "20")),
+        connect_timeout_seconds=float(os.getenv("LLM_CONNECT_TIMEOUT_SECONDS", "5")),
+        probe_timeout_seconds=float(os.getenv("LLM_PROBE_TIMEOUT_SECONDS", "6")),
+        max_retries=int(os.getenv("LLM_MAX_RETRIES", "0")),
+        proposal_timeout_seconds=float(os.getenv("LLM_PROPOSAL_TIMEOUT_SECONDS", "20")),
     )
+
+
+def reload_agent_config() -> AgentConfig:
+    get_agent_config.cache_clear()
+    return get_agent_config()
 
 
 def load_system_prompt() -> str:

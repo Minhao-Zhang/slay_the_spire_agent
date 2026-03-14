@@ -435,6 +435,14 @@ const ws = new WebSocket('ws://' + location.host + '/ws');
 const statusSpan = document.getElementById('connection-status');
 let latestAgentTrace = null;
 
+function renderAiRuntimeStatus(payload) {
+    if (!payload) return;
+    document.getElementById('ai-status').textContent = payload.status || 'unknown';
+    const styleSuffix = payload.api_style ? ' via ' + payload.api_style : '';
+    document.getElementById('ai-validation').textContent =
+        (payload.message || 'No AI status available') + styleSuffix;
+}
+
 ws.onopen = () => {
     statusSpan.style.color = 'var(--accent-success)';
     statusSpan.innerHTML = '<span class="dot"></span> Connected';
@@ -463,6 +471,8 @@ ws.onmessage = (event) => {
         } else if (data.type === 'agent_trace') {
             latestAgentTrace = data.payload;
             renderAgentTrace(data.payload);
+        } else if (data.type === 'ai_status') {
+            renderAiRuntimeStatus(data.payload);
         } else if (data.type === 'agent_mode') {
             document.getElementById('ai-mode-select').value = data.payload.mode;
         }
@@ -476,6 +486,11 @@ async function fetchAiState() {
         const r = await fetch('/api/ai/state');
         const d = await r.json();
         document.getElementById('ai-mode-select').value = d.mode || 'manual';
+        renderAiRuntimeStatus({
+            status: d.ai_status,
+            message: d.ai_status_message,
+            api_style: d.ai_api_style
+        });
         if (d.latest_trace) {
             latestAgentTrace = d.latest_trace;
             renderAgentTrace(d.latest_trace);

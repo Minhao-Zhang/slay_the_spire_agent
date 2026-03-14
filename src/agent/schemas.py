@@ -66,6 +66,10 @@ class TraceTokenUsage(BaseModel):
 class PersistedAiLog(BaseModel):
     user_message: str = ""
     assistant_message: str = ""
+    status: str = ""
+    final_decision: Optional[str] = None
+    approval_status: str = ""
+    error: str = ""
 
 
 class AgentTrace(BaseModel):
