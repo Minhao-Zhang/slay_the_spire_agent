@@ -36,6 +36,7 @@ def _monster_line(monster: dict[str, Any], index: int) -> str:
     parts = [
         f"{index}. {monster.get('name', '?')}",
         f"hp={monster.get('hp_display', '?')}",
+        f"block={monster.get('block', 0)}",
         f"intent={monster.get('intent_display', monster.get('intent', '?'))}",
     ]
     powers = monster.get("powers") or []
@@ -182,7 +183,7 @@ def build_user_prompt(vm: dict[str, Any], _state_id: str, recent_actions: list[s
         f"turn={header.get('turn', '?')}",
     ]
     if combat:
-        player_lines.append(f"block={combat.get('player_block', 0)}")
+        player_lines.append(f"player_block={combat.get('player_block', 0)}")
 
     relic_lines = [_relic_line(r) for r in inventory.get("relics", [])]
     potion_lines = []
@@ -207,8 +208,11 @@ def build_user_prompt(vm: dict[str, Any], _state_id: str, recent_actions: list[s
     screen_lines = [f"type={screen.get('type', 'NONE')}"]
     if screen.get("title"):
         screen_lines.append(f"title={screen.get('title')}")
-    if screen.get("content"):
-        screen_lines.append(f"content_keys={', '.join(screen['content'].keys())}")
+    content = screen.get("content") or {}
+    if content.get("screen_reason"):
+        screen_lines.append(f"context={content['screen_reason']}")
+    if content:
+        screen_lines.append(f"content_keys={', '.join(content.keys())}")
 
     legal_lines = [
         f"{idx}. label={action.get('label', '?')} | command={action.get('command', '?')}"

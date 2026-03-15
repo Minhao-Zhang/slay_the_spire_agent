@@ -82,6 +82,7 @@ def main():
 
     event_index = 0
     last_proposed_state_id = None
+    current_agent_mode: str = agent.config.default_mode
     trace_cache: dict[str, AgentTrace] = {}
     state_log_paths: dict[str, Path] = {}
     last_ai_execution: dict[str, object | None] = {
@@ -309,18 +310,24 @@ def main():
             clear_active_proposal(
                 f"Discarded in-flight AI proposal for state {proposal_state.get('state_id')} after the game advanced."
             )
+            last_proposed_state_id = None  # Treat previous state as nothing; auto re-call AI for new state
 
         ready_for_command = state.get("ready_for_command", False)
         instruction = poll_instruction() if ready_for_command else {}
         manual_action = instruction.get("manual_action")
         approved_action = instruction.get("approved_action")
-        agent_mode = instruction.get("agent_mode", agent.config.default_mode)
+        if instruction and "agent_mode" in instruction:
+            current_agent_mode = instruction.get("agent_mode", current_agent_mode)
+        agent_mode = current_agent_mode
         if not agent.ai_enabled:
             agent_mode = "manual"
 
         pending_trace = trace_cache.get(state_id)
         command_to_send: str | None = None
         command_source = "idle"
+
+        # In propose mode we only execute when the user has approved in the dashboard (approved_action block below).
+        # In auto mode we execute the proposal as soon as we have it (block below).
 
         if manual_action:
             command_to_send = manual_action
@@ -340,10 +347,15 @@ def main():
                 last_log_signature = None
                 duplicate_run_length = 0
                 continue
-        if ready_for_command and not command_to_send and approved_action and approved_action.get("state_id") == state_id:
+        if ready_for_command and not command_to_send and approved_action:
             action = approved_action.get("action", "").strip()
-            if action:
-                trace = trace_cache.get(state_id)
+            approved_sid = approved_action.get("state_id")
+            actions_list_for_check = vm.get("actions") or []
+            action_still_valid = any(
+                (a.get("command") or "").strip() == action for a in actions_list_for_check
+            )
+            if action and (approved_sid == state_id or action_still_valid):
+                trace = trace_cache.get(approved_sid) or trace_cache.get(state_id)
                 if trace:
                     if approved_action.get("edited"):
                         trace.edited_action = action
@@ -353,7 +365,7 @@ def main():
                         action,
                         "edited" if approved_action.get("edited") else "approved",
                         "ai",
-                        vm.get("actions", []),
+                        actions_list_for_check,
                     )
                 else:
                     execute_action(action, "ai")

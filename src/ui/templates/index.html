@@ -916,7 +916,11 @@ function renderViewModel(vm) {
                 ).join('') + '</div>';
 
         } else if (screen.type === 'GRID' || screen.type === 'HAND_SELECT') {
+            const reasonHtml = (screen.type === 'HAND_SELECT' && c.screen_reason)
+                ? '<div style="margin-bottom:8px;font-size:.9rem;color:var(--text-secondary)">' + esc(c.screen_reason) + '</div>'
+                : '';
             fsBody.innerHTML =
+                reasonHtml +
                 '<div style="margin-bottom:10px;font-weight:700;color:var(--accent-primary)">Pick ' + (c.num_cards || 1) + ' card(s)</div>' +
                 '<div class="card-container" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:15px">' +
                 (c.cards || []).map((card, i) =>

@@ -43,10 +43,8 @@ def process_state(raw: dict) -> dict:
     screen_type = game.get("screen_type", "NONE")
     screen_state = game.get("screen_state") or {}
 
-    # -- header --
+    # -- header -- (player_block is passed explicitly to the LLM via combat.player_block, not in hp_display)
     hp_display = f"{game.get('current_hp', '?')}/{game.get('max_hp', '?')}"
-    if combat and combat.get("player", {}).get("block", 0) > 0:
-        hp_display += f" [{combat['player']['block']}]"
 
     vm["header"] = {
         "class": game.get("class", "?"),
@@ -168,10 +166,8 @@ def _enrich_power(power: dict) -> dict:
 
 def _enrich_monster(monster: dict) -> dict:
     out = dict(monster)
-    # Compute display strings
+    # Compute display strings (block is passed explicitly to the LLM, not embedded in hp_display)
     out["hp_display"] = f"{monster.get('current_hp', '?')}/{monster.get('max_hp', '?')}"
-    if monster.get("block", 0) > 0:
-        out["hp_display"] += f" [{monster['block']}]"
 
     dmg = monster.get("move_base_damage", -1)
     hits = monster.get("move_hits", 1)
@@ -221,6 +217,23 @@ _REST_OPTION_META = {
 # ---------------------------------------------------------------------------
 # Screen builder
 # ---------------------------------------------------------------------------
+
+# Human-readable context for HAND_SELECT when triggered by a relic/action (from combat_state.current_action).
+# This is passed to the LLM and debugger so the AI knows why cards are being chosen (e.g. Gambling Chip).
+_HAND_SELECT_ACTION_MESSAGES: dict[str, str] = {
+    "GamblingChipAction": "Choose Any Number of Cards to Replace (Gambling Chip)",
+}
+
+
+def _hand_select_screen_reason(combat: Optional[dict]) -> str:
+    """Build a clear reason for HAND_SELECT (e.g. Gambling Chip) for the LLM and debugger."""
+    if not combat:
+        return ""
+    action = (combat.get("current_action") or "").strip()
+    if not action:
+        return ""
+    return _HAND_SELECT_ACTION_MESSAGES.get(action) or f"Hand select (reason: {action})"
+
 
 def _build_screen(screen_type: str, s: dict, game: dict, combat: Optional[dict]) -> dict:
     screen: dict[str, Any] = {
@@ -304,10 +317,16 @@ def _build_screen(screen_type: str, s: dict, game: dict, combat: Optional[dict])
 
     elif screen_type in ("GRID", "HAND_SELECT"):
         cards = s.get("cards") or s.get("hand") or []
-        screen["content"] = {
+        content: dict[str, Any] = {
             "cards": [_enrich_card(c) for c in cards],
             "num_cards": s.get("num_cards", s.get("max_cards", 1)),
         }
+        if screen_type == "HAND_SELECT":
+            reason = _hand_select_screen_reason(combat)
+            if reason:
+                content["screen_reason"] = reason
+                screen["title"] = reason
+        screen["content"] = content
 
     elif screen_type == "SHOP_ROOM":
         screen["title"] = "SHOP"

@@ -293,12 +293,18 @@ async def approve_ai_action(cmd: ApprovalRequest):
     if not trace:
         return {"status": "error", "message": "No proposal available"}
 
+    if trace.get("status") == "stale" or trace.get("state_id") != ai_runtime["latest_state_id"]:
+        return {
+            "status": "error",
+            "message": "This proposal is for a previous state; the game has moved on. Approve only the current proposal.",
+        }
+
     action = cmd.action.strip() or trace.get("final_decision") or (trace.get("parsed_proposal") or {}).get("chosen_command", "")
     if not action:
         return {"status": "error", "message": "No action available to approve"}
 
     ai_runtime["approved_action"] = {
-        "state_id": ai_runtime["latest_state_id"],
+        "state_id": trace.get("state_id"),
         "action": action,
         "edited": bool(cmd.action.strip()),
     }
