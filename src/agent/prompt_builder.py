@@ -66,7 +66,9 @@ def _map_planning_lines(vm: dict[str, Any]) -> list[str]:
         return []
 
     map_state = vm.get("map") or {}
-    lines: list[str] = []
+    lines: list[str] = [
+        "Path choice is crucial for run success; choose deliberately (consider elites, rest, shops, events).",
+    ]
 
     current_node = map_state.get("current_node")
     if current_node:
@@ -103,6 +105,49 @@ def _map_planning_lines(vm: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _map_2d_grid_lines(map_state: dict[str, Any]) -> list[str]:
+    """Build a 2D ASCII grid of the map for spatial layout. Uses * for current node."""
+    nodes = map_state.get("nodes") or []
+    if not nodes:
+        return []
+
+    xs = [n.get("x") for n in nodes if n.get("x") is not None]
+    ys = [n.get("y") for n in nodes if n.get("y") is not None]
+    if not xs or not ys:
+        return []
+
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    h = max_y - min_y + 1
+    w = max_x - min_x + 1
+    grid: list[list[str]] = [[" " for _ in range(w)] for _ in range(h)]
+
+    for n in nodes:
+        x, y = n.get("x"), n.get("y")
+        if x is None or y is None:
+            continue
+        sy = y - min_y
+        sx = x - min_x
+        if 0 <= sy < h and 0 <= sx < w:
+            sym = n.get("symbol", "?")
+            grid[sy][sx] = str(sym)[0] if sym else "?"
+
+    current_node = map_state.get("current_node")
+    if current_node is not None:
+        cx = current_node.get("x")
+        cy = current_node.get("y")
+        if cx is not None and cy is not None and min_x <= cx <= max_x and min_y <= cy <= max_y:
+            grid[cy - min_y][cx - min_x] = "*"
+
+    lines = [
+        "Symbols: M=monster E=elite R=rest $=shop ?=unknown T=treasure; * = you.",
+        "2D view (y increases downward):",
+    ]
+    for row in grid:
+        lines.append("  " + " ".join(row))
+    return lines
+
+
 def _map_scene_lines(vm: dict[str, Any]) -> list[str]:
     """Build a text map scene (layout, connections, current, next choices) for path selection."""
     screen = vm.get("screen") or {}
@@ -116,6 +161,10 @@ def _map_scene_lines(vm: dict[str, Any]) -> list[str]:
     boss_available = bool(map_state.get("boss_available", False))
 
     lines: list[str] = []
+
+    grid_lines = _map_2d_grid_lines(map_state)
+    if grid_lines:
+        lines.extend(grid_lines)
 
     if nodes:
         by_y: dict[int, list[dict[str, Any]]] = {}

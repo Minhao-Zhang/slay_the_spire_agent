@@ -436,7 +436,10 @@ def main():
         else:
             duplicate_run_length = 0
 
-        should_write_log = (not is_duplicate) or (duplicate_run_length % DUPLICATE_LOG_HEARTBEAT == 0)
+        should_write_log = (
+            (state.get("in_game", True))
+            and ((not is_duplicate) or (duplicate_run_length % DUPLICATE_LOG_HEARTBEAT == 0))
+        )
         if should_write_log:
             write_state_log(
                 state,

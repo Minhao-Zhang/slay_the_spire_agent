@@ -66,6 +66,19 @@ def _extract_reasoning_summary(response: Any) -> str:
     return "\n\n".join(summaries).strip()
 
 
+def _chat_reasoning_from_usage(usage: Any) -> str:
+    """Build a fallback reasoning message from Chat Completions usage when no summary is exposed."""
+    if not usage:
+        return ""
+    details = getattr(usage, "completion_tokens_details", None)
+    if not details:
+        return ""
+    n = getattr(details, "reasoning_tokens", None)
+    if n is None or not isinstance(n, int) or n <= 0:
+        return ""
+    return f"(Reasoning used: {n} tokens)"
+
+
 def _to_chat_tool_schema(response_tool: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": "function",
@@ -380,18 +393,28 @@ class LLMClient:
     ) -> dict[str, Any]:
         started = time.perf_counter()
         raw_chunks: list[str] = []
+        reasoning_chunks: list[str] = []
         response_id = ""
         usage = TraceTokenUsage()
+        last_chunk_usage: Any = None
         tool_deltas: dict[int, dict[str, Any]] = {}
 
         messages = self._to_chat_messages(system_prompt, input_items)
-        stream = self.client.chat.completions.create(
-            model=self.config.reasoning_model,
-            messages=messages,
-            tools=self.chat_tools,
-            stream=True,
-            tool_choice="auto",
-        )
+        create_kwargs: dict[str, Any] = {
+            "model": self.config.reasoning_model,
+            "messages": messages,
+            "tools": self.chat_tools,
+            "stream": True,
+            "tool_choice": "auto",
+        }
+        # Reasoning models: request reasoning for compatibility with Responses API behavior
+        create_kwargs["reasoning_effort"] = "medium"
+        try:
+            stream = self.client.chat.completions.create(**create_kwargs)
+        except TypeError:
+            # Older SDK may not support reasoning_effort
+            create_kwargs.pop("reasoning_effort", None)
+            stream = self.client.chat.completions.create(**create_kwargs)
 
         for chunk in stream:
             if not response_id:
@@ -399,6 +422,7 @@ class LLMClient:
 
             chunk_usage = getattr(chunk, "usage", None)
             if chunk_usage:
+                last_chunk_usage = chunk_usage
                 usage = TraceTokenUsage(
                     input_tokens=getattr(chunk_usage, "prompt_tokens", None),
                     output_tokens=getattr(chunk_usage, "completion_tokens", None),
@@ -412,11 +436,25 @@ class LLMClient:
             if not delta:
                 continue
 
-            content_delta = getattr(delta, "content", None) or ""
-            if content_delta:
-                raw_chunks.append(content_delta)
-                if on_delta:
-                    on_delta(content_delta)
+            content_parts = getattr(delta, "content_parts", None)
+            if content_parts is not None and isinstance(content_parts, list):
+                for part in content_parts:
+                    part_type = (getattr(part, "type", None) or "").lower()
+                    text = (getattr(part, "text", None) or getattr(part, "content", None) or "").strip()
+                    if not text:
+                        continue
+                    if part_type in ("thinking", "reasoning"):
+                        reasoning_chunks.append(text)
+                    else:
+                        raw_chunks.append(text)
+                        if on_delta:
+                            on_delta(text)
+            else:
+                content_delta = getattr(delta, "content", None) or ""
+                if content_delta:
+                    raw_chunks.append(content_delta)
+                    if on_delta:
+                        on_delta(content_delta)
 
             for tool_call in getattr(delta, "tool_calls", None) or []:
                 index = getattr(tool_call, "index", 0)
@@ -465,13 +503,17 @@ class LLMClient:
                 assistant_message["tool_calls"] = sorted_tool_calls
             self._chat_history.append(assistant_message)
 
+        reasoning_summary_text = "\n\n".join(reasoning_chunks).strip()
+        if not reasoning_summary_text and last_chunk_usage:
+            reasoning_summary_text = _chat_reasoning_from_usage(last_chunk_usage)
+
         latency_ms = int((time.perf_counter() - started) * 1000)
         return {
             "response_id": response_id,
             "raw_output": output_text,
             "assistant_content": output_text,
             "tool_calls": tool_events,
-            "reasoning_summary_text": "",
+            "reasoning_summary_text": reasoning_summary_text,
             "latency_ms": latency_ms,
             "token_usage": usage,
         }
