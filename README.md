@@ -78,3 +78,22 @@ Examples of valid manual actions:
 - `PROCEED` (Click the Confirm button)
 
 Whenever you submit a manual action, the `main.py` orchestrator will intercept the game's next 'wait' cycle and inject your command directly into the game.
+
+## Replay Evaluation
+
+You can compute baseline quality and runtime metrics from recorded logs:
+
+```bash
+uv run python -m src.eval.replay --logs-dir logs
+```
+
+Optional: evaluate one specific run folder under `logs`:
+
+```bash
+uv run python -m src.eval.replay --logs-dir logs --run 2026-03-17-11-24
+```
+
+### Capability flags
+
+- `LLM_ENABLE_PLANNER=true` enables an optional planner node before action selection.
+- `LLM_PROPOSAL_FAILURE_STREAK_LIMIT` controls how many consecutive proposal failures are tolerated before AI is disabled for the run.

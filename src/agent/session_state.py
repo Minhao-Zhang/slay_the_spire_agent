@@ -45,6 +45,14 @@ class TurnConversation:
     scene_key: str | None = None
     messages: list[dict[str, str]] = field(default_factory=list)
     action_history: list[str] = field(default_factory=list)
+    strategy_memory: dict[str, str] = field(
+        default_factory=lambda: {
+            "deck_plan": "",
+            "pathing_goal": "",
+            "boss_prep": "",
+            "constraints": "",
+        }
+    )
     compaction_count: int = 0
 
     def set_scene(self, scene_key: str) -> None:
@@ -61,6 +69,58 @@ class TurnConversation:
 
     def remember_action(self, action: str) -> None:
         self.action_history.append(action)
+
+    def update_strategy_memory(self, vm: dict) -> None:
+        inventory = vm.get("inventory") or {}
+        deck = inventory.get("deck") or []
+        type_counts: dict[str, int] = {}
+        for card in deck:
+            card_type = ((card.get("kb") or {}).get("type") or card.get("type") or "").upper()
+            if not card_type:
+                continue
+            type_counts[card_type] = type_counts.get(card_type, 0) + 1
+
+        if type_counts:
+            dominant_type = max(type_counts.items(), key=lambda item: item[1])[0]
+            self.strategy_memory["deck_plan"] = (
+                f"Deck leans toward {dominant_type}; keep picks/upgrades coherent with this axis."
+            )
+
+        header = vm.get("header") or {}
+        floor = header.get("floor")
+        hp_display = str(header.get("hp_display", ""))
+        hp_ratio = 1.0
+        if "/" in hp_display:
+            try:
+                cur, max_hp = hp_display.split("/", 1)
+                hp_ratio = max(0.0, min(1.0, int(cur) / max(1, int(max_hp))))
+            except ValueError:
+                hp_ratio = 1.0
+
+        screen = vm.get("screen") or {}
+        if screen.get("type") == "MAP":
+            if hp_ratio < 0.45:
+                self.strategy_memory["pathing_goal"] = "Prefer safer pathing with rest sites and avoid risky elite chains."
+            else:
+                self.strategy_memory["pathing_goal"] = "Take high-value pathing when deck can handle elites."
+
+        map_state = vm.get("map") or {}
+        boss_name = map_state.get("boss_name")
+        if boss_name:
+            self.strategy_memory["boss_prep"] = f"Prepare for upcoming boss: {boss_name}."
+
+        combat = vm.get("combat") or {}
+        powers = combat.get("player_powers") or []
+        if any(str(p.get("name", "")).lower() == "no draw" for p in powers):
+            self.strategy_memory["constraints"] = "Current turn has draw constraint (No Draw); avoid draw-dependent lines."
+
+    def strategy_memory_lines(self) -> list[str]:
+        lines: list[str] = []
+        for key in ("deck_plan", "pathing_goal", "boss_prep", "constraints"):
+            value = self.strategy_memory.get(key, "").strip()
+            if value:
+                lines.append(f"{key}: {value}")
+        return lines
 
     def estimated_token_count(self) -> int:
         return sum(estimate_message_tokens(message) for message in self.messages)

@@ -59,14 +59,23 @@ def create_trace(vm: dict, state_id: str, agent_mode: AgentMode, system_prompt: 
 
 def build_persisted_ai_log(trace: AgentTrace) -> PersistedAiLog:
     return PersistedAiLog(
+        decision_id=trace.decision_id,
+        state_id=trace.state_id,
+        turn_key=trace.turn_key,
         user_message=trace.user_prompt or "",
         assistant_message=trace.response_text or trace.raw_output or "",
         status=trace.status,
         final_decision=trace.final_decision,
+        final_decision_sequence=list(trace.final_decision_sequence),
         approval_status=trace.approval_status,
+        execution_outcome=trace.execution_outcome,
+        latency_ms=trace.latency_ms,
         input_tokens=trace.token_usage.input_tokens,
         output_tokens=trace.token_usage.output_tokens,
         total_tokens=trace.token_usage.total_tokens,
+        tool_names=list(trace.tool_names),
+        planner_summary=trace.planner_summary,
+        validation_error=trace.validation.error,
         error=trace.error,
     )
 

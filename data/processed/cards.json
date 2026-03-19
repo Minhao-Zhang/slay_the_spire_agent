@@ -221,7 +221,7 @@
     "type": "Attack",
     "rarity": "Uncommon",
     "cost": "4 (3)",
-    "description": "Costs 1 less [R] for each time you lose HP this combat. Deal 18 (22) damage.",
+    "description": "Costs 1 less [Energy] for each time you lose HP this combat. Deal 18 (22) damage.",
     "description_upgraded": null
   },
   {
@@ -230,8 +230,8 @@
     "type": "Skill",
     "rarity": "Uncommon",
     "cost": "0",
-    "description": "Lose 3 HP. Gain [R] [R].",
-    "description_upgraded": "Lose 3 HP. Gain [R] [R] [R]."
+    "description": "Lose 3 HP. Gain [Energy] [Energy].",
+    "description_upgraded": "Lose 3 HP. Gain [Energy] [Energy] [Energy]."
   },
   {
     "name": "Burning Pact",
@@ -284,7 +284,7 @@
     "type": "Attack",
     "rarity": "Uncommon",
     "cost": "1",
-    "description": "Deal 5 (8) damage. If the enemy has Vulnerable, gain [R] and draw 1 card.",
+    "description": "Deal 5 (8) damage. If the enemy has Vulnerable, gain [Energy] and draw 1 card.",
     "description_upgraded": null
   },
   {
@@ -473,7 +473,7 @@
     "type": "Skill",
     "rarity": "Uncommon",
     "cost": "1 (0)",
-    "description": "Gain [R] [R]. Exhaust.",
+    "description": "Gain [Energy] [Energy]. Exhaust.",
     "description_upgraded": null
   },
   {
@@ -482,8 +482,8 @@
     "type": "Skill",
     "rarity": "Uncommon",
     "cost": "1",
-    "description": "Gain 5 Block. If this card is Exhausted, gain [R] [R].",
-    "description_upgraded": "Gain 8 Block. If this card is Exhausted, gain [R] [R] [R]."
+    "description": "Gain 5 Block. If this card is Exhausted, gain [Energy] [Energy].",
+    "description_upgraded": "Gain 8 Block. If this card is Exhausted, gain [Energy] [Energy] [Energy]."
   },
   {
     "name": "Sever Soul",
@@ -545,7 +545,7 @@
     "type": "Power",
     "rarity": "Rare",
     "cost": "0",
-    "description": "Gain 2 (1) Vulnerable. At the start of your turn, gain [R].",
+    "description": "Gain 2 (1) Vulnerable. At the start of your turn, gain [Energy].",
     "description_upgraded": null
   },
   {
@@ -662,7 +662,7 @@
     "type": "Skill",
     "rarity": "Rare",
     "cost": "0",
-    "description": "Lose 6 HP. Gain [R] [R]. Draw 3 (5) cards. Exhaust.",
+    "description": "Lose 6 HP. Gain [Energy] [Energy]. Draw 3 (5) cards. Exhaust.",
     "description_upgraded": null
   },
   {
@@ -806,7 +806,7 @@
     "type": "Attack",
     "rarity": "Common",
     "cost": "1",
-    "description": "Deal 8 (11) damage. Next turn, gain [G].",
+    "description": "Deal 8 (11) damage. Next turn, gain [Energy].",
     "description_upgraded": null
   },
   {
@@ -815,8 +815,8 @@
     "type": "Skill",
     "rarity": "Common",
     "cost": "1",
-    "description": "Next turn, gain [G] [G].",
-    "description_upgraded": "Next turn, gain [G] [G] [G]."
+    "description": "Next turn, gain [Energy] [Energy].",
+    "description_upgraded": "Next turn, gain [Energy] [Energy] [Energy]."
   },
   {
     "name": "Piercing Wail",
@@ -869,7 +869,7 @@
     "type": "Attack",
     "rarity": "Common",
     "cost": "2",
-    "description": "Deal 12 (16) damage. If you have discarded a card this turn, gain [G] [G].",
+    "description": "Deal 12 (16) damage. If you have discarded a card this turn, gain [Energy] [Energy].",
     "description_upgraded": null
   },
   {
@@ -968,7 +968,7 @@
     "type": "Skill",
     "rarity": "Uncommon",
     "cost": "0",
-    "description": "Discard 3 (2) cards. Gain [G] [G].",
+    "description": "Discard 3 (2) cards. Gain [Energy] [Energy].",
     "description_upgraded": null
   },
   {
@@ -1022,7 +1022,7 @@
     "type": "Attack",
     "rarity": "Uncommon",
     "cost": "3",
-    "description": "Costs 1 less [G] for each card discarded this turn. Deal 7 (9) damage 3 times.",
+    "description": "Costs 1 less [Energy] for each card discarded this turn. Deal 7 (9) damage 3 times.",
     "description_upgraded": null
   },
   {
@@ -1067,7 +1067,7 @@
     "type": "Attack",
     "rarity": "Uncommon",
     "cost": "1",
-    "description": "Deal 5 (8) damage. If the enemy has Weak, gain [G] and draw 1 card.",
+    "description": "Deal 5 (8) damage. If the enemy has Weak, gain [Energy] and draw 1 card.",
     "description_upgraded": null
   },
   {
@@ -1094,7 +1094,7 @@
     "type": "Attack",
     "rarity": "Uncommon",
     "cost": "0",
-    "description": "Costs 1 additional [G] for each time you lose HP this combat. Deal 12 (16) damage.",
+    "description": "Costs 1 additional [Energy] for each time you lose HP this combat. Deal 12 (16) damage.",
     "description_upgraded": null
   },
   {
@@ -1157,8 +1157,8 @@
     "type": "Skill",
     "rarity": "Uncommon",
     "cost": "Unplayable",
-    "description": "Unplayable. If this card is discarded from your hand, gain [G].",
-    "description_upgraded": "Unplayable. If this card is discarded from your hand, gain [G] [G]."
+    "description": "Unplayable. If this card is discarded from your hand, gain [Energy].",
+    "description_upgraded": "Unplayable. If this card is discarded from your hand, gain [Energy] [Energy]."
   },
   {
     "name": "Terror",
@@ -1193,8 +1193,8 @@
     "type": "Skill",
     "rarity": "Rare",
     "cost": "0",
-    "description": "Gain [G]. Draw 2 cards. Exhaust.",
-    "description_upgraded": "Gain [G] [G]. Draw 2 cards. Exhaust."
+    "description": "Gain [Energy]. Draw 2 cards. Exhaust.",
+    "description_upgraded": "Gain [Energy] [Energy]. Draw 2 cards. Exhaust."
   },
   {
     "name": "After Image",
@@ -1256,8 +1256,8 @@
     "type": "Skill",
     "rarity": "Rare",
     "cost": "X",
-    "description": "Next turn, draw X cards and gain X [G]. Exhaust.",
-    "description_upgraded": "Next turn, draw X+1 cards and gain X+1 [G]. Exhaust."
+    "description": "Next turn, draw X cards and gain X [Energy]. Exhaust.",
+    "description_upgraded": "Next turn, draw X+1 cards and gain X+1 [Energy]. Exhaust."
   },
   {
     "name": "Envenom",
@@ -1418,7 +1418,7 @@
     "type": "Skill",
     "rarity": "Common",
     "cost": "1",
-    "description": "Gain 7 (10) Block. Next turn, gain [B].",
+    "description": "Gain 7 (10) Block. Next turn, gain [Energy].",
     "description_upgraded": null
   },
   {
@@ -1544,8 +1544,8 @@
     "type": "Skill",
     "rarity": "Common",
     "cost": "0",
-    "description": "Gain [B] [B]. Add a Void into your discard pile.",
-    "description_upgraded": "Gain [B] [B] [B]. Add a Void into your discard pile."
+    "description": "Gain [Energy] [Energy]. Add a Void into your discard pile.",
+    "description_upgraded": "Gain [Energy] [Energy] [Energy]. Add a Void into your discard pile."
   },
   {
     "name": "Aggregate",
@@ -1553,7 +1553,7 @@
     "type": "Skill",
     "rarity": "Uncommon",
     "cost": "1",
-    "description": "Gain [B] for every 4 (3) cards in your draw pile.",
+    "description": "Gain [Energy] for every 4 (3) cards in your draw pile.",
     "description_upgraded": null
   },
   {
@@ -1688,7 +1688,7 @@
     "type": "Skill",
     "rarity": "Uncommon",
     "cost": "4",
-    "description": "Costs 1 less [B] for each Power card played this combat. Gain 12 (16) Block.",
+    "description": "Costs 1 less [Energy] for each Power card played this combat. Gain 12 (16) Block.",
     "description_upgraded": null
   },
   {
@@ -1769,7 +1769,7 @@
     "type": "Skill",
     "rarity": "Uncommon",
     "cost": "1 (0)",
-    "description": "Exhaust a card. Gain [B] equal to its cost.",
+    "description": "Exhaust a card. Gain [Energy] equal to its cost.",
     "description_upgraded": null
   },
   {
@@ -1850,7 +1850,7 @@
     "type": "Attack",
     "rarity": "Uncommon",
     "cost": "3",
-    "description": "Deal 24 (32) damage. If this kills an enemy, gain [B] [B] [B].",
+    "description": "Deal 24 (32) damage. If this kills an enemy, gain [Energy] [Energy] [Energy].",
     "description_upgraded": null
   },
   {
@@ -1949,8 +1949,8 @@
     "type": "Skill",
     "rarity": "Rare",
     "cost": "0",
-    "description": "Remove all your Orbs. Gain [B] and draw 1 card for each Orb removed. Exhaust.",
-    "description_upgraded": "Evoke all your Orbs. Gain [B] and draw 1 card for each Orb Evoked. Exhaust."
+    "description": "Remove all your Orbs. Gain [Energy] and draw 1 card for each Orb removed. Exhaust.",
+    "description_upgraded": "Evoke all your Orbs. Gain [Energy] and draw 1 card for each Orb Evoked. Exhaust."
   },
   {
     "name": "Hyperbeam",
@@ -2156,7 +2156,7 @@
     "type": "Attack",
     "rarity": "Common",
     "cost": "1",
-    "description": "Deal 7 (11) damage. If the last card played this combat was an Attack, gain [W].",
+    "description": "Deal 7 (11) damage. If the last card played this combat was an Attack, gain [Energy].",
     "description_upgraded": null
   },
   {
@@ -2291,7 +2291,7 @@
     "type": "Power",
     "rarity": "Uncommon",
     "cost": "2",
-    "description": "Gain 3 (4) Strength. Gain 3 (4) Dexterity. Gain 1 less [W] at the start of each turn.",
+    "description": "Gain 3 (4) Strength. Gain 3 (4) Dexterity. Gain 1 less [Energy] at the start of each turn.",
     "description_upgraded": null
   },
   {
@@ -2597,8 +2597,8 @@
     "type": "Power",
     "rarity": "Rare",
     "cost": "3",
-    "description": "Ethereal. At the start of your turn, gain [W] and increase this gain by 1.",
-    "description_upgraded": "At the start of your turn, gain [W] and increase this gain by 1."
+    "description": "Ethereal. At the start of your turn, gain [Energy] and increase this gain by 1.",
+    "description_upgraded": "At the start of your turn, gain [Energy] and increase this gain by 1."
   },
   {
     "name": "Devotion",
@@ -3101,8 +3101,8 @@
     "type": "Skill",
     "rarity": "Special",
     "cost": "0",
-    "description": "Retain. Gain [W]. Exhaust.",
-    "description_upgraded": "Retain. Gain [W] [W]. Exhaust."
+    "description": "Retain. Gain [Energy]. Exhaust.",
+    "description_upgraded": "Retain. Gain [Energy] [Energy]. Exhaust."
   },
   {
     "name": "Omega",

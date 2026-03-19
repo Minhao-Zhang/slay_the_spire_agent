@@ -5,27 +5,77 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Spire Agent - AI Agent Debugger</title>
 <style>
-body{font-family:system-ui,sans-serif;background:#f6f8fa;color:#1f2328;margin:0;padding:16px}
-.page{max-width:1400px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
-.panel{background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:16px}
-.header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-.title{font-weight:700;font-size:1.1rem}
-.meta{font-family:ui-monospace,SFMono-Regular,monospace;font-size:.8rem;color:#656d76}
-.grid-output{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.section-title{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:#656d76;font-weight:700;margin-bottom:8px}
-pre{margin:0;white-space:pre-wrap;word-break:break-word;background:#f6f8fa;border:1px solid #eaeef2;border-radius:6px;padding:12px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:.78rem;min-height:140px;max-height:320px;overflow:auto}
-#user-prompt{max-height:360px}
-.history{display:flex;flex-direction:column;gap:8px;max-height:280px;overflow:auto}
-.history-item{border:1px solid #eaeef2;border-radius:6px;padding:10px;background:#f6f8fa}
-.history-item strong{display:block}
+:root{
+    --bg:#f6f8fa;
+    --panel:#ffffff;
+    --muted:#656d76;
+    --border:#d0d7de;
+    --subtle:#eaeef2;
+    --code:#f6f8fa;
+    --text:#1f2328;
+    --blue:#0969da;
+    --green:#1a7f37;
+    --red:#cf222e;
+    --yellow:#9a6700;
+}
+*{box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:16px}
+.page{max-width:1600px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 1px 2px rgba(31,35,40,.04)}
+.header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.title{font-weight:800;font-size:1.2rem}
+.meta{font-family:ui-monospace,SFMono-Regular,monospace;font-size:.8rem;color:var(--muted)}
+.layout{display:grid;grid-template-columns:320px minmax(0,1fr);gap:16px;align-items:start}
+.sidebar{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto}
+.section-title{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin-bottom:10px}
 .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.action-input{flex:1;min-width:240px;padding:10px 12px;border:1px solid #d0d7de;border-radius:6px;background:#fff;font-family:ui-monospace,SFMono-Regular,monospace;font-size:.82rem}
-.mode-select{padding:10px 12px;border:1px solid #d0d7de;border-radius:6px;background:#fff;font-family:ui-monospace,SFMono-Regular,monospace;font-size:.82rem}
-.btn{padding:10px 14px;border:none;border-radius:6px;font-weight:700;cursor:pointer}
-.btn-approve{background:#1a7f37;color:#fff}
-.btn-reject{background:#cf222e;color:#fff}
-.status-line{font-size:.8rem;color:#656d76}
-@media (max-width: 900px){.grid-output{grid-template-columns:1fr}}
+.action-input,.mode-select{padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;font-family:ui-monospace,SFMono-Regular,monospace;font-size:.82rem}
+.action-input{flex:1;min-width:240px}
+.btn{padding:10px 14px;border:none;border-radius:8px;font-weight:700;cursor:pointer}
+.btn-approve{background:var(--green);color:#fff}
+.btn-reject{background:var(--red);color:#fff}
+.status-line{font-size:.84rem;color:var(--muted)}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.stat-card{padding:12px;border:1px solid var(--subtle);border-radius:10px;background:linear-gradient(180deg,#fff,#fbfcfd)}
+.stat-label{font-size:.74rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px}
+.stat-value{font-weight:750;font-size:.98rem;word-break:break-word}
+.main{display:flex;flex-direction:column;gap:16px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid-prompt-response{display:grid;grid-template-columns:3fr 1fr;gap:16px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;background:var(--code);border:1px solid var(--subtle);border-radius:10px;padding:12px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:.78rem;min-height:140px;max-height:420px;overflow:auto}
+.trace-list{display:flex;flex-direction:column;gap:8px}
+.trace-item{border:1px solid var(--subtle);border-radius:10px;padding:12px;background:#fbfcfd;cursor:pointer}
+.trace-item.selected{border-color:var(--blue);box-shadow:0 0 0 2px rgba(9,105,218,.12)}
+.trace-item-title{font-weight:700;font-size:.86rem;margin-bottom:4px}
+.trace-item-preview{font-size:.8rem;color:var(--muted);margin-top:6px}
+.chip-row{display:flex;gap:8px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#eef2f6;color:#334155;font-size:.76rem;font-weight:700;border:1px solid #d8dee4}
+.chip.status-running{background:#dbeafe;color:#1d4ed8}
+.chip.status-awaiting_approval,.chip.status-approved{background:#dcfce7;color:#166534}
+.chip.status-invalid,.chip.status-error,.chip.status-rejected{background:#fee2e2;color:#991b1b}
+.chip.status-stale{background:#fef3c7;color:#92400e}
+.chip.status-disabled{background:#e5e7eb;color:#374151}
+.tool-chips,.plan-box{margin-top:10px}
+.call-list{display:flex;flex-direction:column;gap:12px}
+.call-card{border:1px solid var(--subtle);border-radius:10px;overflow:hidden;background:#fff}
+.call-header{padding:10px 12px;border-bottom:1px solid var(--subtle);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#fbfcfd}
+.call-body{padding:12px;display:flex;flex-direction:column;gap:10px}
+.message-list{display:flex;flex-direction:column;gap:10px}
+.message{border:1px solid var(--subtle);border-radius:10px;background:#fff}
+.message-header{padding:8px 10px;border-bottom:1px solid var(--subtle);display:flex;justify-content:space-between;gap:8px;background:#fbfcfd}
+.message-role{font-size:.74rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.message-body{padding:10px}
+.message-body pre{min-height:auto;max-height:240px;margin:0}
+.empty{color:var(--muted);font-size:.86rem}
+.toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.toggle{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.82rem}
+.mono{font-family:ui-monospace,SFMono-Regular,monospace}
+@media (max-width: 1200px){
+    .layout{grid-template-columns:1fr}
+    .sidebar{position:static;max-height:none}
+    .cards,.grid-2,.grid-3,.grid-prompt-response{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
@@ -35,7 +85,7 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;background:#f6f8fa;borde
             <div class="title">AI Agent Debugger</div>
             <div class="meta" id="trace-meta">Awaiting agent trace...</div>
         </div>
-        <a href="/" style="color:#0969da;text-decoration:none;font-weight:600">Back to Dashboard</a>
+        <a href="/" style="color:var(--blue);text-decoration:none;font-weight:700">Back to Dashboard</a>
     </div>
 
     <div class="panel">
@@ -49,123 +99,325 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;background:#f6f8fa;borde
             <input id="approve-action-input" class="action-input" type="text" placeholder="Optional edited action before approval">
             <button class="btn btn-approve" onclick="approveAiAction()">Approve</button>
             <button class="btn btn-reject" onclick="rejectAiAction()">Reject</button>
+            <label class="toggle"><input id="follow-latest" type="checkbox" checked> Follow latest trace</label>
         </div>
         <div class="status-line" id="approval-status-line">No proposal selected yet.</div>
     </div>
 
-    <div class="panel">
-        <div class="section-title">User Prompt</div>
-        <pre id="user-prompt">Awaiting trace...</pre>
-    </div>
-    <div class="grid-output">
-        <div class="panel">
-            <div class="section-title">Model Response</div>
-            <pre id="response-text">Awaiting trace...</pre>
+    <div class="layout">
+        <div class="sidebar panel">
+            <div class="toolbar">
+                <div class="section-title" style="margin:0">Recent Traces</div>
+                <div class="meta" id="trace-count">0 items</div>
+            </div>
+            <div class="trace-list" id="trace-history"></div>
         </div>
-        <div class="panel">
-            <div class="section-title">Parsed Decision And Validation</div>
-            <pre id="parsed-decision">Awaiting trace...</pre>
-        </div>
-    </div>
 
-    <div class="panel">
-        <div class="section-title">Recent Trace History</div>
-        <div class="history" id="trace-history"></div>
+        <div class="main">
+            <div class="panel">
+                <div class="section-title">Decision Summary</div>
+                <div class="cards">
+                    <div class="stat-card">
+                        <div class="stat-label">Final Action</div>
+                        <div class="stat-value" id="summary-action">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Status</div>
+                        <div class="stat-value" id="summary-status">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Latency / Tokens</div>
+                        <div class="stat-value" id="summary-latency">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">LLM Rounds</div>
+                        <div class="stat-value" id="summary-rounds">-</div>
+                    </div>
+                </div>
+                <div style="margin-top:12px">
+                    <div class="section-title">Command Sequence</div>
+                    <div id="sequence-display" style="font-family:ui-monospace,SFMono-Regular,monospace;font-size:.82rem;padding:8px 12px;background:var(--code);border:1px solid var(--subtle);border-radius:8px;min-height:32px">
+                        <span style="color:var(--muted)">No sequence yet.</span>
+                    </div>
+                </div>
+                <div class="tool-chips">
+                    <div class="section-title">Tools And Planner</div>
+                    <div class="chip-row" id="tool-chip-row"></div>
+                    <div class="plan-box">
+                        <pre id="planner-summary">No planner summary.</pre>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid-prompt-response">
+                <div class="panel">
+                    <div class="section-title">Final User Prompt</div>
+                    <pre id="user-prompt">Awaiting trace...</pre>
+                </div>
+                <div class="panel">
+                    <div class="section-title">Model Response</div>
+                    <pre id="response-text">Awaiting trace...</pre>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="panel">
+                    <div class="section-title">Parsed Decision And Validation</div>
+                    <pre id="parsed-decision">Awaiting trace...</pre>
+                </div>
+                <div class="panel">
+                    <div class="section-title">Reasoning Summary</div>
+                    <pre id="reasoning-text">Awaiting trace...</pre>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="section-title">Exact LLM Input History</div>
+                <div class="meta" style="margin-bottom:10px">
+                    This shows the exact `input_items` payload captured for each LLM call in the selected decision,
+                    including previous chat history, the final injected user prompt, and any tool continuation messages.
+                </div>
+                <div class="call-list" id="llm-calls"></div>
+            </div>
+        </div>
     </div>
 </div>
 
 <script>
 const ws = new WebSocket('ws://' + location.host + '/ws');
+const state = {
+    latestTrace: null,
+    traceHistory: [],
+    selectedDecisionId: '',
+    followLatest: true,
+};
 
 function esc(s) {
     const d = document.createElement('div');
-    d.textContent = s;
+    d.textContent = s == null ? '' : String(s);
     return d.innerHTML;
 }
 
-function renderTrace(trace) {
-    if (!trace) return;
+function prettyJson(value) {
+    return JSON.stringify(value, null, 2);
+}
+
+function statusChip(status) {
+    const safe = (status || 'unknown').replace(/[^a-z0-9_-]/gi, '_');
+    return '<span class="chip status-' + safe + '">' + esc(status || 'unknown') + '</span>';
+}
+
+function fmtText(value, fallback='-') {
+    return value == null || value === '' ? fallback : String(value);
+}
+
+function selectedTrace() {
+    if (!state.traceHistory.length) return state.latestTrace;
+    return state.traceHistory.find((item) => item.decision_id === state.selectedDecisionId) || state.latestTrace;
+}
+
+function renderSummary(trace) {
+    const chosen = trace.final_decision || ((trace.parsed_proposal || {}).chosen_commands || [])[0] || ((trace.parsed_proposal || {}).chosen_command) || '-';
+    const sequence = trace.final_decision_sequence || [];
     document.getElementById('trace-meta').textContent =
-        'decision=' + (trace.decision_id || '-') +
-        ' | state=' + (trace.state_id || '-') +
-        ' | status=' + (trace.status || '-') +
-        ' | approval=' + (trace.approval_status || '-') +
-        ' | action=' + (trace.final_decision || ((trace.parsed_proposal || {}).chosen_command || '-'));
+        'decision=' + fmtText(trace.decision_id) +
+        ' | state=' + fmtText(trace.state_id) +
+        ' | turn_key=' + fmtText(trace.turn_key) +
+        ' | screen=' + fmtText(trace.screen_type) +
+        ' | approval=' + fmtText(trace.approval_status);
+    const seqNote = sequence.length > 1 ? ' (' + sequence.length + '-step sequence)' : '';
     document.getElementById('approval-status-line').textContent =
-        'Current proposal: ' + (trace.final_decision || ((trace.parsed_proposal || {}).chosen_command || '-')) +
-        ' | status=' + (trace.status || '-') +
-        ' | approval=' + (trace.approval_status || '-');
+        'Selected proposal: ' + chosen + seqNote +
+        ' | status=' + fmtText(trace.status) +
+        ' | approval=' + fmtText(trace.approval_status);
+    document.getElementById('summary-action').textContent = chosen;
+    document.getElementById('summary-status').innerHTML = statusChip(trace.status);
+    document.getElementById('summary-latency').textContent =
+        fmtText(trace.latency_ms, '-') + ' ms / ' +
+        fmtText((trace.token_usage || {}).total_tokens, '-') + ' tokens';
+    document.getElementById('summary-rounds').textContent = String((trace.llm_calls || []).length || 0);
+    const seqBox = document.getElementById('sequence-display');
+    if (sequence.length) {
+        seqBox.innerHTML = sequence.map((cmd, idx) => {
+            const isCurrent = idx === 0;
+            const color = isCurrent ? 'var(--green)' : 'var(--muted)';
+            const prefix = isCurrent ? '&#9658; ' : (idx + 1) + '. ';
+            return '<span style="color:' + color + ';margin-right:12px">' + prefix + esc(cmd) + '</span>';
+        }).join('');
+    } else {
+        seqBox.innerHTML = '<span style="color:var(--muted)">No sequence.</span>';
+    }
+}
+
+function renderTooling(trace) {
+    const box = document.getElementById('tool-chip-row');
+    const tools = trace.tool_names || [];
+    const chips = [];
+    chips.push(statusChip(trace.status));
+    chips.push('<span class="chip">approval=' + esc(trace.approval_status || 'pending') + '</span>');
+    if (tools.length) {
+        tools.forEach((tool) => chips.push('<span class="chip">' + esc(tool) + '</span>'));
+    } else {
+        chips.push('<span class="chip">No tools used</span>');
+    }
+    box.innerHTML = chips.join('');
+    document.getElementById('planner-summary').textContent = trace.planner_summary || 'No planner summary.';
+}
+
+function renderPromptAndOutputs(trace) {
     document.getElementById('user-prompt').textContent = trace.user_prompt || 'No prompt yet.';
-    document.getElementById('response-text').textContent =
-        trace.response_text || 'No response yet.';
-    document.getElementById('parsed-decision').textContent = JSON.stringify({
+    document.getElementById('response-text').textContent = trace.response_text || 'No response yet.';
+    document.getElementById('reasoning-text').textContent =
+        trace.reasoning_summary_text || trace.reasoning_text || 'No reasoning summary available.';
+    document.getElementById('parsed-decision').textContent = prettyJson({
         parsed_proposal: trace.parsed_proposal || null,
         validation: trace.validation || null,
         final_decision: trace.final_decision || null,
+        final_decision_sequence: trace.final_decision_sequence || [],
         edited_action: trace.edited_action || null,
         execution_outcome: trace.execution_outcome || null,
         latency_ms: trace.latency_ms || null,
         token_usage: trace.token_usage || null,
+        tool_names: trace.tool_names || [],
+        planner_summary: trace.planner_summary || null,
         error: trace.error || null
-    }, null, 2);
+    });
 }
 
-function renderAiRuntimeStatus(payload) {
-    if (!payload) return;
-    const parts = [
-        'AI status=' + (payload.status || 'unknown'),
-        payload.api_style ? 'api=' + payload.api_style : '',
-        payload.message || ''
-    ].filter(Boolean);
-    document.getElementById('approval-status-line').textContent = parts.join(' | ');
+function renderMessage(message) {
+    const role = message.role || message.type || 'message';
+    const subtitle = [];
+    if (message.call_id) subtitle.push('call_id=' + message.call_id);
+    if (message.tool_call_id) subtitle.push('tool_call_id=' + message.tool_call_id);
+    const content = typeof message.content === 'string'
+        ? message.content
+        : (message.output != null ? message.output : prettyJson(message));
+    return (
+        '<div class="message">' +
+            '<div class="message-header">' +
+                '<div class="message-role">' + esc(role) + '</div>' +
+                '<div class="meta">' + esc(subtitle.join(' | ') || '') + '</div>' +
+            '</div>' +
+            '<div class="message-body"><pre>' + esc(content || '(empty)') + '</pre></div>' +
+        '</div>'
+    );
+}
+
+function renderLlmCalls(trace) {
+    const box = document.getElementById('llm-calls');
+    const calls = trace.llm_calls || [];
+    if (!calls.length) {
+        box.innerHTML = '<div class="empty">No captured LLM call history for this trace yet.</div>';
+        return;
+    }
+    box.innerHTML = calls.map((call) => {
+        const messages = call.input_messages || [];
+        return (
+            '<div class="call-card">' +
+                '<div class="call-header">' +
+                    '<div><strong>Round ' + esc(call.round_index) + '</strong> <span class="meta">(' + esc(call.stage || 'proposal') + ')</span></div>' +
+                    '<div class="meta">previous_response_id=' + esc(call.previous_response_id || '-') + ' | messages=' + esc(messages.length) + '</div>' +
+                '</div>' +
+                '<div class="call-body">' +
+                    '<div class="message-list">' + messages.map(renderMessage).join('') + '</div>' +
+                '</div>' +
+            '</div>'
+        );
+    }).join('');
 }
 
 function renderHistory(history) {
     const box = document.getElementById('trace-history');
-    if (!history || history.length === 0) {
-        box.innerHTML = '<div class="meta">No traces yet.</div>';
+    const items = (history || []).slice().reverse();
+    document.getElementById('trace-count').textContent = items.length + ' items';
+    if (!items.length) {
+        box.innerHTML = '<div class="empty">No traces yet.</div>';
         return;
     }
-    box.innerHTML = history.slice().reverse().map((trace) =>
-        '<div class="history-item">' +
-            '<strong>' + esc(trace.decision_id || '-') + '</strong>' +
-            '<div class="meta">status=' + esc(trace.status || '-') +
-            ' | action=' + esc(trace.final_decision || ((trace.parsed_proposal || {}).chosen_command || '-')) +
-            ' | approval=' + esc(trace.approval_status || '-') + '</div>' +
-            '<div style="margin-top:6px">' + esc((trace.response_text || 'No text').slice(0, 220)) + '</div>' +
-        '</div>'
-    ).join('');
+    box.innerHTML = items.map((trace) => {
+        const selected = trace.decision_id === state.selectedDecisionId ? ' selected' : '';
+        const chosen = trace.final_decision || ((trace.parsed_proposal || {}).chosen_command) || '-';
+        const preview = (trace.response_text || trace.user_prompt || 'No text').slice(0, 150);
+        return (
+            '<div class="trace-item' + selected + '" data-decision-id="' + esc(trace.decision_id) + '">' +
+                '<div class="trace-item-title">' + esc(trace.decision_id || '-') + '</div>' +
+                '<div class="meta">state=' + esc(trace.state_id || '-') + ' | ' + esc(trace.screen_type || '-') + '</div>' +
+                '<div class="meta" style="margin-top:4px">' + esc(trace.status || '-') + ' | action=' + esc(chosen) + '</div>' +
+                '<div class="trace-item-preview">' + esc(preview) + '</div>' +
+            '</div>'
+        );
+    }).join('');
+    box.querySelectorAll('.trace-item').forEach((node) => {
+        node.addEventListener('click', () => {
+            state.followLatest = false;
+            document.getElementById('follow-latest').checked = false;
+            state.selectedDecisionId = node.getAttribute('data-decision-id') || '';
+            renderAll();
+        });
+    });
+}
+
+function renderAll() {
+    const trace = selectedTrace();
+    renderHistory(state.traceHistory);
+    if (!trace) {
+        document.getElementById('trace-meta').textContent = 'Awaiting agent trace...';
+        return;
+    }
+    renderSummary(trace);
+    renderTooling(trace);
+    renderPromptAndOutputs(trace);
+    renderLlmCalls(trace);
+}
+
+function updateStatePayload(data) {
+    state.latestTrace = data.latest_trace || state.latestTrace;
+    state.traceHistory = data.trace_history || state.traceHistory || [];
+    document.getElementById('ai-mode-select').value = data.mode || 'manual';
+    if (state.followLatest && state.latestTrace) {
+        state.selectedDecisionId = state.latestTrace.decision_id || '';
+    } else if (!state.selectedDecisionId && state.latestTrace) {
+        state.selectedDecisionId = state.latestTrace.decision_id || '';
+    }
+    const parts = [
+        'AI status=' + (data.ai_status || 'unknown'),
+        data.ai_api_style ? 'api=' + data.ai_api_style : '',
+        data.ai_status_message || ''
+    ].filter(Boolean);
+    if (parts.length && !selectedTrace()) {
+        document.getElementById('approval-status-line').textContent = parts.join(' | ');
+    }
+    renderAll();
 }
 
 async function fetchAiState() {
     const r = await fetch('/api/ai/state');
     const d = await r.json();
-    document.getElementById('ai-mode-select').value = d.mode || 'manual';
-    renderAiRuntimeStatus({
-        status: d.ai_status,
-        api_style: d.ai_api_style,
-        message: d.ai_status_message
-    });
-    renderTrace(d.latest_trace);
-    renderHistory(d.trace_history || []);
+    updateStatePayload(d);
 }
 
-ws.onmessage = (event) => {
+ws.onmessage = async (event) => {
     try {
         const data = JSON.parse(event.data);
         if (data.type === 'agent_trace') {
-            renderTrace(data.payload);
-            fetchAiState();
+            await fetchAiState();
         } else if (data.type === 'ai_status') {
-            renderAiRuntimeStatus(data.payload);
+            await fetchAiState();
         } else if (data.type === 'agent_mode') {
             document.getElementById('ai-mode-select').value = data.payload.mode;
-            document.getElementById('approval-status-line').textContent = 'AI mode set to ' + data.payload.mode + '.';
         }
     } catch (e) {
         console.error(e);
     }
 };
+
+document.getElementById('follow-latest').addEventListener('change', (event) => {
+    state.followLatest = Boolean(event.target.checked);
+    if (state.followLatest && state.latestTrace) {
+        state.selectedDecisionId = state.latestTrace.decision_id || '';
+    }
+    renderAll();
+});
 
 async function updateAiMode(mode) {
     try {

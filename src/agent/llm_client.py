@@ -9,41 +9,14 @@ import httpx
 from openai import OpenAI
 
 from src.agent.config import AgentConfig
-from src.agent.schemas import (
-    InspectDiscardPileTool,
-    InspectDrawPileTool,
-    InspectExhaustPileTool,
-    TraceTokenUsage,
-)
+from src.agent.schemas import TraceTokenUsage
+from src.agent.tool_registry import list_function_tools
 
 
 TraceCallback = Callable[[str], None]
 ToolCallback = Callable[[str], None]
 ApiStyle = Literal["responses", "chat_completions"]
 CapabilityState = Literal["unchecked", "checking", "ready", "failed"]
-
-
-def _build_function_tool(schema_model: type) -> dict[str, Any]:
-    return {
-        "type": "function",
-        "name": schema_model.__name__,
-        "description": (
-            (schema_model.__doc__ or "").strip()
-            or f"Inspect the corresponding pile and answer a focused question about it."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "question": {
-                    "type": "string",
-                    "description": "Why you want to inspect this pile or what you are checking for.",
-                }
-            },
-            "required": ["question"],
-            "additionalProperties": False,
-        },
-        "strict": True,
-    }
 
 
 def _parse_tool_arguments(raw_arguments: str) -> dict[str, Any]:
@@ -147,11 +120,7 @@ class LLMClient:
             timeout=self.probe_timeout,
             max_retries=0,
         )
-        self.tools = [
-            _build_function_tool(InspectDrawPileTool),
-            _build_function_tool(InspectDiscardPileTool),
-            _build_function_tool(InspectExhaustPileTool),
-        ]
+        self.tools = list_function_tools()
         self.chat_tools = [_to_chat_tool_schema(tool) for tool in self.tools]
         self.api_style: ApiStyle | None = None
         self.available = False
@@ -260,6 +229,7 @@ class LLMClient:
     def _basic_responses_text(self, client: OpenAI, message: str) -> str:
         response = client.responses.create(
             model=self.config.reasoning_model,
+            reasoning={"effort": self.config.reasoning_effort},
             input=[{"role": "user", "content": message}],
         )
         return (getattr(response, "output_text", None) or "").strip()
@@ -290,7 +260,7 @@ class LLMClient:
             tools=self.tools,
             input=input_items,
             previous_response_id=previous_response_id,
-            reasoning={"summary": "auto"},
+            reasoning={"summary": "auto", "effort": self.config.reasoning_effort},
         )
 
     def _to_chat_messages(self, system_prompt: str, input_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -408,7 +378,7 @@ class LLMClient:
             "tool_choice": "auto",
         }
         # Reasoning models: request reasoning for compatibility with Responses API behavior
-        create_kwargs["reasoning_effort"] = "medium"
+        create_kwargs["reasoning_effort"] = self.config.reasoning_effort
         try:
             stream = self.client.chat.completions.create(**create_kwargs)
         except TypeError:
@@ -538,13 +508,35 @@ class LLMClient:
                 "important relics or scaling pieces, pathing goals, boss preparation, and unusual constraints. "
                 "Do not restate routine board-state details that will appear in the live prompt."
             )
-            completion = self.client.chat.completions.create(
-                model=self.config.fast_model,
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": transcript},
-                ],
-            )
+            # Optional reasoning effort for the fast model summarization.
+            # If set to "none", we omit the SDK parameter entirely for compatibility.
+            fast_effort = (self.config.fast_reasoning_effort or "").strip().lower()
+            if fast_effort and fast_effort != "none":
+                try:
+                    completion = self.client.chat.completions.create(
+                        model=self.config.fast_model,
+                        messages=[
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": transcript},
+                        ],
+                        reasoning_effort=fast_effort,
+                    )
+                except TypeError:
+                    completion = self.client.chat.completions.create(
+                        model=self.config.fast_model,
+                        messages=[
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": transcript},
+                        ],
+                    )
+            else:
+                completion = self.client.chat.completions.create(
+                    model=self.config.fast_model,
+                    messages=[
+                        {"role": "system", "content": prompt},
+                        {"role": "user", "content": transcript},
+                    ],
+                )
             choices = getattr(completion, "choices", None) or []
             if not choices:
                 return ""

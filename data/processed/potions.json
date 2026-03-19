@@ -1,0 +1,260 @@
+[
+  {
+    "name": "Ancient Potion",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "effect": "Gain 1 (2) [Artifact]."
+  },
+  {
+    "name": "Ambrosia",
+    "rarity": "Rare",
+    "class_specific": "Watcher",
+    "effect": "Enter Divinity."
+  },
+  {
+    "name": "Attack Potion",
+    "rarity": "Common",
+    "class_specific": null,
+    "effect": "Choose 1 of 3 random Attack cards to add to your hand. It costs 0 this turn.",
+    "effect_sacred_bark": "Choose 1 of 3 random Attack cards to add two copies of it to your hand. They cost 0 this turn."
+  },
+  {
+    "name": "Blessing of the Forge",
+    "rarity": "Common",
+    "class_specific": null,
+    "effect": "Upgrade all cards in your hand for the rest of combat."
+  },
+  {
+    "name": "Block Potion",
+    "rarity": "Common",
+    "class_specific": null,
+    "effect": "Gain 12 (24) Block."
+  },
+  {
+    "name": "Blood Potion",
+    "rarity": "Common",
+    "class_specific": "Ironclad",
+    "effect": "Heal for 20 (40)% of your Max HP."
+  },
+  {
+    "name": "Bottled Miracle",
+    "rarity": "Common",
+    "class_specific": "Watcher",
+    "effect": "Add 2 (4) Miracles to your hand."
+  },
+  {
+    "name": "Colorless Potion",
+    "rarity": "Common",
+    "class_specific": null,
+    "effect": "Choose 1 of 3 random Colorless cards to add to your hand. It costs 0 this turn.",
+    "effect_sacred_bark": "Choose 1 of 3 random Colorless cards to add 2 copies of it to your hand. They cost 0 this turn."
+  },
+  {
+    "name": "Cultist Potion",
+    "rarity": "Rare",
+    "class_specific": null,
+    "effect": "Gain 1 (2) [Ritual]."
+  },
+  {
+    "name": "Cunning Potion",
+    "rarity": "Uncommon",
+    "class_specific": "Silent",
+    "effect": "Add 3 (6) Shivs+ to your hand."
+  },
+  {
+    "name": "Dexterity Potion",
+    "rarity": "Common",
+    "class_specific": null,
+    "effect": "Gain 2 (4) [Dexterity]."
+  },
+  {
+    "name": "Distilled Chaos",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "effect": "Play the top 3 (6) cards of your draw pile."
+  },
+  {
+    "name": "Duplication Potion",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "effect": "This turn, your next card is played twice.",
+    "effect_sacred_bark": "This turn, your next two cards are played twice."
+  },
+  {
+    "name": "Elixir",
+    "rarity": "Uncommon",
+    "class_specific": "Ironclad",
+    "effect": "Exhaust any number of cards in your hand."
+  },
+  {
+    "name": "Energy Potion",
+    "rarity": "Common",
+    "class_specific": null,
+    "effect": "Gain 2 (4) [Energy]."
+  },
+  {
+    "name": "Entropic Brew",
+    "rarity": "Rare",
+    "class_specific": null,
+    "effect": "Fill all your empty potion slots with random potions."
+  },
+  {
+    "name": "Essence of Darkness",
+    "rarity": "Rare",
+    "class_specific": "Defect",
+    "effect": "Channel 1 (2) Dark for each orb slot."
+  },
+  {
+    "name": "Essence of Steel",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "effect": "Gain 4 (8) [Plated Armor]."
+  },
+  {
+    "name": "Explosive Potion",
+    "rarity": "Common",
+    "class_specific": null,
+    "effect": "Deal 10 (20) damage to ALL enemies."
+  },
+  {
+    "name": "Fairy in a Bottle",
+    "rarity": "Rare",
+    "class_specific": null,
+    "effect": "When you would die, heal to 30 (60)% of your Max HP instead and discard this potion."
+  },
+  {
+    "name": "Fear Potion",
+    "rarity": "Common",
+    "class_specific": null,
+    "effect": "Apply 3 (6) [Vulnerable] to target enemy."
+  },
+  {
+    "name": "Fire Potion",
+    "rarity": "Common",
+    "class_specific": null,
+    "effect": "Deal 20 (40) damage to target enemy."
+  },
+  {
+    "name": "Flex Potion",
+    "rarity": "Common",
+    "class_specific": null,
+    "effect": "Gain 5 (10) [Strength]. At the end of your turn, lose 5 (10) [Strength]."
+  },
+  {
+    "name": "Focus Potion",
+    "rarity": "Common",
+    "class_specific": "Defect",
+    "effect": "Gain 2 (4) [Focus]."
+  },
+  {
+    "name": "Fruit Juice",
+    "rarity": "Rare",
+    "class_specific": null,
+    "effect": "Gain 5 (10) Max HP."
+  },
+  {
+    "name": "Gambler's Brew",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "effect": "Discard any number of cards, then draw that many."
+  },
+  {
+    "name": "Ghost in a Jar",
+    "rarity": "Rare",
+    "class_specific": "Silent",
+    "effect": "Gain 1 (2) [Intangible]."
+  },
+  {
+    "name": "Heart of Iron",
+    "rarity": "Rare",
+    "class_specific": "Ironclad",
+    "effect": "Gain 6 (12) [Metallicize]."
+  },
+  {
+    "name": "Liquid Bronze",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "effect": "Gain 3 (6) [Thorns]."
+  },
+  {
+    "name": "Liquid Memories",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "effect": "Choose a card in your discard pile and return it to your hand. It costs 0 this turn.",
+    "effect_sacred_bark": "Choose 2 cards in your discard pile and return them to your hand. They cost 0 this turn."
+  },
+  {
+    "name": "Poison Potion",
+    "rarity": "Common",
+    "class_specific": "Silent",
+    "effect": "Apply 6 (12) [Poison] to target enemy."
+  },
+  {
+    "name": "Potion of Capacity",
+    "rarity": "Uncommon",
+    "class_specific": "Defect",
+    "effect": "Gain 2 (4) Orb slots."
+  },
+  {
+    "name": "Power Potion",
+    "rarity": "Common",
+    "class_specific": null,
+    "effect": "Choose 1 of 3 random Power cards to add to your hand. It costs 0 this turn.",
+    "effect_sacred_bark": "Choose 1 of 3 random Power cards to add two copies of it to your hand. They cost 0 this turn."
+  },
+  {
+    "name": "Regen Potion",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "effect": "Gain 5 (10) [Regeneration]."
+  },
+  {
+    "name": "Skill Potion",
+    "rarity": "Common",
+    "class_specific": null,
+    "effect": "Choose 1 of 3 random Skill cards to add to your hand. It costs 0 this turn.",
+    "effect_sacred_bark": "Choose 1 of 3 random Skill cards to add two copies of it to your hand. They cost 0 this turn."
+  },
+  {
+    "name": "Smoke Bomb",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "effect": "Escape from a non-boss combat. Receive no rewards."
+  },
+  {
+    "name": "Snecko Oil",
+    "rarity": "Uncommon",
+    "class_specific": null,
+    "effect": "Draw 5 (10) cards. Randomize the cost of cards in your hand."
+  },
+  {
+    "name": "Speed Potion",
+    "rarity": "Common",
+    "class_specific": null,
+    "effect": "Gain 5 (10) [Dexterity]. At the end of your turn, lose 5 (10) [Dexterity]."
+  },
+  {
+    "name": "Stance Potion",
+    "rarity": "Uncommon",
+    "class_specific": "Watcher",
+    "effect": "Enter Calm or Wrath."
+  },
+  {
+    "name": "Strength Potion",
+    "rarity": "Common",
+    "class_specific": null,
+    "effect": "Gain 2 (4) [Strength]."
+  },
+  {
+    "name": "Swift Potion",
+    "rarity": "Common",
+    "class_specific": null,
+    "effect": "Draw 3 (6) cards."
+  },
+  {
+    "name": "Weak Potion",
+    "rarity": "Common",
+    "class_specific": null,
+    "effect": "Apply 3 (6) [Weak] to target enemy."
+  }
+]

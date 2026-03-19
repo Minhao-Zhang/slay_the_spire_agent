@@ -16,7 +16,8 @@ class DataStore:
         self.bosses: Dict[str, dict] = {}
         self.events: Dict[str, dict] = {}
         self.powers: Dict[str, dict] = {}
-        
+        self.potions: Dict[str, dict] = {}
+
         self.is_loaded = False
 
     def load_all(self):
@@ -37,7 +38,8 @@ class DataStore:
         self.bosses = {b["name"].lower(): b for b in _load_json_list("bosses.json")}
         self.events = {e["name"].lower(): e for e in _load_json_list("events.json")}
         self.powers = {p["name"].lower(): p for p in _load_json_list("powers.json")}
-        
+        self.potions = {p["name"].lower(): p for p in _load_json_list("potions.json")}
+
         self.is_loaded = True
 
 # Global singleton
@@ -172,9 +174,51 @@ def get_power_info(name: str) -> Optional[dict]:
     return None
 
 def get_potion_info(name: str) -> Optional[dict]:
-    """Retrieve details about a potion by name.
-    Returns a placeholder until a potions.json data file is added.
-    """
+    """Retrieve details about a potion by name from data/processed/potions.json."""
     if not name or name == "Potion Slot":
         return None
+    _ensure_loaded()
+    key = name.lower().replace("'", "").replace('"', "")
+
+    if key in _store.potions:
+        return _store.potions[key]
+
+    for k, v in _store.potions.items():
+        if key in k.replace("'", "") or k.replace("'", "") in key:
+            return v
+
     return {"name": name, "effect": "No data available.", "rarity": "Unknown"}
+
+
+def get_parsed_potion_info(name: str, has_sacred_bark: bool = False) -> Optional[dict]:
+    """Retrieve potion info with effect text resolved for Sacred Bark.
+
+    Potion effect strings use the same convention as card descriptions:
+    - Inline "base (Sacred Bark)" for numeric values, e.g. "Heal 5 (10) HP."
+    - Optional "effect_sacred_bark" for full text when Sacred Bark changes more than numbers
+
+    When has_sacred_bark is True, parenthesized values are used (or effect_sacred_bark if set).
+    """
+    potion = get_potion_info(name)
+    if not potion:
+        return None
+
+    parsed = dict(potion)
+    effect = parsed.get("effect", "")
+
+    if has_sacred_bark and parsed.get("effect_sacred_bark"):
+        parsed["effect"] = parsed["effect_sacred_bark"]
+        return parsed
+
+    if effect:
+        # Same pattern as cards: number (number) -> use second if Sacred Bark, else first
+        pattern = r"(\d+)\s*\((\d+)\)"
+
+        def replace_match(match):
+            base_val = match.group(1)
+            sb_val = match.group(2)
+            return sb_val if has_sacred_bark else base_val
+
+        parsed["effect"] = re.sub(pattern, replace_match, effect)
+
+    return parsed

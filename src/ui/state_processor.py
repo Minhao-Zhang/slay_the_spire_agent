@@ -100,7 +100,7 @@ def process_state(raw: dict) -> dict:
         "potions": vm["inventory"]["potions"],
     }
 
-    # -- actions --
+    # -- actions (legal commands; main.py uses len(vm["actions"]) == 1 to short-circuit and skip the LLM) --
     vm["actions"] = _build_actions(commands, game, combat, screen_type, screen_state)
 
     return vm
@@ -321,6 +321,16 @@ def _build_screen(screen_type: str, s: dict, game: dict, combat: Optional[dict])
             "cards": [_enrich_card(c) for c in cards],
             "num_cards": s.get("num_cards", s.get("max_cards", 1)),
         }
+        # Propagate intent flags so the LLM knows whether this is add/remove/upgrade/transform
+        if s.get("for_purge"):
+            content["grid_purpose"] = "REMOVE"
+            screen["title"] = "Choose a card to REMOVE from your deck"
+        elif s.get("for_upgrade"):
+            content["grid_purpose"] = "UPGRADE"
+            screen["title"] = "Choose a card to UPGRADE"
+        elif s.get("for_transform"):
+            content["grid_purpose"] = "TRANSFORM"
+            screen["title"] = "Choose a card to TRANSFORM"
         if screen_type == "HAND_SELECT":
             reason = _hand_select_screen_reason(combat)
             if reason:
@@ -390,6 +400,8 @@ def _build_screen(screen_type: str, s: dict, game: dict, combat: Optional[dict])
 # ---------------------------------------------------------------------------
 # Action builder
 # ---------------------------------------------------------------------------
+# When the game sends only "confirm" in available_commands (e.g. after hand select
+# / choose card to discard), vm["actions"] has one entry and main.py short-circuits (no LLM).
 
 _COMMAND_BUTTONS = [
     ("proceed", "PROCEED", "PROCEED", "primary"),
@@ -418,6 +430,8 @@ def _build_actions(commands: list, game: dict, combat: Optional[dict],
         for i, card in enumerate(hand):
             if not card.get("is_playable") or card.get("cost", 99) > energy:
                 continue
+            uuid_full = card.get("uuid", "")
+            card_uuid_token = uuid_full[:6] if uuid_full else ""
             if card.get("has_target"):
                 for mi, m in enumerate(monsters):
                     if not m.get("is_gone") and not m.get("half_dead"):
@@ -425,12 +439,17 @@ def _build_actions(commands: list, game: dict, combat: Optional[dict],
                             "label": f"{card['name']} \u2192 {m['name']}",
                             "command": f"PLAY {i + 1} {mi}",
                             "style": "success",
+                            "card_uuid_token": card_uuid_token,
+                            "hand_index": i + 1,
+                            "monster_index": mi,
                         })
             else:
                 actions.append({
                     "label": card["name"],
                     "command": f"PLAY {i + 1}",
                     "style": "primary",
+                    "card_uuid_token": card_uuid_token,
+                    "hand_index": i + 1,
                 })
 
     # Use potions

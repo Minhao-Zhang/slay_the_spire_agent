@@ -113,11 +113,16 @@ async def get_ai_debugger(request: Request):
 
 @app.get("/api/ai/state")
 async def get_ai_state():
+    latest_trace = ai_runtime["latest_trace"]
+    sequence_preview = []
+    if latest_trace:
+        sequence_preview = latest_trace.get("final_decision_sequence") or []
     return {
         "mode": ai_runtime["mode"],
         "system_prompt": SYSTEM_PROMPT,
         "latest_state_id": ai_runtime["latest_state_id"],
-        "latest_trace": ai_runtime["latest_trace"],
+        "latest_trace": latest_trace,
+        "sequence_preview": sequence_preview,
         "trace_history": ai_runtime["trace_history"],
         "ai_enabled": ai_runtime["ai_enabled"],
         "ai_status": ai_runtime["ai_status"],
@@ -299,7 +304,10 @@ async def approve_ai_action(cmd: ApprovalRequest):
             "message": "This proposal is for a previous state; the game has moved on. Approve only the current proposal.",
         }
 
-    action = cmd.action.strip() or trace.get("final_decision") or (trace.get("parsed_proposal") or {}).get("chosen_command", "")
+    parsed_proposal = trace.get("parsed_proposal") or {}
+    chosen_commands = parsed_proposal.get("chosen_commands") or []
+    first_chosen = chosen_commands[0] if chosen_commands else parsed_proposal.get("chosen_command", "")
+    action = cmd.action.strip() or trace.get("final_decision") or first_chosen
     if not action:
         return {"status": "error", "message": "No action available to approve"}
 

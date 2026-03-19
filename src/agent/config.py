@@ -16,7 +16,9 @@ class AgentConfig(BaseModel):
     base_url: str = "https://api.openai.com/v1"
     api_key: str = ""
     reasoning_model: str = "gpt-5.4"
-    fast_model: str = "gpt-5-mini"
+    reasoning_effort: str = "medium"  # low, medium, high (Responses API / Chat reasoning)
+    fast_model: str = "gpt-5.4-mini"
+    fast_reasoning_effort: str = "none"  # low, medium, high, or none (Chat reasoning)
     system_prompt_path: str = str(DEFAULT_PROMPT_PATH)
     default_mode: str = "propose"
     max_tool_roundtrips: int = Field(default=3, ge=0, le=5)
@@ -25,8 +27,10 @@ class AgentConfig(BaseModel):
     probe_timeout_seconds: float = Field(default=6.0, gt=0)
     max_retries: int = Field(default=0, ge=0, le=2)
     proposal_timeout_seconds: float = Field(default=20.0, gt=0)
+    proposal_failure_streak_limit: int = Field(default=3, ge=1, le=20)
     history_compact_token_threshold: int = Field(default=100_000, ge=0)
     history_keep_recent: int = Field(default=6, ge=0)
+    planner_enabled: bool = False
 
     @property
     def enabled(self) -> bool:
@@ -40,7 +44,9 @@ def get_agent_config() -> AgentConfig:
         base_url=os.getenv("LLM_BASE_URL", "https://api.openai.com/v1"),
         api_key=os.getenv("LLM_API_KEY", ""),
         reasoning_model=os.getenv("LLM_MODEL_REASONING", "gpt-5.4"),
-        fast_model=os.getenv("LLM_MODEL_FAST", "gpt-5-mini"),
+        reasoning_effort=os.getenv("LLM_REASONING_EFFORT", "medium").strip().lower(),
+        fast_model=os.getenv("LLM_MODEL_FAST", "gpt-5.4-mini"),
+        fast_reasoning_effort=os.getenv("LLM_FAST_REASONING_EFFORT", "none").strip().lower(),
         system_prompt_path=os.getenv("LLM_SYSTEM_PROMPT_PATH", str(DEFAULT_PROMPT_PATH)),
         default_mode=os.getenv("AGENT_MODE", "propose"),
         max_tool_roundtrips=int(os.getenv("LLM_MAX_TOOL_ROUNDTRIPS", "3")),
@@ -49,10 +55,12 @@ def get_agent_config() -> AgentConfig:
         probe_timeout_seconds=float(os.getenv("LLM_PROBE_TIMEOUT_SECONDS", "6")),
         max_retries=int(os.getenv("LLM_MAX_RETRIES", "0")),
         proposal_timeout_seconds=float(os.getenv("LLM_PROPOSAL_TIMEOUT_SECONDS", "20")),
+        proposal_failure_streak_limit=int(os.getenv("LLM_PROPOSAL_FAILURE_STREAK_LIMIT", "3")),
         history_compact_token_threshold=int(
             os.getenv("LLM_HISTORY_COMPACT_TOKEN_THRESHOLD", "100000")
         ),
         history_keep_recent=int(os.getenv("LLM_HISTORY_KEEP_RECENT", "6")),
+        planner_enabled=os.getenv("LLM_ENABLE_PLANNER", "false").strip().lower() == "true",
     )
 
 

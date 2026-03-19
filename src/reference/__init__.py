@@ -6,6 +6,7 @@ from .knowledge_base import (
     get_event_info,
     get_power_info,
     get_potion_info,
+    get_parsed_potion_info,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "get_event_info",
     "get_power_info",
     "get_potion_info",
+    "get_parsed_potion_info",
 ]

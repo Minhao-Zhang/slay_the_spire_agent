@@ -1,113 +1,111 @@
 # Architecture
 
+## Current Runtime Data Flow
+
 ```mermaid
 flowchart LR
-    GM[CommunicationMod / Slay the Spire]
+    game[CommunicationModOrGame] -->|"raw state JSON (stdin)"| main[src/main.py]
 
-    subgraph Runtime["Runtime"]
-        MAIN["src/main.py"]
-        PROC["src/ui/state_processor.py"]
-        LOGS[("logs/*.json\nlogs/*.ai.json")]
+    subgraph vmLayer [VMAndControlSync]
+        main -->|"process_state(raw)"| stateProc[src/ui/state_processor.py]
+        stateProc -->|"vm + legal actions + KB enrichment"| main
+        main -->|"POST /update_state (state + state_id)"| dashboard[src/ui/dashboard.py]
+        dashboard -->|"broadcast state + trace + logs"| ui[index.html + ai_debugger.html]
+        ui -->|"manual/approve/reject/mode"| dashboard
+        dashboard -->|"GET /poll_instruction"| main
     end
 
-    subgraph Dashboard["Dashboard / Control Plane"]
-        API["src/ui/dashboard.py\nFastAPI + WebSocket state"]
-        UI["index.html + ai_debugger.html"]
-        USER["Human operator"]
+    subgraph decisionLayer [AgentDecisionLayer]
+        main -->|"start_proposal(vm,state_id,mode)"| graph[src/agent/graph.py]
+        graph -->|"build prompt sections"| prompt[src/agent/prompt_builder.py]
+        graph -->|"scene memory + compaction + strategy slots"| session[src/agent/session_state.py]
+        graph -->|"optional planner node (LLM_ENABLE_PLANNER)"| planner[plan_turn]
+        prompt -->|"system prompt + user prompt"| llm[src/agent/llm_client.py]
+        llm -->|"stream deltas + tool calls"| graph
+        graph -->|"execute registered tool"| tools[src/agent/tool_registry.py]
+        tools -->|"tool outputs"| graph
+        graph -->|"parse + resolve intent to legal command"| policy[src/agent/policy.py]
+        graph -->|"live trace updates"| trace[src/agent/tracing.py + schemas.py]
+        trace -->|"POST /agent_trace"| dashboard
     end
 
-    subgraph Agent["AI Decision Layer"]
-        GRAPH["src/agent/graph.py\nLangGraph workflow"]
-        PROMPT["prompt_builder.py\n+ system_prompt.md"]
-        LLM["llm_client.py\nOpenAI Responses API"]
-        POLICY["policy.py\nparse + legal-action validation"]
-        SESSION["session_state.py\nconversation + compaction"]
-        TRACE["tracing.py + schemas.py\nlive trace + persisted AI log"]
+    subgraph persistence [PersistenceAndEval]
+        main -->|"write state logs"| logs[logs/<run>/<event>.json]
+        trace -->|"write sidecar logs"| ailogs[logs/<run>/<event>.ai.json]
+        ailogs -->|"offline metrics"| replay[src/eval/replay.py]
     end
 
-    GM -->|"raw game state"| MAIN
-    MAIN -->|"normalize + enrich"| PROC
-    PROC -->|"view model"| MAIN
-    MAIN -->|"state + state_id"| API
-    API -->|"process_state() + broadcast"| UI
-    USER -->|"manual action / approve / reject / edit / mode"| UI
-    UI -->|"HTTP + WebSocket control/events"| API
-    API -->|"manual_action + approved_action + mode"| MAIN
-
-    MAIN -->|"when AI enabled + legal actions exist"| GRAPH
-    GRAPH --> PROMPT
-    PROMPT -->|"system prompt + structured user prompt"| LLM
-    LLM -->|"streamed response + tool calls"| GRAPH
-    GRAPH -->|"inspect draw/discard/exhaust pile"| POLICY
-    POLICY -->|"tool results + exact command match"| GRAPH
-    GRAPH --> SESSION
-    GRAPH --> TRACE
-    TRACE -->|"live agent_trace updates"| API
-    API -->|"latest trace + history"| UI
-
-    MAIN -->|"state logs"| LOGS
-    TRACE -->|"AI sidecar log"| LOGS
-
-    MAIN -->|"only execution boundary:\nprint final command"| GM
+    main -->|"only execution boundary: print(action)"| game
 ```
 
----
+## Decision Loop Details
 
-## Agent prompt structure
+1. `src/main.py` reads raw JSON state, computes deterministic `state_id`, builds VM with `process_state()`.
+2. `src/main.py` sends state to dashboard and polls instruction channel (`manual_action`, `approved_action`, `agent_mode`).
+3. If eligible, it starts one background proposal (`ThreadPoolExecutor`, single worker).
+4. `src/agent/graph.py` runs:
+   - `build_prompt` (session scene key, compaction, strategy memory update),
+   - optional `plan_turn` (feature-flagged),
+   - `run_agent` (streaming LLM call),
+   - `run_tool` loop (bounded by `max_tool_roundtrips`),
+   - `validate_decision`.
+5. `src/agent/policy.py` validates decision with command normalization and intent fallbacks (`chosen_label`, `action_type`, `choice_index`).
+6. Final action is executed only by `print(action)` in `src/main.py` (manual/propose/auto policy applied there).
 
-The user prompt is built in `src/agent/prompt_builder.py` by `build_user_prompt(vm, state_id, recent_actions)`. It does **not** include a STATE ID section (the state ID is for internal tracing only).
+## Control Plane and Execution Modes
 
-### Sections (in order)
+- `manual`: only operator/manual actions execute.
+- `propose`: AI proposes, human approves/edits/rejects in dashboard.
+- `auto`: AI proposal auto-executes when valid.
+- Dashboard is control-plane only; it never emits game commands directly.
 
-| Section | Purpose |
-|---------|---------|
-| **PLAYER STATE** | class, floor, hp, gold, energy, turn, block (in combat) |
-| **LEGAL ACTIONS** | Numbered label + command for all legal actions |
-| **VALID PLAYS** | Subset of legal actions that are PLAY commands (for quick parsing) |
-| **MONSTERS** | hp, intent, powers, known_moves (first 3), notes, ai (from KB when available) |
-| **HAND** | Cards with cost, targeted, upgrades, desc |
-| **PLAYER POWERS** | Active powers (e.g. No Draw) |
-| **RELICS** | Name + short description |
-| **POTIONS** | Indexed list with effect from KB when available |
-| **MAP PLANNING** | Only when `screen.type == "MAP"`: current_position, next_nodes (symbol@x,y), boss_available, boss name + notes/ai |
-| **CURRENT SCREEN** | type, title, content_keys |
-| **RECENT EXECUTED ACTIONS** | Last 5 executed actions this scene |
-| **TOOLING NOTES** | When to use pile inspection tools |
+## Tooling Path (Current)
 
-Monster **notes** and **ai** come from `data/processed/monsters.json` via `get_monster_info()` in the state processor; the prompt builder reads them from each monster’s `kb`. MAP planning uses `vm["map"]`: `next_nodes`, `current_node`, `boss_available`, `boss_name`, `boss_kb`.
+Tools are centralized in `src/agent/tool_registry.py` and exposed by `src/agent/llm_client.py`:
 
-System instructions live in `src/agent/prompts/system_prompt.md` (gameplay guidance, elite reminders, rules, `<final_decision>` format).
+- `inspect_draw_pile`
+- `inspect_discard_pile`
+- `inspect_exhaust_pile`
+- `inspect_deck_summary`
 
----
+`graph.py` executes tools via the registry and feeds `function_call_output` back to the model for continuation.
 
-## Chat history and compaction
+## Prompt and Memory Inputs
 
-History is **not** reset per scene. It persists across combat, map, rewards, events, etc.
+`src/agent/prompt_builder.py` composes sections including:
 
-- **Scene key** — `build_turn_key(vm)` in `src/agent/tracing.py` identifies the current scene (e.g. `COMBAT:12`, `MAP:12`). Used to scope per-scene **action** history only; the conversation `messages` list is global.
-- **Compaction** — When the session’s estimated token count exceeds `history_compact_token_threshold`, older user/assistant pairs are summarized by the fast model into a single `## COMPACTED HISTORY` user message. The last `history_keep_recent` exchanges are kept verbatim.
-- **Config** — `LLM_HISTORY_COMPACT_TOKEN_THRESHOLD` (default 100_000), `LLM_HISTORY_KEEP_RECENT` (default 6). Token estimation and compaction logic are in `src/agent/session_state.py` (`TurnConversation.needs_compaction`, `compact_history`); the summarization call is `llm_client.summarize_history_compaction()` invoked from `graph.py` in `_build_prompt`.
+- `PLAYER STATE`, `LEGAL ACTIONS`, `VALID PLAYS`,
+- `MONSTERS`, `HAND`, `PLAYER POWERS`, `RELICS`, `POTIONS`,
+- `MAP PLANNING`, `MAP SCENE` (when applicable),
+- `CURRENT SCREEN`, `RECENT EXECUTED ACTIONS`,
+- `STRATEGY MEMORY` (structured slots),
+- `TOOLING NOTES`.
 
----
+Memory behavior in `src/agent/session_state.py`:
 
-## Traces and persisted AI log
+- Global chat history across the run.
+- Scene-scoped recent executed actions.
+- Compaction into `## COMPACTED HISTORY` when token threshold is exceeded.
+- Structured strategy memory slots (`deck_plan`, `pathing_goal`, `boss_prep`, `constraints`).
 
-- **AgentTrace** — Live trace per decision: prompts, streamed output, parsed proposal, validation, final_decision, approval_status, latency, **token_usage** (input_tokens, output_tokens, total_tokens).
-- **PersistedAiLog** — Written alongside each state log as `<state_log>.ai.json`. Contains user_message, assistant_message, status, final_decision, approval_status, **input_tokens**, **output_tokens**, **total_tokens**, error. Built by `build_persisted_ai_log(trace)` in `src/agent/tracing.py`.
+## Reliability and Fallback
 
----
+`src/main.py` tracks proposal failure streaks:
 
-## Key files
+- Transient proposal failure does not immediately disable AI.
+- AI is disabled for run only after `LLM_PROPOSAL_FAILURE_STREAK_LIMIT`.
+- On success, streak resets and normal operation resumes.
 
-| File | Role |
-|------|------|
-| `src/agent/prompt_builder.py` | Builds user prompt from VM; monster/relic/potion lines, MAP PLANNING when screen is MAP |
-| `src/agent/prompts/system_prompt.md` | System instructions for the agent |
-| `src/agent/tracing.py` | `build_state_id`, `build_turn_key()`, `create_trace()`, `build_persisted_ai_log()`, `write_ai_log()` |
-| `src/agent/session_state.py` | `TurnConversation`: messages, action_history, `set_scene()`, `needs_compaction()`, `compact_history()` |
-| `src/agent/llm_client.py` | LLM calls, streaming, tool handling; `summarize_history_compaction()` for history compaction |
-| `src/agent/graph.py` | LangGraph workflow; `_build_prompt` (session.set_scene, compaction check, build_user_prompt), run_agent, tools, validation |
-| `src/agent/config.py` | AgentConfig: models, timeouts, `history_compact_token_threshold`, `history_keep_recent` |
-| `src/agent/schemas.py` | AgentTrace, PersistedAiLog, TraceTokenUsage, ParsedAgentTurn, FinalDecision, etc. |
-| `data/processed/monsters.json` | Monster KB (moves, notes, ai) used via `get_monster_info()` in state processor |
-| `data/processed/relics.json` | Relic descriptions for prompt and UI |
+## Trace and Log Schema (Current)
+
+Live `AgentTrace` includes:
+
+- decision/state identity (`decision_id`, `state_id`, `turn_key`),
+- planning/prompt/response fields,
+- parsed proposal + validation,
+- tool names used,
+- planner summary,
+- token usage + latency,
+- execution outcome and approval status.
+
+Persisted sidecar log (`*.ai.json`) includes matching diagnostic fields to support replay evaluation in `src/eval/replay.py`.

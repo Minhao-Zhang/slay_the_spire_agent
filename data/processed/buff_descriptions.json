@@ -1,0 +1,18 @@
+{
+  "Artifact": "Negates X debuffs.",
+  "Dexterity": "Increases Block gained from cards by X.",
+  "Energy": "Resource used to play cards. You gain Energy at the start of each turn.",
+  "Focus": "Increases the effectiveness of Orbs by X.",
+  "Intangible": "Reduce ALL damage taken and HP loss to 1 this turn. (lasts X turns)",
+  "Mantra": "When you gain 10 Mantra, enter Divinity.",
+  "Metallicize": "At the end of your/its turn, gain X Block.",
+  "Plated Armor": "At the end of your turn, gain X Block. Receiving unblocked attack damage reduces Plated Armor by 1.",
+  "Poison": "At the beginning of its turn, the target loses X HP and 1 stack of Poison.",
+  "Regenerate": "At the end of its turn, heals X HP.",
+  "Regeneration": "At the end of your turn, heal X HP and reduce Regen by 1.",
+  "Ritual": "At the end of its turn, gains X Strength.",
+  "Strength": "Increases attack damage by X.",
+  "Thorns": "When attacked, deals X damage back.",
+  "Vulnerable": "Target takes 50% more damage from attacks.",
+  "Weak": "Target deals 25% less attack damage."
+}

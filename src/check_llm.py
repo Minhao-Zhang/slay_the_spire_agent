@@ -67,6 +67,8 @@ def build_report() -> dict[str, Any]:
             "connect_timeout_seconds": config.connect_timeout_seconds,
             "probe_timeout_seconds": config.probe_timeout_seconds,
             "proposal_timeout_seconds": config.proposal_timeout_seconds,
+            "proposal_failure_streak_limit": config.proposal_failure_streak_limit,
+            "planner_enabled": config.planner_enabled,
             "max_retries": config.max_retries,
         },
         "runtime": result,

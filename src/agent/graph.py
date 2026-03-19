@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
@@ -7,10 +8,11 @@ from typing_extensions import TypedDict
 
 from src.agent.config import get_agent_config, load_system_prompt
 from src.agent.llm_client import LLMClient
-from src.agent.policy import inspect_pile, parse_agent_output, validate_final_decision
-from src.agent.prompt_builder import build_user_prompt, format_pile_tool_result
-from src.agent.schemas import AgentMode, AgentTrace, ParsedAgentTurn
+from src.agent.policy import parse_agent_output, validate_final_decision
+from src.agent.prompt_builder import build_user_prompt
+from src.agent.schemas import AgentMode, AgentTrace, ParsedAgentTurn, TraceLlmCall
 from src.agent.session_state import TurnConversation, format_executed_action
+from src.agent.tool_registry import execute_tool
 from src.agent.tracing import create_trace
 
 
@@ -25,6 +27,7 @@ class GraphState(TypedDict, total=False):
     tool_roundtrips: int
     tool_calls: list[dict[str, Any]]
     previous_response_id: str | None
+    plan_text: str
     error: str
 
 
@@ -92,11 +95,20 @@ class SpireDecisionAgent:
     def _build_graph(self):
         graph = StateGraph(GraphState)
         graph.add_node("build_prompt", self._build_prompt)
+        graph.add_node("plan_turn", self._plan_turn)
         graph.add_node("run_agent", self._run_agent)
         graph.add_node("run_tool", self._run_tool)
         graph.add_node("validate_decision", self._validate_decision)
         graph.add_edge(START, "build_prompt")
-        graph.add_edge("build_prompt", "run_agent")
+        graph.add_conditional_edges(
+            "build_prompt",
+            self._after_build_prompt,
+            {
+                "plan_turn": "plan_turn",
+                "run_agent": "run_agent",
+            },
+        )
+        graph.add_edge("plan_turn", "run_agent")
         graph.add_conditional_edges(
             "run_agent",
             self._after_agent,
@@ -119,18 +131,59 @@ class SpireDecisionAgent:
         vm = state["vm"]
         turn_key = state["trace"].turn_key
         self.session.set_scene(turn_key)
+        self.session.update_strategy_memory(vm)
         if self.llm and self.session.needs_compaction(self.config.history_compact_token_threshold):
             keep_recent = min(self.config.history_keep_recent, max(len(self.session.messages) - 1, 0))
             older_messages = self.session.messages[:-keep_recent] if keep_recent else list(self.session.messages)
             summary = self.llm.summarize_history_compaction(older_messages)
             if summary:
                 self.session.compact_history(summary, self.config.history_keep_recent)
-        user_prompt = build_user_prompt(vm, state["state_id"], self.session.action_history)
+        user_prompt = build_user_prompt(
+            vm,
+            state["state_id"],
+            self.session.action_history,
+            strategy_memory=self.session.strategy_memory_lines(),
+        )
         state["trace"].status = "running"
         state["trace"].user_prompt = user_prompt
         state["messages"] = self.session.messages + [{"role": "user", "content": user_prompt}]
         state["user_prompt"] = user_prompt
         state["previous_response_id"] = None
+        return state
+
+    def _after_build_prompt(self, _state: GraphState) -> str:
+        return "plan_turn" if self.config.planner_enabled else "run_agent"
+
+    def _plan_turn(self, state: GraphState) -> GraphState:
+        vm = state["vm"]
+        legal_actions = vm.get("actions") or []
+        header = vm.get("header") or {}
+        screen = vm.get("screen") or {}
+        combat = vm.get("combat") or {}
+
+        priorities: list[str] = []
+        if combat:
+            priorities.append("Survive this turn first (minimize avoidable incoming damage).")
+            if any(str(a.get("command", "")).startswith("END") for a in legal_actions):
+                priorities.append("Spend available energy efficiently before ending turn.")
+            if any(str(a.get("command", "")).startswith("PLAY ") for a in legal_actions):
+                priorities.append("Prefer lines that improve near-term lethal or stabilize scaling.")
+        if screen.get("type") == "MAP":
+            priorities.append("Balance risk vs reward on pathing using HP, deck strength, and upcoming boss.")
+        if not priorities:
+            priorities.append("Select the highest-value legal action for the current screen context.")
+
+        planning_summary = (
+            f"floor={header.get('floor', '?')} screen={screen.get('type', 'NONE')} "
+            f"legal_actions={len(legal_actions)}"
+        )
+        plan_lines = "\n".join(f"- {line}" for line in priorities[:3])
+        plan_text = f"## TURN PLAN\n{plan_lines}\n"
+        state["user_prompt"] = f"{plan_text}\n{state['user_prompt']}".strip() + "\n"
+        state["messages"] = self.session.messages + [{"role": "user", "content": state["user_prompt"]}]
+        state["plan_text"] = planning_summary
+        state["trace"].planner_summary = planning_summary
+        self._emit_trace(state["trace"])
         return state
 
     def _run_agent(self, state: GraphState) -> GraphState:
@@ -140,6 +193,15 @@ class SpireDecisionAgent:
             return state
 
         trace = state["trace"]
+        stage = "tool_continuation" if any("type" in item for item in state.get("messages", [])) else "proposal"
+        trace.llm_calls.append(
+            TraceLlmCall(
+                round_index=len(trace.llm_calls) + 1,
+                stage=stage,
+                previous_response_id=state.get("previous_response_id"),
+                input_messages=deepcopy(state.get("messages", [])),
+            )
+        )
         trace.raw_output = ""
         trace.reasoning_text = ""
         trace.reasoning_summary_text = ""
@@ -154,6 +216,7 @@ class SpireDecisionAgent:
             self._emit_trace(trace)
 
         def on_tool(tool_name: str) -> None:
+            trace.tool_names.append(tool_name)
             trace.response_text = (trace.response_text + f"\n\n[Tool requested: {tool_name}]").strip()
             self._emit_trace(trace)
 
@@ -200,8 +263,11 @@ class SpireDecisionAgent:
         if tool_calls:
             tool_outputs: list[dict[str, Any]] = []
             for tool_call in tool_calls:
-                cards = inspect_pile(tool_call["name"], state["vm"])
-                tool_result = format_pile_tool_result(tool_call["name"], cards)
+                tool_result = execute_tool(
+                    tool_call["name"],
+                    state["vm"],
+                    tool_call.get("parsed_arguments", {}),
+                )
                 question = tool_call.get("parsed_arguments", {}).get("question", "").strip()
                 content = tool_result if not question else f"{question}\n\n{tool_result}"
                 tool_outputs.append(
@@ -223,8 +289,8 @@ class SpireDecisionAgent:
         if not parsed or not parsed.tool_request:
             return state
 
-        cards = inspect_pile(parsed.tool_request.tool_name, state["vm"])
-        tool_result = format_pile_tool_result(parsed.tool_request.tool_name, cards)
+        tool_result = execute_tool(parsed.tool_request.tool_name, state["vm"], {"question": parsed.tool_request.question})
+        state["trace"].tool_names.append(parsed.tool_request.tool_name)
         state["messages"].append({"role": "user", "content": tool_result})
         state["previous_response_id"] = None
         state["tool_roundtrips"] = state.get("tool_roundtrips", 0) + 1
@@ -244,6 +310,13 @@ class SpireDecisionAgent:
         if validation.valid:
             state["trace"].status = "awaiting_approval"
             state["trace"].final_decision = validation.matched_command
+            # Store the full token-based sequence from the LLM for queued execution
+            if parsed.final_decision and parsed.final_decision.chosen_commands:
+                state["trace"].final_decision_sequence = list(parsed.final_decision.chosen_commands)
+            else:
+                state["trace"].final_decision_sequence = (
+                    [validation.matched_command] if validation.matched_command else []
+                )
         else:
             state["trace"].status = "invalid"
             state["trace"].error = validation.error
