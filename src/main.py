@@ -10,6 +10,7 @@ from pathlib import Path
 import requests
 
 from src.agent.graph import SpireDecisionAgent
+from src.agent.v2.runtime import V2SpireDecisionAgent
 from src.agent.policy import resolve_token_play
 from src.agent.session_state import is_command_failure_state, mark_trace_command_failed
 from src.agent.schemas import AgentTrace
@@ -60,7 +61,8 @@ def main():
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
     run_dir = os.path.join(LOG_DIR, timestamp)
     os.makedirs(run_dir, exist_ok=True)
-    agent = SpireDecisionAgent()
+    runtime_version = os.getenv("SPIRE_AGENT_RUNTIME", "v1").strip().lower()
+    agent = V2SpireDecisionAgent() if runtime_version == "v2" else SpireDecisionAgent()
     print("ready", flush=True)
 
     notify_dashboard(
