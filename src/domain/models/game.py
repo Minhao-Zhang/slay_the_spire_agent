@@ -71,6 +71,7 @@ class GameSnapshot(BaseModel):
     state_id: str
     turn_key: str
     scene_type: SceneType = SceneType.UNKNOWN
+    screen_type_raw: str = "NONE"
     in_game: bool = False
     ready_for_command: bool = False
 
@@ -82,4 +83,6 @@ class GameSnapshot(BaseModel):
 
     available_commands: list[str] = Field(default_factory=list)
     raw_state: dict[str, object] = Field(default_factory=dict)
+    raw_game_state: dict[str, object] = Field(default_factory=dict)
+    raw_screen_state: dict[str, object] = Field(default_factory=dict)
     last_action: str | None = None

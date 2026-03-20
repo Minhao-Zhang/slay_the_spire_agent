@@ -4,6 +4,8 @@ enriching every entity with knowledge-base descriptions.
 """
 from typing import Any, Optional
 
+from src.domain.services.legal_action_builder import LegalActionBuilder
+from src.domain.services.state_normalizer import StateNormalizer
 from src.reference.knowledge_base import (
     get_parsed_card_info,
     get_relic_info,
@@ -12,6 +14,9 @@ from src.reference.knowledge_base import (
     get_power_info,
     get_potion_info,
 )
+
+_STATE_NORMALIZER = StateNormalizer()
+_LEGAL_ACTION_BUILDER = LegalActionBuilder()
 
 
 def process_state(raw: dict) -> dict:
@@ -38,7 +43,6 @@ def process_state(raw: dict) -> dict:
         return vm
 
     game = state.get("game_state", {})
-    commands = state.get("available_commands", [])
     combat = game.get("combat_state")
     screen_type = game.get("screen_type", "NONE")
     screen_state = game.get("screen_state") or {}
@@ -101,7 +105,8 @@ def process_state(raw: dict) -> dict:
     }
 
     # -- actions (legal commands; main.py uses len(vm["actions"]) == 1 to short-circuit and skip the LLM) --
-    vm["actions"] = _build_actions(commands, game, combat, screen_type, screen_state)
+    snapshot = _STATE_NORMALIZER.normalize(raw, run_id="ui")
+    vm["actions"] = _legacy_actions_from_snapshot(snapshot)
 
     return vm
 
@@ -412,6 +417,29 @@ _COMMAND_BUTTONS = [
     ("confirm", "CONFIRM", "CONFIRM", "primary"),
     ("return",  "RETURN", "RETURN", "secondary"),
 ]
+
+
+def _legacy_actions_from_snapshot(snapshot) -> list[dict]:
+    action_set = _LEGAL_ACTION_BUILDER.build(snapshot)
+    actions: list[dict[str, Any]] = []
+    for action in action_set.actions:
+        item: dict[str, Any] = {
+            "label": action.label,
+            "command": action.command,
+            "style": action.style,
+        }
+        if action.card_token:
+            item["card_uuid_token"] = action.card_token
+        if action.hand_index is not None:
+            item["hand_index"] = action.hand_index
+        if action.target_index is not None:
+            item["monster_index"] = action.target_index
+        if action.choice_index is not None:
+            item["choice_index"] = action.choice_index
+        if action.metadata:
+            item.update(action.metadata)
+        actions.append(item)
+    return actions
 
 
 def _build_actions(commands: list, game: dict, combat: Optional[dict],
