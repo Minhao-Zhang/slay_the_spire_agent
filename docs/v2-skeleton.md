@@ -22,6 +22,13 @@ decision runtime toward explicit interfaces that can later support:
 - a more formal application layer
 - typed domain/application DTOs
 
+This follow-up iteration extends the scaffold with:
+
+- typed provider capability/descriptor models
+- a provider factory for v2 runtime construction
+- the first `src/domain` package for typed state/action contracts
+- the first `src/application` package for event bus and turn engine scaffolding
+
 ## New modules
 
 ### `src/agent/v2/protocols.py`
@@ -51,6 +58,26 @@ builder.
 Lightweight dependency bundle for future node extraction and scene-specific
 graph wiring.
 
+### `src/agent/v2/provider_models.py`
+
+Defines provider descriptors and capability flags so runtime selection and
+endpoint behavior can become explicit instead of relying on ad hoc attributes.
+
+### `src/agent/v2/provider_factory.py`
+
+Builds the default provider for the v2 runtime and establishes the initial
+provider selection contract via `SPIRE_LLM_PROVIDER`.
+
+### `src/domain/*`
+
+Introduces the first typed rewrite package for scene enums, game snapshots, and
+legal action models.
+
+### `src/application/*`
+
+Introduces the first application-layer scaffolding for decision context DTOs,
+an in-process event bus, and a future turn engine entrypoint.
+
 ## Opt-in usage
 
 The new runtime is **off by default**. To run the v2 scaffold:
@@ -65,16 +92,18 @@ If `SPIRE_AGENT_RUNTIME` is unset, the existing v1 runtime stays in place.
 
 This is still a scaffold, not the full rewrite. It does **not** yet:
 
-- split the app into domain/application/adapters packages
 - introduce scene-specific graphs
 - replace dict-heavy state handling with typed models
 - move dashboard/control flow into a separate application layer
 - swap persistence/logging to versioned event models
 
+Some of those packages now exist as initial scaffolding, but they are not wired
+into the active runtime yet.
+
 ## Recommended next implementation steps
 
 1. Extract scene-specific graph nodes from `src.agent.graph`.
-2. Define typed decision context objects per scene.
-3. Introduce provider capability models instead of implicit attribute access.
-4. Route `src/main.py` through an application-level turn engine.
-5. Move raw state normalization and legal action generation into typed services.
+2. Move current raw-state transformation into `src.domain.services`.
+3. Route `src.main.py` through an application-level turn engine.
+4. Add typed event and trace models under `src.domain.models`.
+5. Replace the legacy adapter with additional OpenAI-compatible provider backends as needed.

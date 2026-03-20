@@ -5,12 +5,16 @@ from typing import Any
 from src.agent.config import AgentConfig
 from src.agent.llm_client import LLMClient
 from src.agent.v2.protocols import CapabilityState, LlmProvider, LlmTurnResult, ToolCallback, TraceCallback
+from src.agent.v2.provider_models import ProviderCapabilities, ProviderFeatureFlags
 
 
 class LegacyOpenAILlmProvider(LlmProvider):
     """Adapter that keeps the current OpenAI-compatible client behind the v2 provider protocol."""
 
+    provider_name = "openai_compatible"
+
     def __init__(self, config: AgentConfig, client: LLMClient | None = None):
+        self._config = config
         self._client = client or LLMClient(config)
 
     @property
@@ -51,3 +55,20 @@ class LegacyOpenAILlmProvider(LlmProvider):
 
     def summarize_history_compaction(self, messages: list[dict[str, Any]]) -> str:
         return self._client.summarize_history_compaction(messages)
+
+    def capabilities(self) -> ProviderCapabilities:
+        api_style = self._client.api_style or ""
+        return ProviderCapabilities(
+            provider_name=self.provider_name,
+            api_style=api_style,
+            capability_state=self._client.capability_state,
+            available=self._client.available,
+            disabled_reason=self._client.disabled_reason,
+            features=ProviderFeatureFlags(
+                supports_streaming=True,
+                supports_tool_calling=True,
+                supports_history_compaction=True,
+                supports_responses_api=api_style == "responses",
+                supports_chat_completions_api=api_style == "chat_completions",
+            ),
+        )

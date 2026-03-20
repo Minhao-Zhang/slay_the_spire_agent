@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Literal, Protocol, TypedDict, runtime_checkable
+from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, TypedDict, runtime_checkable
+
+if TYPE_CHECKING:
+    from src.agent.v2.provider_models import ProviderCapabilities
 
 
 TraceCallback = Callable[[str], None]
@@ -19,6 +22,9 @@ class LlmTurnResult(TypedDict):
 
 @runtime_checkable
 class LlmProvider(Protocol):
+    @property
+    def provider_name(self) -> str: ...
+
     @property
     def available(self) -> bool: ...
 
@@ -44,3 +50,5 @@ class LlmProvider(Protocol):
     ) -> LlmTurnResult: ...
 
     def summarize_history_compaction(self, messages: list[dict[str, Any]]) -> str: ...
+
+    def capabilities(self) -> "ProviderCapabilities": ...
