@@ -3,6 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field
 
+from src.agent.tracing import combat_encounter_fingerprint
+
 
 def estimate_message_tokens(message: dict[str, str]) -> int:
     content = str(message.get("content", "") or "")
@@ -54,6 +56,23 @@ class TurnConversation:
         }
     )
     compaction_count: int = 0
+    combat_plan_guide: str = ""
+    combat_plan_fingerprint: str | None = None
+
+    def sync_combat_plan_for_vm(self, vm: dict) -> None:
+        """Drop cached combat plan when leaving combat or when the encounter changes."""
+        fp = combat_encounter_fingerprint(vm)
+        if fp is None:
+            self.combat_plan_guide = ""
+            self.combat_plan_fingerprint = None
+            return
+        if self.combat_plan_fingerprint != fp:
+            self.combat_plan_guide = ""
+            self.combat_plan_fingerprint = None
+
+    def set_combat_plan(self, guide: str, fingerprint: str) -> None:
+        self.combat_plan_guide = (guide or "").strip()
+        self.combat_plan_fingerprint = fingerprint
 
     def set_scene(self, scene_key: str) -> None:
         if self.scene_key == scene_key:

@@ -475,11 +475,25 @@ CARD_CHOICE_GUIDANCE = [
     "Use block and debuffs when they prevent more damage than alternative plays.",
 ]
 
+COMBAT_PLAN_SYSTEM = """You are a Slay the Spire combat strategist. You receive a full opening snapshot (hand, piles, master deck, enemies, relics).
+
+Write an advisory battle guide for the entire fight. The in-game agent will see updated state each turn and may deviate from this plan.
+
+Use markdown with these headings (keep each section brief):
+## Win condition
+## Kill order and priorities
+## Defense and spike damage
+## Relic and power synergies
+## Draw order and scaling notes
+
+Do not emit game commands or <final_decision> tags. Plain markdown only."""
+
 
 def build_prompt_sections(
     vm: dict[str, Any],
     recent_actions: list[str],
     strategy_memory: list[str] | None = None,
+    combat_plan_guide: str | None = None,
 ) -> list[tuple[str, str]]:
     header = vm.get("header") or {}
     inventory = vm.get("inventory") or {}
@@ -582,6 +596,14 @@ def build_prompt_sections(
                 )
     if strategy_memory:
         sections.insert(1, ("STRATEGY MEMORY", _fmt_list(strategy_memory)))
+    guide = (combat_plan_guide or "").strip()
+    if guide and combat:
+        sm_idx = next((i for i, (t, _) in enumerate(sections) if t == "STRATEGY MEMORY"), -1)
+        insert_at = sm_idx + 1 if sm_idx >= 0 else 1
+        sections.insert(
+            insert_at,
+            ("COMBAT PLAN GUIDE (advisory — live state overrides)", guide),
+        )
     if buff_glossary_lines:
         sections.insert(
             next(i for i, (t, _) in enumerate(sections) if t == "POTIONS") + 1,
@@ -600,10 +622,92 @@ def build_user_prompt(
     _state_id: str,
     recent_actions: list[str],
     strategy_memory: list[str] | None = None,
+    combat_plan_guide: str | None = None,
 ) -> str:
-    sections = build_prompt_sections(vm, recent_actions, strategy_memory=strategy_memory)
+    sections = build_prompt_sections(
+        vm,
+        recent_actions,
+        strategy_memory=strategy_memory,
+        combat_plan_guide=combat_plan_guide,
+    )
 
     return "\n\n".join(f"## {title}\n{body}" for title, body in sections) + "\n"
+
+
+def build_combat_planning_prompt(vm: dict[str, Any], *, max_cards_per_section: int = 80) -> str:
+    """Rich one-shot context for LLM combat planning (opening snapshot)."""
+    combat = vm.get("combat") or {}
+    if not combat:
+        return ""
+    header = vm.get("header") or {}
+    inventory = vm.get("inventory") or {}
+    cap = max(10, max_cards_per_section)
+
+    player_lines = [
+        f"class={header.get('class', '?')}",
+        f"floor={header.get('floor', '?')}",
+        f"hp={header.get('hp_display', '?')}",
+        f"gold={header.get('gold', '?')}",
+        f"energy={header.get('energy', '?')}",
+        f"turn={header.get('turn', '?')}",
+        f"player_block={combat.get('player_block', 0)}",
+    ]
+    monster_lines = [
+        _monster_line(monster, idx)
+        for idx, monster in enumerate(combat.get("monsters", []), start=1)
+        if not monster.get("is_gone")
+    ]
+    power_lines = [_power_line(power) for power in combat.get("player_powers", [])]
+    relic_lines = [_relic_line(r) for r in inventory.get("relics", [])]
+    potion_lines = []
+    for idx, potion in enumerate(inventory.get("potions", []), start=1):
+        effect = ((potion.get("kb") or {}).get("effect")) or ""
+        line = f"{idx}. {potion.get('name', '?')}"
+        if effect:
+            line += f" | effect={effect}"
+        potion_lines.append(line)
+
+    def pile_section(title: str, cards: list[dict[str, Any]]) -> tuple[str, str]:
+        slice_n = min(len(cards), cap)
+        lines = [_card_line(c, i, show_token=False) for i, c in enumerate(cards[:slice_n], start=1)]
+        omitted = len(cards) - slice_n
+        body = _fmt_list(lines)
+        if omitted > 0:
+            body += f"\n- ... {omitted} more cards omitted (cap={cap})."
+        return title, body
+
+    hand_cards = combat.get("hand", []) or []
+    draw_cards = combat.get("draw_pile", []) or []
+    discard_cards = combat.get("discard_pile", []) or []
+    exhaust_cards = combat.get("exhaust_pile", []) or []
+    master_deck = inventory.get("deck", []) or []
+    if not isinstance(master_deck, list):
+        master_deck = []
+
+    hand_lines = [_card_line(card, idx, show_token=True) for idx, card in enumerate(hand_cards, start=1)]
+    _, draw_body = pile_section("DRAW PILE", draw_cards)
+    _, discard_body = pile_section("DISCARD PILE", discard_cards)
+    _, exhaust_body = pile_section("EXHAUST PILE", exhaust_cards)
+    _, deck_body = pile_section("MASTER DECK (full run deck)", master_deck)
+
+    sections: list[tuple[str, str]] = [
+        ("PLANNING TASK", _fmt_list(["Produce a full-fight advisory guide from this opening snapshot only."])),
+        ("PLAYER STATE", _fmt_list(player_lines)),
+        ("MONSTERS", _fmt_list(monster_lines)),
+        ("HAND", _fmt_list(hand_lines)),
+        ("DRAW PILE", draw_body),
+        ("DISCARD PILE", discard_body),
+        ("EXHAUST PILE", exhaust_body),
+        ("MASTER DECK", deck_body),
+        ("PLAYER POWERS", _fmt_list(power_lines)),
+        ("RELICS", _fmt_list(relic_lines)),
+        ("POTIONS", _fmt_list(potion_lines)),
+    ]
+    preamble = (
+        "You have full pile and deck lists (subject to per-section card caps). "
+        "Reason about the whole combat; the tactical agent will get fresh snapshots each turn.\n\n"
+    )
+    return preamble + "\n\n".join(f"## {title}\n{body}" for title, body in sections) + "\n"
 
 
 def format_pile_tool_result(tool_name: str, cards: list[dict[str, Any]]) -> str:

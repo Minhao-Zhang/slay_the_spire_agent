@@ -22,6 +22,28 @@ def build_decision_id(state_id: str) -> str:
     return f"{prefix}-{state_id}"
 
 
+def combat_encounter_fingerprint(vm: dict) -> str | None:
+    """Stable id for the current combat encounter (distinct fights on the same floor).
+
+    Uses floor plus live monsters (name + max_hp). Returns None if not in combat.
+    """
+    combat = vm.get("combat")
+    if not combat:
+        return None
+    header = vm.get("header") or {}
+    floor = header.get("floor", "?")
+    monsters = combat.get("monsters") or []
+    parts: list[str] = []
+    for m in monsters:
+        if m.get("is_gone"):
+            continue
+        name = str(m.get("name", "?"))
+        max_hp = m.get("max_hp", "?")
+        parts.append(f"{name}:{max_hp}")
+    parts.sort()
+    return f"{floor}:" + "|".join(parts) if parts else f"{floor}:empty"
+
+
 def build_turn_key(vm: dict) -> str:
     """Build a scene identifier for traces and scene-scoped prompt context.
 
@@ -75,6 +97,10 @@ def build_persisted_ai_log(trace: AgentTrace) -> PersistedAiLog:
         total_tokens=trace.token_usage.total_tokens,
         tool_names=list(trace.tool_names),
         planner_summary=trace.planner_summary,
+        combat_plan_generated=trace.combat_plan_generated,
+        combat_plan_text_preview=trace.combat_plan_text_preview,
+        combat_plan_error=trace.combat_plan_error,
+        combat_plan_latency_ms=trace.combat_plan_latency_ms,
         validation_error=trace.validation.error,
         error=trace.error,
     )

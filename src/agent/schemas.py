@@ -109,6 +109,10 @@ class PersistedAiLog(BaseModel):
     total_tokens: Optional[int] = None
     tool_names: list[str] = Field(default_factory=list)
     planner_summary: str = ""
+    combat_plan_generated: bool = False
+    combat_plan_text_preview: str = ""
+    combat_plan_error: str = ""
+    combat_plan_latency_ms: Optional[int] = None
     validation_error: str = ""
     error: str = ""
 
@@ -141,6 +145,10 @@ class AgentTrace(BaseModel):
     token_usage: TraceTokenUsage = Field(default_factory=TraceTokenUsage)
     tool_names: list[str] = Field(default_factory=list)
     planner_summary: str = ""
+    combat_plan_generated: bool = False
+    combat_plan_text_preview: str = ""
+    combat_plan_error: str = ""
+    combat_plan_latency_ms: Optional[int] = None
     llm_calls: list[TraceLlmCall] = Field(default_factory=list)
     error: str = ""
 

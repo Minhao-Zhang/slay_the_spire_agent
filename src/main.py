@@ -2,6 +2,7 @@ import concurrent.futures
 import datetime
 import json
 import os
+import shutil
 import sys
 import threading
 import time
@@ -19,7 +20,24 @@ from src.ui.state_processor import process_state
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 DASHBOARD_URL = "http://localhost:8000"
-DUPLICATE_LOG_HEARTBEAT = 10
+MAX_LOG_RUNS = 10
+
+
+def prune_old_log_runs(log_dir: str, keep: int = MAX_LOG_RUNS) -> None:
+    """Keep only the most recent `keep` run directories; remove older ones."""
+    if not os.path.isdir(log_dir):
+        return
+    runs = [
+        p
+        for p in Path(log_dir).iterdir()
+        if p.is_dir() and not p.name.startswith(".")
+    ]
+    runs.sort(key=lambda p: p.name, reverse=True)
+    for old in runs[keep:]:
+        try:
+            shutil.rmtree(old)
+        except OSError:
+            pass
 
 
 def notify_dashboard(endpoint: str, data: dict):
@@ -60,6 +78,7 @@ def main():
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
     run_dir = os.path.join(LOG_DIR, timestamp)
     os.makedirs(run_dir, exist_ok=True)
+    prune_old_log_runs(LOG_DIR, keep=MAX_LOG_RUNS)
     agent = SpireDecisionAgent()
     print("ready", flush=True)
 
@@ -568,10 +587,7 @@ def main():
         else:
             duplicate_run_length = 0
 
-        should_write_log = (
-            (state.get("in_game", True))
-            and ((not is_duplicate) or (duplicate_run_length % DUPLICATE_LOG_HEARTBEAT == 0))
-        )
+        should_write_log = (state.get("in_game", True)) and (not is_duplicate)
         if should_write_log:
             write_state_log(
                 state,

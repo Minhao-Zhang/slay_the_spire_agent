@@ -37,7 +37,7 @@ body{font-family:'IBM Plex Sans',system-ui,sans-serif;background:var(--bg-deep);
 .top-bar-title span{color:var(--text-muted);font-weight:500}
 #connection-status{font-size:.7rem;font-weight:600;display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:20px;font-family:'JetBrains Mono',monospace}
 #connection-status .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
-.stats-group{display:flex;gap:24px;flex-wrap:wrap}
+.stats-group{display:flex;gap:24px;flex-wrap:wrap;border-left:1px solid var(--border);padding-left:20px;margin-left:8px}
 .stat-item{display:flex;flex-direction:column;align-items:flex-start;min-width:56px}
 .stat-label{font-size:.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:2px}
 .stat-value{font-weight:700;font-size:1rem;color:var(--text-primary);font-family:'JetBrains Mono',monospace}
@@ -161,8 +161,8 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .ai-mode-select{padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-panel);color:var(--text-primary);font-family:'JetBrains Mono',monospace;font-size:.75rem}
 .ai-trace-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;display:flex;flex-direction:column;gap:8px;min-height:220px}
 .ai-trace-meta{display:flex;gap:10px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:.68rem;color:var(--text-muted)}
-.ai-trace-label{font-size:.62rem;color:var(--text-muted);text-transform:uppercase;font-weight:700;letter-spacing:.05em}
-.ai-trace-pre{margin:0;background:var(--bg-panel);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:8px;white-space:pre-wrap;max-height:140px;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--text-secondary)}
+.ai-trace-label{font-size:.7rem;color:var(--text-muted);text-transform:uppercase;font-weight:700;letter-spacing:.05em}
+.ai-trace-pre{margin:0;background:var(--bg-panel);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:8px;white-space:pre-wrap;max-height:140px;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--text-secondary);line-height:1.45}
 .ai-inline-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .ai-edit-input{flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:'JetBrains Mono',monospace;font-size:.78rem;background:var(--bg-panel);color:var(--text-primary)}
 .ai-link{font-size:.72rem;color:var(--accent-primary);text-decoration:none;font-weight:600}
@@ -171,7 +171,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 /* --- Comprehensive Log Panel --- */
 .log-panel{display:flex;flex-direction:column;flex:1.2;min-width:220px}
 .log-toolbar{display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap}
-.log-filter-btn{padding:2px 8px;font-size:.64rem;border-radius:10px;cursor:pointer;font-weight:600;border:1px solid var(--border);background:var(--bg-card);color:var(--text-muted);transition:var(--transition)}
+.log-filter-btn{padding:3px 10px;font-size:.68rem;border-radius:10px;cursor:pointer;font-weight:600;border:1px solid var(--border);background:var(--bg-card);color:var(--text-muted);transition:var(--transition)}
 .log-filter-btn.active{background:var(--text-primary);color:#fff;border-color:var(--text-primary)}
 .log-filter-btn[data-cat="state"].active{background:var(--accent-primary);border-color:var(--accent-primary)}
 .log-filter-btn[data-cat="action"].active{background:var(--accent-success);border-color:var(--accent-success)}
@@ -181,7 +181,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .log-count-badge{font-size:.62rem;font-family:'JetBrains Mono',monospace;color:var(--text-muted);margin-left:auto}
 .log-clear-btn{font-size:.62rem;padding:2px 6px;cursor:pointer;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-card);color:var(--text-muted)}
 .log-clear-btn:hover{border-color:var(--accent-danger);color:var(--accent-danger)}
-.log-box{height:180px;overflow-y:auto;background:var(--bg-card);padding:8px 10px;border-radius:var(--radius-sm);font-family:'JetBrains Mono',monospace;font-size:.7rem;border:1px solid var(--border)}
+.log-box{height:220px;overflow-y:auto;background:var(--bg-card);padding:8px 10px;border-radius:var(--radius-sm);font-family:'JetBrains Mono',monospace;font-size:.7rem;border:1px solid var(--border)}
 .log-entry{margin-bottom:2px;padding-bottom:2px;border-bottom:1px solid var(--border-subtle);color:var(--text-secondary);display:flex;gap:6px;align-items:baseline}
 .log-time{color:var(--text-muted);font-size:.6rem;flex-shrink:0}
 .log-cat{font-size:.58rem;font-weight:700;text-transform:uppercase;padding:1px 4px;border-radius:2px;flex-shrink:0}
@@ -195,6 +195,12 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .log-entry.level-warn .log-msg{color:var(--accent-warning)}
 .log-entry.level-error .log-msg{color:var(--accent-danger);font-weight:600}
 .log-entry[hidden]{display:none}
+
+/* --- Layout classes to replace inline styles --- */
+.replay-strip-left{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.footer-inner{display:grid;grid-template-columns:2fr 1.4fr 1.2fr;gap:16px}
+.valid-ops-box{margin:8px 0;border:1px solid var(--border);padding:10px;border-radius:var(--radius-sm);background:var(--bg-card)}
+.player-powers-inner{display:flex;align-items:center;gap:12px}
 </style>
 </head>
 <body>
@@ -218,7 +224,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 
     <!-- Replay -->
     <div class="replay-strip">
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div class="replay-strip-left">
             <span class="section-title" style="margin-bottom:0">Replay</span>
             <select id="run-selector" class="btn-secondary" style="padding:6px 10px;font-size:.78rem;min-width:180px"><option value="">Select run...</option></select>
             <button class="btn-primary" style="padding:6px 12px;font-size:.78rem" onclick="loadSelectedRun()">Load</button>
@@ -245,7 +251,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 
     <!-- Powers bar (combat only) -->
     <div id="player-powers-bar" class="panel" style="display:none;padding:8px 14px;border-left:3px solid var(--accent-purple)">
-        <div style="display:flex;align-items:center;gap:12px">
+        <div class="player-powers-inner">
             <span class="stat-label" style="min-width:90px;color:var(--accent-purple)">Powers</span>
             <div id="player-powers" class="item-list"></div>
         </div>
@@ -301,10 +307,10 @@ button:disabled{opacity:.5;cursor:not-allowed}
 
     <!-- Footer: Actions & Logs -->
     <div class="footer-panel">
-        <div style="display:flex;gap:20px;flex-wrap:wrap">
-            <div style="flex:2;min-width:280px">
+        <div class="footer-inner">
+            <div>
                 <h2 class="section-title">Manual Actions</h2>
-                <div id="valid-operations-container" class="item-list" style="margin:8px 0;border:1px dashed var(--border);padding:10px;border-radius:var(--radius-sm)">
+                <div id="valid-operations-container" class="item-list valid-ops-box">
                     <div style="color:var(--text-muted);font-style:italic;font-size:.78rem">Waiting for action availability...</div>
                 </div>
                 <div style="display:flex;gap:8px">

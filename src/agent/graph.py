@@ -9,11 +9,11 @@ from typing_extensions import TypedDict
 from src.agent.config import get_agent_config, load_system_prompt
 from src.agent.llm_client import LLMClient
 from src.agent.policy import parse_agent_output, validate_final_decision
-from src.agent.prompt_builder import build_user_prompt
-from src.agent.schemas import AgentMode, AgentTrace, ParsedAgentTurn, TraceLlmCall
+from src.agent.prompt_builder import COMBAT_PLAN_SYSTEM, build_combat_planning_prompt, build_user_prompt
+from src.agent.schemas import AgentMode, AgentTrace, ParsedAgentTurn, TraceLlmCall, TraceTokenUsage
 from src.agent.session_state import TurnConversation, format_executed_action
 from src.agent.tool_registry import execute_tool
-from src.agent.tracing import create_trace
+from src.agent.tracing import combat_encounter_fingerprint, create_trace
 
 
 class GraphState(TypedDict, total=False):
@@ -127,6 +127,89 @@ class SpireDecisionAgent:
         if self.trace_callback:
             self.trace_callback(trace)
 
+    @staticmethod
+    def _header_combat_turn(header: dict) -> int | None:
+        t = header.get("turn")
+        if isinstance(t, int):
+            return t
+        if isinstance(t, str) and t.strip().isdigit():
+            return int(t.strip())
+        return None
+
+    @staticmethod
+    def _merge_token_usage(target: TraceTokenUsage, extra: TraceTokenUsage) -> None:
+        for name in ("input_tokens", "output_tokens", "total_tokens"):
+            cur = getattr(target, name)
+            new = getattr(extra, name, None)
+            if new is not None:
+                setattr(target, name, (cur or 0) + new)
+
+    def _ensure_combat_plan(self, vm: dict, trace: AgentTrace) -> None:
+        trace.combat_plan_generated = False
+        trace.combat_plan_text_preview = ""
+        trace.combat_plan_error = ""
+        trace.combat_plan_latency_ms = None
+        self.session.sync_combat_plan_for_vm(vm)
+        if not vm.get("combat"):
+            return
+        if self.session.combat_plan_guide:
+            trace.combat_plan_text_preview = self.session.combat_plan_guide[:800]
+        if not self.config.planner_enabled:
+            return
+        if not self.ai_enabled or not self.llm:
+            if not self.session.combat_plan_guide:
+                trace.combat_plan_error = "Combat plan skipped: AI unavailable."
+            return
+        fp = combat_encounter_fingerprint(vm)
+        if not fp:
+            return
+        turn_n = self._header_combat_turn(vm.get("header") or {})
+        if self.config.combat_plan_only_turn_one and turn_n is not None and turn_n != 1:
+            return
+        if self.session.combat_plan_guide:
+            return
+
+        planning_user = build_combat_planning_prompt(
+            vm, max_cards_per_section=self.config.combat_plan_max_cards_per_section
+        )
+        input_messages = [
+            {"role": "system", "content": COMBAT_PLAN_SYSTEM},
+            {"role": "user", "content": planning_user},
+        ]
+        trace.llm_calls.append(
+            TraceLlmCall(
+                round_index=len(trace.llm_calls) + 1,
+                stage="combat_plan",
+                input_messages=deepcopy(input_messages),
+            )
+        )
+        self._emit_trace(trace)
+        try:
+            result = self.llm.generate_combat_plan(
+                system_prompt=COMBAT_PLAN_SYSTEM,
+                user_content=planning_user,
+                max_output_tokens=self.config.combat_plan_max_output_tokens,
+            )
+        except Exception as exc:  # noqa: BLE001
+            trace.combat_plan_error = f"Combat plan failed: {exc}"
+            self._emit_trace(trace)
+            return
+
+        text = (result.get("raw_output") or "").strip()
+        usage = result.get("token_usage")
+        if isinstance(usage, TraceTokenUsage):
+            self._merge_token_usage(trace.token_usage, usage)
+        trace.combat_plan_latency_ms = result.get("latency_ms")
+        if not text:
+            trace.combat_plan_error = "Combat plan returned empty text."
+            self._emit_trace(trace)
+            return
+
+        self.session.set_combat_plan(text, fp)
+        trace.combat_plan_generated = True
+        trace.combat_plan_text_preview = text[:800]
+        self._emit_trace(trace)
+
     def _build_prompt(self, state: GraphState) -> GraphState:
         vm = state["vm"]
         turn_key = state["trace"].turn_key
@@ -138,11 +221,13 @@ class SpireDecisionAgent:
             summary = self.llm.summarize_history_compaction(older_messages)
             if summary:
                 self.session.compact_history(summary, self.config.history_keep_recent)
+        self._ensure_combat_plan(vm, state["trace"])
         user_prompt = build_user_prompt(
             vm,
             state["state_id"],
             self.session.action_history,
             strategy_memory=self.session.strategy_memory_lines(),
+            combat_plan_guide=self.session.combat_plan_guide or None,
         )
         state["trace"].status = "running"
         state["trace"].user_prompt = user_prompt
@@ -151,8 +236,13 @@ class SpireDecisionAgent:
         state["previous_response_id"] = None
         return state
 
-    def _after_build_prompt(self, _state: GraphState) -> str:
-        return "plan_turn" if self.config.planner_enabled else "run_agent"
+    def _after_build_prompt(self, state: GraphState) -> str:
+        if not self.config.planner_enabled:
+            return "run_agent"
+        vm = state["vm"]
+        if self.config.planner_enabled and vm.get("combat"):
+            return "run_agent"
+        return "plan_turn"
 
     def _plan_turn(self, state: GraphState) -> GraphState:
         vm = state["vm"]

@@ -1,5 +1,6 @@
 logs/
 .DS_Store
+.cursor/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

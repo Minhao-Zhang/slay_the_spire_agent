@@ -45,7 +45,8 @@ flowchart LR
 3. If eligible, it starts one background proposal (`ThreadPoolExecutor`, single worker).
 4. `src/agent/graph.py` runs:
    - `build_prompt` (session scene key, compaction, strategy memory update),
-   - optional `plan_turn` (feature-flagged),
+   - optional `plan_turn` (heuristic `## TURN PLAN`, `LLM_ENABLE_PLANNER`; skipped in combat in favor of the combat guide),
+   - optional combat-opening plan (same `LLM_ENABLE_PLANNER`): one non-tool LLM call stores a session guide keyed by `combat_encounter_fingerprint`, injected as `COMBAT PLAN GUIDE` each combat turn,
    - `run_agent` (streaming LLM call),
    - `run_tool` loop (bounded by `max_tool_roundtrips`),
    - `validate_decision`.

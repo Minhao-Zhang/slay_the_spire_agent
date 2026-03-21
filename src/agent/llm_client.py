@@ -574,3 +574,69 @@ class LLMClient:
             on_tool=on_tool,
         )
 
+    def generate_combat_plan(
+        self,
+        *,
+        system_prompt: str,
+        user_content: str,
+        max_output_tokens: int | None = None,
+    ) -> dict[str, Any]:
+        """Single non-streaming completion without tools (opening combat battle guide)."""
+        self.check_api_capabilities()
+        if self.capability_state == "checking":
+            raise RuntimeError("LLM configuration check is still running.")
+        if not self.available or not self.api_style:
+            raise RuntimeError(self.disabled_reason or "LLM is unavailable for this run.")
+        cap = (
+            max_output_tokens
+            if max_output_tokens is not None
+            else self.config.combat_plan_max_output_tokens
+        )
+        started = time.perf_counter()
+        if self.api_style == "chat_completions":
+            kwargs: dict[str, Any] = {
+                "model": self.config.reasoning_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content},
+                ],
+            }
+            try:
+                completion = self.client.chat.completions.create(**kwargs, max_completion_tokens=cap)
+            except TypeError:
+                completion = self.client.chat.completions.create(**kwargs)
+            choices = getattr(completion, "choices", None) or []
+            text = ""
+            if choices:
+                text = (getattr(choices[0].message, "content", None) or "").strip()
+            usage_data = getattr(completion, "usage", None)
+            usage = TraceTokenUsage(
+                input_tokens=getattr(usage_data, "prompt_tokens", None) if usage_data else None,
+                output_tokens=getattr(usage_data, "completion_tokens", None) if usage_data else None,
+                total_tokens=getattr(usage_data, "total_tokens", None) if usage_data else None,
+            )
+        else:
+            kwargs: dict[str, Any] = {
+                "model": self.config.reasoning_model,
+                "instructions": system_prompt,
+                "input": [{"role": "user", "content": user_content}],
+                "reasoning": {"effort": self.config.reasoning_effort},
+            }
+            try:
+                response = self.client.responses.create(**kwargs, max_output_tokens=cap)
+            except TypeError:
+                response = self.client.responses.create(**kwargs)
+            text = (getattr(response, "output_text", None) or "").strip()
+            usage_data = getattr(response, "usage", None)
+            usage = TraceTokenUsage(
+                input_tokens=getattr(usage_data, "input_tokens", None) if usage_data else None,
+                output_tokens=getattr(usage_data, "output_tokens", None) if usage_data else None,
+                total_tokens=getattr(usage_data, "total_tokens", None) if usage_data else None,
+            )
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        return {
+            "raw_output": text,
+            "token_usage": usage,
+            "latency_ms": latency_ms,
+        }
+

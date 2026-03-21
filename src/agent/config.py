@@ -31,6 +31,9 @@ class AgentConfig(BaseModel):
     history_compact_token_threshold: int = Field(default=100_000, ge=0)
     history_keep_recent: int = Field(default=6, ge=0)
     planner_enabled: bool = False
+    combat_plan_max_output_tokens: int = Field(default=2048, ge=256, le=32000)
+    combat_plan_max_cards_per_section: int = Field(default=80, ge=10, le=200)
+    combat_plan_only_turn_one: bool = True
 
     @property
     def enabled(self) -> bool:
@@ -61,6 +64,25 @@ def get_agent_config() -> AgentConfig:
         ),
         history_keep_recent=int(os.getenv("LLM_HISTORY_KEEP_RECENT", "6")),
         planner_enabled=os.getenv("LLM_ENABLE_PLANNER", "false").strip().lower() == "true",
+        combat_plan_max_output_tokens=int(
+            os.getenv(
+                "LLM_PLANNER_COMBAT_MAX_OUTPUT_TOKENS",
+                os.getenv("LLM_COMBAT_PLAN_MAX_OUTPUT_TOKENS", "2048"),
+            )
+        ),
+        combat_plan_max_cards_per_section=int(
+            os.getenv(
+                "LLM_PLANNER_COMBAT_MAX_CARDS_PER_SECTION",
+                os.getenv("LLM_COMBAT_PLAN_MAX_CARDS_PER_SECTION", "80"),
+            )
+        ),
+        combat_plan_only_turn_one=os.getenv(
+            "LLM_PLANNER_COMBAT_ONLY_TURN_ONE",
+            os.getenv("LLM_COMBAT_PLAN_ONLY_TURN_ONE", "true"),
+        )
+        .strip()
+        .lower()
+        == "true",
     )
 
 

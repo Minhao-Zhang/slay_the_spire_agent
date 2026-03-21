@@ -95,5 +95,5 @@ uv run python -m src.eval.replay --logs-dir logs --run 2026-03-17-11-24
 
 ### Capability flags
 
-- `LLM_ENABLE_PLANNER=true` enables an optional planner node before action selection.
+- `LLM_ENABLE_PLANNER=true` enables planning in one switch: **non-combat** screens get a heuristic `## TURN PLAN` prefix; **combat** runs one **LLM** call at encounter start (default: player turn 1 only) with hand, piles, and master deck, and injects that markdown guide every combat turn until the fight ends. Tune the combat call with `LLM_PLANNER_COMBAT_MAX_OUTPUT_TOKENS`, `LLM_PLANNER_COMBAT_MAX_CARDS_PER_SECTION`, and `LLM_PLANNER_COMBAT_ONLY_TURN_ONE` (legacy `LLM_COMBAT_PLAN_*` names still work).
 - `LLM_PROPOSAL_FAILURE_STREAK_LIMIT` controls how many consecutive proposal failures are tolerated before AI is disabled for the run.
