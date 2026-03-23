@@ -4,6 +4,8 @@ import json
 import re
 from typing import Any
 
+from pydantic import ValidationError
+
 from src.agent.schemas import FinalDecision, ParsedAgentTurn, ToolRequest, ValidationResult
 from src.agent.tool_registry import canonical_tool_name
 
@@ -20,23 +22,108 @@ def _extract_tag(raw_text: str, tag: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+def _strip_markdown_fences(blob: str) -> str:
+    """Remove optional ``` / ```json fences around JSON inside a tag."""
+    s = (blob or "").strip()
+    if not s.startswith("```"):
+        return s
+    lines = s.splitlines()
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip().startswith("```"):
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def _slice_balanced_json_object(s: str, start: int = 0) -> str:
+    """Return the first {...} span with balanced braces starting at s[start], or ""."""
+    n = len(s)
+    i = start
+    while i < n and s[i] != "{":
+        i += 1
+    if i >= n:
+        return ""
+    depth = 0
+    for j in range(i, n):
+        c = s[j]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return s[i : j + 1]
+    return ""
+
+
+_FINAL_DECISION_OPEN_RE = re.compile(r"<final_decision>\s*", re.IGNORECASE | re.DOTALL)
+
+
+def _final_decision_json_candidates(raw_text: str) -> list[str]:
+    """Collect JSON blobs to try: closed tags (last first), then truncated open-tag + JSON."""
+    text = raw_text or ""
+    candidates: list[str] = []
+
+    closed_bodies = [m.group(1).strip() for m in TAG_RE["final_decision"].finditer(text)]
+    for body in reversed(closed_bodies):
+        candidates.append(_strip_markdown_fences(body))
+
+    # Truncated stream: <final_decision> with JSON but no </final_decision> (common at low max tokens).
+    last_open = None
+    for m in _FINAL_DECISION_OPEN_RE.finditer(text):
+        last_open = m
+    if last_open:
+        tail = text[last_open.end() :]
+        low_tail = tail.lower()
+        if "</final_decision>" in low_tail:
+            end = low_tail.index("</final_decision>")
+            tail = tail[:end]
+        tail = tail.strip()
+        tail = _strip_markdown_fences(tail)
+        extracted = _slice_balanced_json_object(tail, 0)
+        if extracted:
+            candidates.append(extracted)
+
+    # Dedupe while preserving order
+    seen: set[str] = set()
+    out: list[str] = []
+    for c in candidates:
+        if c and c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
+
+
+def _parse_final_decision_blob(blob: str) -> FinalDecision | None:
+    blob = (blob or "").strip()
+    if not blob:
+        return None
+    try:
+        data = json.loads(blob)
+    except json.JSONDecodeError:
+        return None
+    try:
+        return FinalDecision.model_validate(data)
+    except ValidationError:
+        return None
+
+
 def parse_agent_output(raw_text: str) -> ParsedAgentTurn:
     reasoning = _extract_tag(raw_text, "reasoning")
     tool_request_text = _extract_tag(raw_text, "tool_request")
-    final_decision_text = _extract_tag(raw_text, "final_decision")
 
     parsed = ParsedAgentTurn(reasoning=reasoning, response=(raw_text or "").strip())
 
     if tool_request_text:
         try:
             parsed.tool_request = ToolRequest.model_validate(json.loads(tool_request_text))
-        except (json.JSONDecodeError, ValueError):
+        except (json.JSONDecodeError, ValueError, ValidationError):
             pass
-    if final_decision_text:
-        try:
-            parsed.final_decision = FinalDecision.model_validate(json.loads(final_decision_text))
-        except (json.JSONDecodeError, ValueError):
-            pass
+
+    for blob in _final_decision_json_candidates(raw_text):
+        fd = _parse_final_decision_blob(blob)
+        if fd is not None:
+            parsed.final_decision = fd
+            break
 
     return parsed
 

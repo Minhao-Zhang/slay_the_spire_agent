@@ -156,7 +156,8 @@ class SpireDecisionAgent:
         trace.combat_plan_error = ""
         trace.combat_plan_latency_ms = None
         trace.combat_plan_model_used = ""
-        plan_key = self.config.combat_plan_llm
+        # Force combat planning sessions to use the reasoning model slot.
+        plan_key = "reasoning"
         self.session.sync_combat_plan_for_vm(vm)
         if not vm.get("combat"):
             return
@@ -172,9 +173,15 @@ class SpireDecisionAgent:
         if not fp:
             return
         turn_n = self._header_combat_turn(vm.get("header") or {})
-        if self.config.combat_plan_only_turn_one and turn_n is not None and turn_n != 1:
-            return
-        if self.session.combat_plan_guide:
+        should_generate = False
+        if turn_n is None:
+            should_generate = not bool(self.session.combat_plan_guide)
+        else:
+            should_generate = turn_n == 1 or ((turn_n - 1) % 5 == 0)
+            # Repeated snapshots can arrive for the same turn; avoid duplicate replans.
+            if self.session.combat_plan_last_turn == turn_n:
+                should_generate = False
+        if not should_generate:
             return
 
         planning_user = build_combat_planning_prompt(
@@ -217,7 +224,7 @@ class SpireDecisionAgent:
             self._emit_trace(trace)
             return
 
-        self.session.set_combat_plan(text, fp)
+        self.session.set_combat_plan(text, fp, turn_n)
         trace.combat_plan_generated = True
         trace.combat_plan_text_preview = text[:800]
         self._emit_trace(trace)
@@ -305,7 +312,11 @@ class SpireDecisionAgent:
             if self.llm
             else (self.config.fast_model if model_key == "fast" else self.config.reasoning_model)
         )
-        stage = "tool_continuation" if any("type" in item for item in state.get("messages", [])) else "proposal"
+        stage = (
+            "tool_continuation"
+            if any(isinstance(item, dict) and "type" in item for item in state.get("messages", []))
+            else "proposal"
+        )
         trace.llm_calls.append(
             TraceLlmCall(
                 round_index=len(trace.llm_calls) + 1,

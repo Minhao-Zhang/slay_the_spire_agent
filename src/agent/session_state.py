@@ -58,6 +58,7 @@ class TurnConversation:
     compaction_count: int = 0
     combat_plan_guide: str = ""
     combat_plan_fingerprint: str | None = None
+    combat_plan_last_turn: int | None = None
 
     def sync_combat_plan_for_vm(self, vm: dict) -> None:
         """Drop cached combat plan when leaving combat or when the encounter changes."""
@@ -65,14 +66,17 @@ class TurnConversation:
         if fp is None:
             self.combat_plan_guide = ""
             self.combat_plan_fingerprint = None
+            self.combat_plan_last_turn = None
             return
         if self.combat_plan_fingerprint != fp:
             self.combat_plan_guide = ""
             self.combat_plan_fingerprint = None
+            self.combat_plan_last_turn = None
 
-    def set_combat_plan(self, guide: str, fingerprint: str) -> None:
+    def set_combat_plan(self, guide: str, fingerprint: str, turn: int | None = None) -> None:
         self.combat_plan_guide = (guide or "").strip()
         self.combat_plan_fingerprint = fingerprint
+        self.combat_plan_last_turn = turn
 
     def set_scene(self, scene_key: str) -> None:
         if self.scene_key == scene_key:

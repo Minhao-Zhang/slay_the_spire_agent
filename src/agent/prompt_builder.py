@@ -58,6 +58,24 @@ def _extract_tokens_from_text(text: str | None) -> set[str]:
     return set(_TOKEN_PATTERN.findall(text))
 
 
+def _neows_lament_is_spent(relic: dict[str, Any]) -> bool:
+    """Neow's Lament stays in CommunicationMod relic list after use; counter is positive while charges remain.
+
+    Logs show: counter 2/1 = active, counter -2 (or <=0) = depleted. Do not treat other relics' counters
+    (e.g. Burning Blood uses -1 for \"no counter\") — we only match id NeowsBlessing.
+    """
+    if str(relic.get("id") or "").strip() != "NeowsBlessing":
+        return False
+    c = relic.get("counter")
+    if c is None:
+        return False
+    try:
+        v = int(c)
+    except (TypeError, ValueError):
+        return False
+    return v <= 0
+
+
 def _fmt_list(items: list[str], fallback: str = "None") -> str:
     return "\n".join(f"- {item}" for item in items) if items else f"- {fallback}"
 
@@ -155,9 +173,25 @@ def _monster_line(monster: dict[str, Any], index: int) -> str:
 
 
 def _relic_line(relic: dict[str, Any]) -> str:
+    if _neows_lament_is_spent(relic):
+        nm = relic.get("name") or "Neow's Lament"
+        return (
+            f"{nm} | "
+            "desc=(spent — counter exhausted in game state; no longer sets enemies to 1 HP; ignore reference text)"
+        )
     kb = relic.get("kb") or {}
     desc = kb.get("description", "")
-    return f"{relic.get('name', '?')} | desc={desc}" if desc else relic.get("name", "?")
+    c = relic.get("counter")
+    extra = ""
+    if str(relic.get("id") or "").strip() == "NeowsBlessing" and c is not None:
+        try:
+            n = int(c)
+            if n > 0:
+                extra = f" | lament_elite_charges_remaining={n}"
+        except (TypeError, ValueError):
+            pass
+    base = f"{relic.get('name', '?')} | desc={desc}" if desc else relic.get("name", "?")
+    return base + extra if extra else base
 
 
 def _buff_glossary_lines(vm: dict[str, Any]) -> list[str]:
@@ -186,8 +220,10 @@ def _buff_glossary_lines(vm: dict[str, Any]) -> list[str]:
         for p in m.get("powers") or []:
             add((p.get("name") or "").strip())
 
-    # Tokens in relic descriptions
+    # Tokens in relic descriptions (skip spent Neow's Lament — KB text still claims 1-HP effect)
     for r in (vm.get("inventory") or {}).get("relics", []):
+        if _neows_lament_is_spent(r):
+            continue
         kb = r.get("kb") or {}
         for token in _extract_tokens_from_text(kb.get("description")):
             add(token.strip())

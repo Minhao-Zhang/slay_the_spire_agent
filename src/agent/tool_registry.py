@@ -114,7 +114,9 @@ def list_function_tools() -> list[dict[str, Any]]:
                     "required": ["question"],
                     "additionalProperties": False,
                 },
-                "strict": True,
+                # Avoid OpenAI SDK strict tool-argument parsing edge cases with the Responses API
+                # (can raise e.g. AttributeError: 'str' object has no attribute 'get' during stream finalize).
+                "strict": False,
             }
         )
     return tools

@@ -24,7 +24,6 @@
 ::-webkit-scrollbar-thumb:hover{background:var(--text-muted)}
 body{font-family:'IBM Plex Sans',system-ui,sans-serif;background:var(--bg-deep);color:var(--text-primary);margin:0;padding:10px;line-height:1.5;font-size:15px}
 .dashboard{display:flex;flex-direction:column;gap:10px;max-width:1920px;margin:0 auto}
-.game-area{min-height:380px;align-items:stretch}
 
 /* Section titles */
 .section-title{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px;display:flex;align-items:center;gap:6px}
@@ -66,8 +65,8 @@ body{font-family:'IBM Plex Sans',system-ui,sans-serif;background:var(--bg-deep);
 .has-tooltip:hover .tooltip{display:block}
 .tooltip-label{font-weight:700;margin-bottom:2px;color:var(--accent-primary)}
 
-/* Game area panels */
-.game-area{display:flex;gap:12px}
+/* Game area panels — size to content; avoid empty stretch when piles collapsed / few enemies */
+.game-area{display:flex;gap:12px;align-items:flex-start}
 .panel{flex:1;background:var(--bg-panel);padding:14px;border-radius:var(--radius);border:1px solid var(--border)}
 .deck-panel{flex:2;display:flex;flex-direction:column}
 .panel h2,.panel h3{font-size:.85rem;font-weight:600;color:var(--text-primary);margin:0 0 8px 0}
@@ -87,10 +86,10 @@ details{background:var(--bg-card);margin-bottom:6px;border-radius:var(--radius-s
 summary{padding:6px 10px;cursor:pointer;font-weight:600;font-size:.8rem;display:flex;justify-content:space-between;align-items:center}
 summary:hover{background:var(--bg-panel)}
 .pile-content{padding:8px;overflow-y:auto}
-.deck-panel .card-piles-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;flex:1;min-height:0}
+.deck-panel .card-piles-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .deck-panel .card-piles-grid>details{margin-bottom:0;display:flex;flex-direction:column;min-height:0}
 .deck-panel .card-piles-grid>details>summary{flex-shrink:0}
-.deck-panel .card-piles-grid>details>.pile-content{flex:1;min-height:0;overflow-y:auto}
+.deck-panel .card-piles-grid>details>.pile-content{flex:1;min-height:0;overflow-y:auto;max-height:min(45vh,360px)}
 .pile-count{background:var(--bg-panel);padding:2px 6px;border-radius:var(--radius-sm);font-size:.68rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace}
 
 /* Monsters */
@@ -277,7 +276,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 
     <!-- Main game area -->
     <div class="game-area">
-        <div class="panel deck-panel" id="deck-panel" style="display:flex;flex-direction:column;align-self:stretch">
+        <div class="panel deck-panel" id="deck-panel" style="display:flex;flex-direction:column">
             <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
                 <h2 style="margin:0">Player hand</h2>
                 <span class="pile-count" id="hand-count">0</span>
@@ -285,7 +284,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
             <div class="card-container" id="hand-list">
                 <div style="color:var(--text-muted);font-style:italic;font-size:.82rem">Awaiting combat...</div>
             </div>
-            <div style="margin-top:16px;flex:1;display:flex;flex-direction:column;min-height:0">
+            <div style="margin-top:16px;display:flex;flex-direction:column">
                 <h3 class="section-title">Card piles</h3>
                 <div class="card-piles-grid">
                     <details><summary>Draw Pile <span class="pile-count" id="draw-count">0</span></summary><div class="pile-content card-container" id="draw-list"></div></details>
@@ -295,8 +294,8 @@ button:disabled{opacity:.5;cursor:not-allowed}
             </div>
         </div>
 
-        <div class="panel right-panel" style="flex:.7;display:flex;flex-direction:column;min-width:0;min-height:0">
-            <div id="monsters-panel" style="flex:1;min-height:0;overflow:auto">
+        <div class="panel right-panel" style="flex:.7;display:flex;flex-direction:column;min-width:0">
+            <div id="monsters-panel" style="overflow:auto">
                 <h2 style="margin-bottom:8px">Enemies</h2>
                 <div id="monster-list"><div style="color:var(--text-muted);font-style:italic;font-size:.82rem">Field is clear...</div></div>
             </div>

@@ -30,12 +30,15 @@ slay_the_spire_agent/
 
 ## Setup & Configuration
 
-This project manages Python dependencies using **uv**. 
+This project manages Python dependencies using **uv**.
 
-1. **Install dependencies:**
+1. **Install dependencies (recommended):**
    ```bash
-   uv pip install -r requirements.txt
+   uv sync
    ```
+   This reads [`pyproject.toml`](pyproject.toml) and [`uv.lock`](uv.lock) and installs the project in editable mode so imports like `src.agent` work with `uv run`.
+
+   Legacy one-liner (no lockfile): `uv pip install -r requirements.txt`
 
 2. **Configure Slay the Spire Communication Mod:**
    You must point the Slay the Spire Communication Mod to your `main.py` entrypoint.

@@ -73,6 +73,26 @@ def choose_idle_command(state: dict) -> str | None:
     return None
 
 
+def choose_combat_reward_gold_command(vm: dict) -> str | None:
+    """Auto-pick guaranteed-value gold rewards on combat reward screens."""
+    screen = vm.get("screen") or {}
+    if screen.get("type") != "COMBAT_REWARD":
+        return None
+    content = screen.get("content") or {}
+    rewards = content.get("rewards") or []
+    actions = vm.get("actions") or []
+    for reward in rewards:
+        if str(reward.get("reward_type", "")).upper() != "GOLD":
+            continue
+        idx = reward.get("choice_index")
+        if not isinstance(idx, int):
+            continue
+        command = f"choose {idx}"
+        if any((a.get("command") or "").strip() == command for a in actions):
+            return command
+    return None
+
+
 def main():
     os.makedirs(LOG_DIR, exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
@@ -435,6 +455,21 @@ def main():
                     f"Could not resolve queued command {next_cmd_token!r} against current state; "
                     "clearing sequence and falling back to normal proposal."
                 )
+
+        if ready_for_command:
+            auto_gold_command = choose_combat_reward_gold_command(vm)
+            if auto_gold_command:
+                notify_dashboard(
+                    "/log",
+                    {"message": f"Auto-selecting combat gold reward via {auto_gold_command!r}."},
+                )
+                execute_action(auto_gold_command, "auto-reward")
+                last_ai_execution = {"trace": None, "state_id": None, "action": None, "source": None}
+                last_proposed_state_id = None
+                last_state_snapshot = None
+                last_log_signature = None
+                duplicate_run_length = 0
+                continue
 
         instruction = poll_instruction() if ready_for_command else {}
         manual_action = instruction.get("manual_action")

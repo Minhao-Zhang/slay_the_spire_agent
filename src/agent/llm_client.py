@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, Mapping, cast
 
 import httpx
 from openai import OpenAI
@@ -12,6 +13,8 @@ from src.agent.config import AgentConfig
 from src.agent.schemas import TraceTokenUsage
 from src.agent.tool_registry import list_function_tools
 
+
+logger = logging.getLogger(__name__)
 
 TraceCallback = Callable[[str], None]
 ToolCallback = Callable[[str], None]
@@ -27,16 +30,51 @@ def _parse_tool_arguments(raw_arguments: str) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _output_item_type(item: Any) -> str:
+    """Support both SDK model objects and plain dicts from the Responses API."""
+    if isinstance(item, Mapping):
+        return str(item.get("type") or "")
+    return str(getattr(item, "type", "") or "")
+
+
 def _extract_reasoning_summary(response: Any) -> str:
     summaries: list[str] = []
     for item in getattr(response, "output", []) or []:
-        if getattr(item, "type", "") != "reasoning":
+        if _output_item_type(item) != "reasoning":
             continue
-        for summary_item in getattr(item, "summary", []) or []:
-            text = getattr(summary_item, "text", "") or ""
-            if text.strip():
-                summaries.append(text.strip())
+        raw_summary = getattr(item, "summary", None)
+        if raw_summary is None and isinstance(item, Mapping):
+            raw_summary = item.get("summary")
+        for summary_item in raw_summary or []:
+            if isinstance(summary_item, Mapping):
+                text = str(summary_item.get("text") or "").strip()
+            else:
+                text = str(getattr(summary_item, "text", None) or "").strip()
+            if text:
+                summaries.append(text)
     return "\n\n".join(summaries).strip()
+
+
+def _sanitize_responses_input(input_items: list[Any]) -> list[dict[str, Any]]:
+    """Drop or coerce invalid entries so the OpenAI SDK never sees stray strings in `input`."""
+    out: list[dict[str, Any]] = []
+    for i, item in enumerate(input_items or []):
+        if isinstance(item, Mapping):
+            out.append(cast(dict[str, Any], dict(item)))
+            continue
+        if isinstance(item, str):
+            logger.warning(
+                "Dropping string at responses input index %s (length=%s); expected dict items only.",
+                i,
+                len(item),
+            )
+            continue
+        logger.warning(
+            "Dropping invalid responses input item at index %s: type=%s",
+            i,
+            type(item).__name__,
+        )
+    return out
 
 
 def _chat_reasoning_from_usage(usage: Any) -> str:
@@ -104,20 +142,34 @@ class LLMClient:
 
     def __init__(self, config: AgentConfig):
         self.config = config
-        self.request_timeout = httpx.Timeout(
-            timeout=config.request_timeout_seconds,
+        reasoning_timeout_s = float(config.reasoning_request_timeout_seconds or config.request_timeout_seconds)
+        fast_timeout_s = float(config.fast_request_timeout_seconds or config.request_timeout_seconds)
+        self.reasoning_timeout = httpx.Timeout(
+            timeout=reasoning_timeout_s,
+            connect=config.connect_timeout_seconds,
+        )
+        self.fast_timeout = httpx.Timeout(
+            timeout=fast_timeout_s,
             connect=config.connect_timeout_seconds,
         )
         self.probe_timeout = httpx.Timeout(
             timeout=config.probe_timeout_seconds,
             connect=min(config.connect_timeout_seconds, config.probe_timeout_seconds),
         )
-        self.client = OpenAI(
+        self.reasoning_client = OpenAI(
             api_key=config.api_key or "missing-key",
             base_url=config.base_url,
-            timeout=self.request_timeout,
+            timeout=self.reasoning_timeout,
             max_retries=config.max_retries,
         )
+        self.fast_client = OpenAI(
+            api_key=config.api_key or "missing-key",
+            base_url=config.base_url,
+            timeout=self.fast_timeout,
+            max_retries=config.max_retries,
+        )
+        # Backward-compatible alias for callsites that should use reasoning by default.
+        self.client = self.reasoning_client
         self.probe_client = OpenAI(
             api_key=config.api_key or "missing-key",
             base_url=config.base_url,
@@ -142,6 +194,10 @@ class LLMClient:
         if key == "fast":
             return (self.config.fast_reasoning_effort or "none").strip().lower()
         return (self.config.reasoning_effort or "medium").strip().lower()
+
+    def _client_for_model_key(self, model_key: str) -> OpenAI:
+        key = (model_key or "reasoning").strip().lower()
+        return self.fast_client if key == "fast" else self.reasoning_client
 
     def check_api_capabilities(self) -> None:
         if self.capability_state in {"ready", "failed"}:
@@ -217,14 +273,14 @@ class LLMClient:
 
     def _verify_responses_api(self) -> str | None:
         try:
-            self._basic_responses_text(self.client, "ping")
+            self._basic_responses_text(self.reasoning_client, "ping")
             return None
         except Exception as exc:  # noqa: BLE001
             return self._summarize_exception(exc)
 
     def _verify_chat_completions_api(self) -> str | None:
         try:
-            self._basic_chat_text(self.client, "ping")
+            self._basic_chat_text(self.reasoning_client, "ping")
             return None
         except Exception as exc:  # noqa: BLE001
             return self._summarize_exception(exc)
@@ -272,22 +328,27 @@ class LLMClient:
     ):
         model = model_name or self.model_name_for_key(model_key)
         effort = self.reasoning_effort_for_key(model_key)
+        clean_input = _sanitize_responses_input(input_items)
         kwargs: dict[str, Any] = {
             "model": model,
             "instructions": system_prompt,
             "tools": self.tools,
-            "input": input_items,
+            "input": clean_input,
             "previous_response_id": previous_response_id,
         }
         if effort and effort != "none":
             kwargs["reasoning"] = {"summary": "auto", "effort": effort}
-        return self.client.responses.stream(**kwargs)
+        client = self._client_for_model_key(model_key)
+        return client.responses.stream(**kwargs)
 
     def _to_chat_messages(self, system_prompt: str, input_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        has_role_messages = any("role" in item for item in input_items)
+        sanitized = _sanitize_responses_input(input_items)
+        has_role_messages = any(isinstance(it, dict) and "role" in it for it in sanitized)
         if has_role_messages:
             messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
-            for item in input_items:
+            for item in sanitized:
+                if not isinstance(item, dict):
+                    continue
                 role = item.get("role")
                 content = item.get("content", "")
                 if role in {"user", "assistant"}:
@@ -296,7 +357,9 @@ class LLMClient:
             return self._chat_history
 
         # Tool continuation for the active in-memory thread.
-        for item in input_items:
+        for item in sanitized:
+            if not isinstance(item, dict):
+                continue
             if item.get("type") != "function_call_output":
                 continue
             self._chat_history.append(
@@ -351,26 +414,40 @@ class LLMClient:
 
         tool_events: list[dict[str, Any]] = []
         for item in getattr(response, "output", []) or []:
-            if getattr(item, "type", "") != "function_call":
+            if _output_item_type(item) != "function_call":
                 continue
-            arguments = getattr(item, "arguments", "") or ""
+            if isinstance(item, Mapping):
+                arguments = str(item.get("arguments") or "")
+                tid = str(item.get("id") or item.get("call_id") or "")
+                name = str(item.get("name") or "")
+                call_id = str(item.get("call_id") or tid)
+            else:
+                arguments = getattr(item, "arguments", "") or ""
+                tid = getattr(item, "id", "") or getattr(item, "call_id", "")
+                name = getattr(item, "name", "")
+                call_id = getattr(item, "call_id", "")
             tool_events.append(
                 {
-                    "id": getattr(item, "id", "") or getattr(item, "call_id", ""),
-                    "call_id": getattr(item, "call_id", ""),
-                    "name": getattr(item, "name", ""),
+                    "id": tid,
+                    "call_id": call_id,
+                    "name": name,
                     "arguments": arguments,
                     "parsed_arguments": _parse_tool_arguments(arguments),
                 }
             )
 
         output_text = getattr(response, "output_text", "") or ""
+        try:
+            reasoning_summary_text = _extract_reasoning_summary(response)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to extract reasoning summary from Responses API output.")
+            reasoning_summary_text = ""
         return {
             "response_id": getattr(response, "id", ""),
             "raw_output": "".join(raw_chunks) or output_text,
             "assistant_content": output_text,
             "tool_calls": tool_events,
-            "reasoning_summary_text": _extract_reasoning_summary(response),
+            "reasoning_summary_text": reasoning_summary_text,
             "latency_ms": latency_ms,
             "token_usage": usage,
         }
@@ -404,11 +481,12 @@ class LLMClient:
         }
         if effort and effort != "none":
             create_kwargs["reasoning_effort"] = effort
+        client = self._client_for_model_key(model_key)
         try:
-            stream = self.client.chat.completions.create(**create_kwargs)
+            stream = client.chat.completions.create(**create_kwargs)
         except TypeError:
             create_kwargs.pop("reasoning_effort", None)
-            stream = self.client.chat.completions.create(**create_kwargs)
+            stream = client.chat.completions.create(**create_kwargs)
 
         for chunk in stream:
             if not response_id:
@@ -516,7 +594,7 @@ class LLMClient:
         """Summarize older conversation turns before compacting them into memory."""
         if not messages:
             return ""
-        if not self.available or not self.client:
+        if not self.available:
             return ""
         try:
             transcript = "\n\n".join(
@@ -537,7 +615,7 @@ class LLMClient:
             fast_effort = (self.config.fast_reasoning_effort or "").strip().lower()
             if fast_effort and fast_effort != "none":
                 try:
-                    completion = self.client.chat.completions.create(
+                    completion = self.fast_client.chat.completions.create(
                         model=self.config.fast_model,
                         messages=[
                             {"role": "system", "content": prompt},
@@ -546,7 +624,7 @@ class LLMClient:
                         reasoning_effort=fast_effort,
                     )
                 except TypeError:
-                    completion = self.client.chat.completions.create(
+                    completion = self.fast_client.chat.completions.create(
                         model=self.config.fast_model,
                         messages=[
                             {"role": "system", "content": prompt},
@@ -554,7 +632,7 @@ class LLMClient:
                         ],
                     )
             else:
-                completion = self.client.chat.completions.create(
+                completion = self.fast_client.chat.completions.create(
                     model=self.config.fast_model,
                     messages=[
                         {"role": "system", "content": prompt},
@@ -622,6 +700,7 @@ class LLMClient:
         )
         model_name = self.model_name_for_key(model_key)
         effort = self.reasoning_effort_for_key(model_key)
+        client = self._client_for_model_key(model_key)
         started = time.perf_counter()
         if self.api_style == "chat_completions":
             kwargs: dict[str, Any] = {
@@ -634,13 +713,13 @@ class LLMClient:
             if effort and effort != "none":
                 kwargs["reasoning_effort"] = effort
             try:
-                completion = self.client.chat.completions.create(**kwargs, max_completion_tokens=cap)
+                completion = client.chat.completions.create(**kwargs, max_completion_tokens=cap)
             except TypeError:
                 kwargs.pop("reasoning_effort", None)
                 try:
-                    completion = self.client.chat.completions.create(**kwargs, max_completion_tokens=cap)
+                    completion = client.chat.completions.create(**kwargs, max_completion_tokens=cap)
                 except TypeError:
-                    completion = self.client.chat.completions.create(**kwargs)
+                    completion = client.chat.completions.create(**kwargs)
             choices = getattr(completion, "choices", None) or []
             text = ""
             if choices:
@@ -660,9 +739,9 @@ class LLMClient:
             if effort and effort != "none":
                 kwargs["reasoning"] = {"effort": effort}
             try:
-                response = self.client.responses.create(**kwargs, max_output_tokens=cap)
+                response = client.responses.create(**kwargs, max_output_tokens=cap)
             except TypeError:
-                response = self.client.responses.create(**kwargs)
+                response = client.responses.create(**kwargs)
             text = (getattr(response, "output_text", None) or "").strip()
             usage_data = getattr(response, "usage", None)
             usage = TraceTokenUsage(

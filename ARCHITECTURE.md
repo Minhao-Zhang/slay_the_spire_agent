@@ -43,15 +43,18 @@ flowchart LR
 1. `src/main.py` reads raw JSON state, computes deterministic `state_id`, builds VM with `process_state()`.
 2. `src/main.py` sends state to dashboard and polls instruction channel (`manual_action`, `approved_action`, `agent_mode`).
 3. If eligible, it starts one background proposal (`ThreadPoolExecutor`, single worker).
-4. `src/agent/graph.py` runs:
+4. If a proposal is still in-flight but the game advances to a different `state_id`, the in-flight proposal is discarded and a fresh proposal can start for the new state.
+5. Before requesting any new proposal, `src/main.py` drains queued follow-up commands from an approved multi-command sequence (`final_decision_sequence`) and resolves tokenized `PLAY <card_token>` commands against current legal actions.
+6. If there is exactly one legal action (or only `CONFIRM`/`CANCEL` in the auto-confirm case), `src/main.py` creates a trace and short-circuits without an LLM call.
+7. `src/agent/graph.py` runs:
    - `build_prompt` (session scene key, compaction, strategy memory update),
    - optional `plan_turn` (heuristic `## TURN PLAN`, `LLM_ENABLE_PLANNER`; skipped in combat in favor of the combat guide),
    - optional combat-opening plan (same `LLM_ENABLE_PLANNER`): one non-tool LLM call stores a session guide keyed by `combat_encounter_fingerprint`, injected as `COMBAT PLAN GUIDE` each combat turn,
    - `run_agent` (streaming LLM call),
    - `run_tool` loop (bounded by `max_tool_roundtrips`),
    - `validate_decision`.
-5. `src/agent/policy.py` validates decision with command normalization and intent fallbacks (`chosen_label`, `action_type`, `choice_index`).
-6. Final action is executed only by `print(action)` in `src/main.py` (manual/propose/auto policy applied there).
+8. `src/agent/policy.py` validates decision with command normalization and intent fallbacks (`chosen_label`, `action_type`, `choice_index`).
+9. Final action is executed only by `print(action)` in `src/main.py` (manual/propose/auto policy applied there).
 
 ## Control Plane and Execution Modes
 
@@ -96,6 +99,7 @@ Memory behavior in `src/agent/session_state.py`:
 - Transient proposal failure does not immediately disable AI.
 - AI is disabled for run only after `LLM_PROPOSAL_FAILURE_STREAK_LIMIT`.
 - On success, streak resets and normal operation resumes.
+- In-flight proposals are discarded when the game state advances to a new `state_id` before completion.
 
 ## Trace and Log Schema (Current)
 

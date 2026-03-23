@@ -103,12 +103,13 @@ def _mark_trace_stale():
 
 @app.get("/", response_class=HTMLResponse)
 async def get_dashboard(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    # Starlette >=1.0: TemplateResponse(request, template_name, context?)
+    return templates.TemplateResponse(request, "index.html")
 
 
 @app.get("/ai", response_class=HTMLResponse)
 async def get_ai_debugger(request: Request):
-    return templates.TemplateResponse("ai_debugger.html", {"request": request})
+    return templates.TemplateResponse(request, "ai_debugger.html")
 
 
 @app.get("/api/ai/state")
