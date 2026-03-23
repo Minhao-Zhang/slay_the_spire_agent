@@ -29,6 +29,7 @@ class GraphState(TypedDict, total=False):
     previous_response_id: str | None
     plan_text: str
     error: str
+    turn_model_key: str | None
 
 
 class SpireDecisionAgent:
@@ -144,11 +145,18 @@ class SpireDecisionAgent:
             if new is not None:
                 setattr(target, name, (cur or 0) + new)
 
+    def _resolve_turn_model_key(self, vm: dict) -> str:
+        if vm.get("combat"):
+            return self.config.combat_turn_llm
+        return self.config.non_combat_turn_llm
+
     def _ensure_combat_plan(self, vm: dict, trace: AgentTrace) -> None:
         trace.combat_plan_generated = False
         trace.combat_plan_text_preview = ""
         trace.combat_plan_error = ""
         trace.combat_plan_latency_ms = None
+        trace.combat_plan_model_used = ""
+        plan_key = self.config.combat_plan_llm
         self.session.sync_combat_plan_for_vm(vm)
         if not vm.get("combat"):
             return
@@ -184,11 +192,15 @@ class SpireDecisionAgent:
             )
         )
         self._emit_trace(trace)
+        trace.combat_plan_model_used = (
+            self.config.fast_model if plan_key == "fast" else self.config.reasoning_model
+        )
         try:
             result = self.llm.generate_combat_plan(
                 system_prompt=COMBAT_PLAN_SYSTEM,
                 user_content=planning_user,
                 max_output_tokens=self.config.combat_plan_max_output_tokens,
+                model_key=plan_key,
             )
         except Exception as exc:  # noqa: BLE001
             trace.combat_plan_error = f"Combat plan failed: {exc}"
@@ -228,6 +240,7 @@ class SpireDecisionAgent:
             self.session.action_history,
             strategy_memory=self.session.strategy_memory_lines(),
             combat_plan_guide=self.session.combat_plan_guide or None,
+            prompt_profile=self.config.prompt_profile,
         )
         state["trace"].status = "running"
         state["trace"].user_prompt = user_prompt
@@ -283,6 +296,15 @@ class SpireDecisionAgent:
             return state
 
         trace = state["trace"]
+        if state.get("turn_model_key") is None:
+            state["turn_model_key"] = self._resolve_turn_model_key(state["vm"])
+        model_key = state["turn_model_key"] or "reasoning"
+        trace.llm_turn_model_key = model_key
+        trace.llm_model_used = (
+            self.llm.model_name_for_key(model_key)
+            if self.llm
+            else (self.config.fast_model if model_key == "fast" else self.config.reasoning_model)
+        )
         stage = "tool_continuation" if any("type" in item for item in state.get("messages", [])) else "proposal"
         trace.llm_calls.append(
             TraceLlmCall(
@@ -317,6 +339,7 @@ class SpireDecisionAgent:
                 previous_response_id=state.get("previous_response_id"),
                 on_delta=on_delta,
                 on_tool=on_tool,
+                model_key=model_key,
             )
         except Exception as exc:  # noqa: BLE001
             trace.status = "error"
@@ -422,12 +445,14 @@ class SpireDecisionAgent:
     ) -> AgentTrace:
         self.trace_callback = trace_callback
         trace = create_trace(vm, state_id, agent_mode, self.system_prompt, "")
+        trace.prompt_profile = self.config.prompt_profile
         graph_state: GraphState = {
             "vm": vm,
             "state_id": state_id,
             "system_prompt": self.system_prompt,
             "trace": trace,
             "tool_roundtrips": 0,
+            "turn_model_key": None,
         }
         result = self.graph.invoke(graph_state)
         if result["trace"].raw_output:

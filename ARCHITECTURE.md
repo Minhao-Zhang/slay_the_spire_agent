@@ -106,7 +106,11 @@ Live `AgentTrace` includes:
 - parsed proposal + validation,
 - tool names used,
 - planner summary,
+- combat plan model id (`combat_plan_model_used`) when planner runs,
+- experiment fields: `prompt_profile`, `llm_model_used`, `llm_turn_model_key`,
 - token usage + latency,
 - execution outcome and approval status.
 
-Persisted sidecar log (`*.ai.json`) includes matching diagnostic fields to support replay evaluation in `src/eval/replay.py`.
+Persisted sidecar log (`*.ai.json`) includes matching diagnostic fields to support replay evaluation in `src/eval/replay.py` (including grouped metrics by profile and model).
+
+Run-level outcomes (max floor, `GAME_OVER` victory) are derived from raw state logs in `replay.py`, not from sidecars alone.

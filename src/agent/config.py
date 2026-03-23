@@ -10,6 +10,12 @@ from pydantic import BaseModel, Field
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_PROMPT_PATH = BASE_DIR / "src" / "agent" / "prompts" / "system_prompt.md"
+DEFAULT_STRATEGY_CORPUS_PATH = BASE_DIR / "data" / "strategy" / "curated_strategy.md"
+
+
+def _normalize_llm_slot(raw: str, default: str = "reasoning") -> str:
+    v = (raw or default).strip().lower()
+    return "fast" if v == "fast" else "reasoning"
 
 
 class AgentConfig(BaseModel):
@@ -34,10 +40,24 @@ class AgentConfig(BaseModel):
     combat_plan_max_output_tokens: int = Field(default=2048, ge=256, le=32000)
     combat_plan_max_cards_per_section: int = Field(default=80, ge=10, le=200)
     combat_plan_only_turn_one: bool = True
+    prompt_profile: str = "default"
+    combat_turn_llm: str = "reasoning"
+    non_combat_turn_llm: str = "reasoning"
+    combat_plan_llm: str = "reasoning"
+    include_strategy_corpus: bool = False
+    strategy_corpus_path: str = ""
 
     @property
     def enabled(self) -> bool:
         return bool(self.api_key and self.reasoning_model)
+
+    def resolved_strategy_corpus_path(self) -> Path | None:
+        if not self.include_strategy_corpus:
+            return None
+        raw = (self.strategy_corpus_path or "").strip()
+        if raw:
+            return Path(raw)
+        return DEFAULT_STRATEGY_CORPUS_PATH if DEFAULT_STRATEGY_CORPUS_PATH.exists() else None
 
 
 @lru_cache(maxsize=1)
@@ -83,6 +103,12 @@ def get_agent_config() -> AgentConfig:
         .strip()
         .lower()
         == "true",
+        prompt_profile=os.getenv("LLM_PROMPT_PROFILE", "default").strip() or "default",
+        combat_turn_llm=_normalize_llm_slot(os.getenv("LLM_COMBAT_TURN_MODEL", "reasoning")),
+        non_combat_turn_llm=_normalize_llm_slot(os.getenv("LLM_NON_COMBAT_TURN_MODEL", "reasoning")),
+        combat_plan_llm=_normalize_llm_slot(os.getenv("LLM_COMBAT_PLAN_MODEL", "reasoning")),
+        include_strategy_corpus=os.getenv("LLM_INCLUDE_STRATEGY_CORPUS", "false").strip().lower() == "true",
+        strategy_corpus_path=os.getenv("LLM_STRATEGY_CORPUS_PATH", "").strip(),
     )
 
 

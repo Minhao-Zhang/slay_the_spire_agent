@@ -62,6 +62,33 @@ def _fmt_list(items: list[str], fallback: str = "None") -> str:
     return "\n".join(f"- {item}" for item in items) if items else f"- {fallback}"
 
 
+def _apply_prompt_profile(sections: list[tuple[str, str]], profile: str) -> list[tuple[str, str]]:
+    """Minimal profile drops secondary context for ablation experiments."""
+    p = (profile or "default").strip().lower()
+    if p in ("default", "verbose"):
+        return sections
+    if p != "minimal":
+        return sections
+    drop_titles = {
+        "BUFF GLOSSARY (meanings of powers/tokens above)",
+        "MAP SCENE",
+        "CARD CHOICE GUIDANCE",
+    }
+    thin_tooling = (
+        "- Pile tools only if hidden information is required.\n"
+        "- inspect_deck_summary for deck stats."
+    )
+    out: list[tuple[str, str]] = []
+    for title, body in sections:
+        if title in drop_titles:
+            continue
+        if title == "TOOLING NOTES":
+            out.append((title, thin_tooling))
+        else:
+            out.append((title, body))
+    return out
+
+
 def _compact_text(text: str, *, limit: int = 160) -> str:
     cleaned = " ".join((text or "").split())
     if not cleaned:
@@ -494,6 +521,7 @@ def build_prompt_sections(
     recent_actions: list[str],
     strategy_memory: list[str] | None = None,
     combat_plan_guide: str | None = None,
+    prompt_profile: str = "default",
 ) -> list[tuple[str, str]]:
     header = vm.get("header") or {}
     inventory = vm.get("inventory") or {}
@@ -614,7 +642,7 @@ def build_prompt_sections(
     map_scene = _map_scene_lines(vm)
     if map_scene:
         sections.insert(9, ("MAP SCENE", _fmt_list(map_scene)))
-    return sections
+    return _apply_prompt_profile(sections, prompt_profile)
 
 
 def build_user_prompt(
@@ -623,15 +651,28 @@ def build_user_prompt(
     recent_actions: list[str],
     strategy_memory: list[str] | None = None,
     combat_plan_guide: str | None = None,
+    prompt_profile: str = "default",
 ) -> str:
+    from src.agent.config import get_agent_config
+
     sections = build_prompt_sections(
         vm,
         recent_actions,
         strategy_memory=strategy_memory,
         combat_plan_guide=combat_plan_guide,
+        prompt_profile=prompt_profile,
     )
-
-    return "\n\n".join(f"## {title}\n{body}" for title, body in sections) + "\n"
+    main = "\n\n".join(f"## {title}\n{body}" for title, body in sections) + "\n"
+    cfg = get_agent_config()
+    path = cfg.resolved_strategy_corpus_path()
+    if path and path.is_file():
+        corpus = path.read_text(encoding="utf-8").strip()
+        if corpus:
+            header = (
+                "## COMMUNITY STRATEGY NOTES (synthesized reference; see corpus file header for attribution)\n"
+            )
+            return header + corpus + "\n\n" + main
+    return main
 
 
 def build_combat_planning_prompt(vm: dict[str, Any], *, max_cards_per_section: int = 80) -> str:

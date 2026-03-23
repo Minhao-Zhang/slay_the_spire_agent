@@ -101,8 +101,12 @@ def build_persisted_ai_log(trace: AgentTrace) -> PersistedAiLog:
         combat_plan_text_preview=trace.combat_plan_text_preview,
         combat_plan_error=trace.combat_plan_error,
         combat_plan_latency_ms=trace.combat_plan_latency_ms,
+        combat_plan_model_used=trace.combat_plan_model_used,
         validation_error=trace.validation.error,
         error=trace.error,
+        prompt_profile=trace.prompt_profile,
+        llm_model_used=trace.llm_model_used,
+        llm_turn_model_key=trace.llm_turn_model_key,
     )
 
 

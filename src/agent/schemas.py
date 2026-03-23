@@ -113,8 +113,12 @@ class PersistedAiLog(BaseModel):
     combat_plan_text_preview: str = ""
     combat_plan_error: str = ""
     combat_plan_latency_ms: Optional[int] = None
+    combat_plan_model_used: str = ""
     validation_error: str = ""
     error: str = ""
+    prompt_profile: str = "default"
+    llm_model_used: str = ""
+    llm_turn_model_key: str = ""
 
 
 class AgentTrace(BaseModel):
@@ -149,6 +153,10 @@ class AgentTrace(BaseModel):
     combat_plan_text_preview: str = ""
     combat_plan_error: str = ""
     combat_plan_latency_ms: Optional[int] = None
+    combat_plan_model_used: str = ""
     llm_calls: list[TraceLlmCall] = Field(default_factory=list)
     error: str = ""
+    prompt_profile: str = "default"
+    llm_model_used: str = ""
+    llm_turn_model_key: str = ""
 

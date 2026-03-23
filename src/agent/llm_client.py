@@ -73,6 +73,8 @@ def build_llm_check_result(config: AgentConfig) -> dict[str, Any]:
         "config": {
             "base_url": config.base_url,
             "reasoning_model": config.reasoning_model,
+            "fast_model": config.fast_model,
+            "prompt_profile": config.prompt_profile,
             "api_key_present": bool(config.api_key),
         },
     }
@@ -98,6 +100,8 @@ def build_llm_check_result(config: AgentConfig) -> dict[str, Any]:
 
 
 class LLMClient:
+    """API client; use model_key 'reasoning' vs 'fast' for turn routing (see AgentConfig)."""
+
     def __init__(self, config: AgentConfig):
         self.config = config
         self.request_timeout = httpx.Timeout(
@@ -128,6 +132,16 @@ class LLMClient:
         self.capability_state: CapabilityState = "unchecked"
         self._chat_history: list[dict[str, Any]] = []
         self._capability_lock = threading.Lock()
+
+    def model_name_for_key(self, model_key: str) -> str:
+        key = (model_key or "reasoning").strip().lower()
+        return self.config.fast_model if key == "fast" else self.config.reasoning_model
+
+    def reasoning_effort_for_key(self, model_key: str) -> str:
+        key = (model_key or "reasoning").strip().lower()
+        if key == "fast":
+            return (self.config.fast_reasoning_effort or "none").strip().lower()
+        return (self.config.reasoning_effort or "medium").strip().lower()
 
     def check_api_capabilities(self) -> None:
         if self.capability_state in {"ready", "failed"}:
@@ -253,15 +267,21 @@ class LLMClient:
         system_prompt: str,
         input_items: list[dict[str, Any]],
         previous_response_id: str | None = None,
+        model_name: str | None = None,
+        model_key: str = "reasoning",
     ):
-        return self.client.responses.stream(
-            model=self.config.reasoning_model,
-            instructions=system_prompt,
-            tools=self.tools,
-            input=input_items,
-            previous_response_id=previous_response_id,
-            reasoning={"summary": "auto", "effort": self.config.reasoning_effort},
-        )
+        model = model_name or self.model_name_for_key(model_key)
+        effort = self.reasoning_effort_for_key(model_key)
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "instructions": system_prompt,
+            "tools": self.tools,
+            "input": input_items,
+            "previous_response_id": previous_response_id,
+        }
+        if effort and effort != "none":
+            kwargs["reasoning"] = {"summary": "auto", "effort": effort}
+        return self.client.responses.stream(**kwargs)
 
     def _to_chat_messages(self, system_prompt: str, input_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         has_role_messages = any("role" in item for item in input_items)
@@ -296,6 +316,7 @@ class LLMClient:
         previous_response_id: str | None = None,
         on_delta: TraceCallback | None = None,
         on_tool: ToolCallback | None = None,
+        model_key: str = "reasoning",
     ) -> dict[str, Any]:
         started = time.perf_counter()
         raw_chunks: list[str] = []
@@ -304,6 +325,7 @@ class LLMClient:
             system_prompt=system_prompt,
             input_items=input_items,
             previous_response_id=previous_response_id,
+            model_key=model_key,
         ) as stream:
             for event in stream:
                 if event.type == "response.output_text.delta":
@@ -360,6 +382,7 @@ class LLMClient:
         input_items: list[dict[str, Any]],
         on_delta: TraceCallback | None = None,
         on_tool: ToolCallback | None = None,
+        model_key: str = "reasoning",
     ) -> dict[str, Any]:
         started = time.perf_counter()
         raw_chunks: list[str] = []
@@ -370,19 +393,20 @@ class LLMClient:
         tool_deltas: dict[int, dict[str, Any]] = {}
 
         messages = self._to_chat_messages(system_prompt, input_items)
+        model_name = self.model_name_for_key(model_key)
+        effort = self.reasoning_effort_for_key(model_key)
         create_kwargs: dict[str, Any] = {
-            "model": self.config.reasoning_model,
+            "model": model_name,
             "messages": messages,
             "tools": self.chat_tools,
             "stream": True,
             "tool_choice": "auto",
         }
-        # Reasoning models: request reasoning for compatibility with Responses API behavior
-        create_kwargs["reasoning_effort"] = self.config.reasoning_effort
+        if effort and effort != "none":
+            create_kwargs["reasoning_effort"] = effort
         try:
             stream = self.client.chat.completions.create(**create_kwargs)
         except TypeError:
-            # Older SDK may not support reasoning_effort
             create_kwargs.pop("reasoning_effort", None)
             stream = self.client.chat.completions.create(**create_kwargs)
 
@@ -553,6 +577,7 @@ class LLMClient:
         previous_response_id: str | None = None,
         on_delta: TraceCallback | None = None,
         on_tool: ToolCallback | None = None,
+        model_key: str = "reasoning",
     ) -> dict:
         self.check_api_capabilities()
         if self.capability_state == "checking":
@@ -565,6 +590,7 @@ class LLMClient:
                 input_items=input_items,
                 on_delta=on_delta,
                 on_tool=on_tool,
+                model_key=model_key,
             )
         return self._run_streaming_turn_responses(
             system_prompt=system_prompt,
@@ -572,6 +598,7 @@ class LLMClient:
             previous_response_id=previous_response_id,
             on_delta=on_delta,
             on_tool=on_tool,
+            model_key=model_key,
         )
 
     def generate_combat_plan(
@@ -580,6 +607,7 @@ class LLMClient:
         system_prompt: str,
         user_content: str,
         max_output_tokens: int | None = None,
+        model_key: str = "reasoning",
     ) -> dict[str, Any]:
         """Single non-streaming completion without tools (opening combat battle guide)."""
         self.check_api_capabilities()
@@ -592,19 +620,27 @@ class LLMClient:
             if max_output_tokens is not None
             else self.config.combat_plan_max_output_tokens
         )
+        model_name = self.model_name_for_key(model_key)
+        effort = self.reasoning_effort_for_key(model_key)
         started = time.perf_counter()
         if self.api_style == "chat_completions":
             kwargs: dict[str, Any] = {
-                "model": self.config.reasoning_model,
+                "model": model_name,
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content},
                 ],
             }
+            if effort and effort != "none":
+                kwargs["reasoning_effort"] = effort
             try:
                 completion = self.client.chat.completions.create(**kwargs, max_completion_tokens=cap)
             except TypeError:
-                completion = self.client.chat.completions.create(**kwargs)
+                kwargs.pop("reasoning_effort", None)
+                try:
+                    completion = self.client.chat.completions.create(**kwargs, max_completion_tokens=cap)
+                except TypeError:
+                    completion = self.client.chat.completions.create(**kwargs)
             choices = getattr(completion, "choices", None) or []
             text = ""
             if choices:
@@ -617,11 +653,12 @@ class LLMClient:
             )
         else:
             kwargs: dict[str, Any] = {
-                "model": self.config.reasoning_model,
+                "model": model_name,
                 "instructions": system_prompt,
                 "input": [{"role": "user", "content": user_content}],
-                "reasoning": {"effort": self.config.reasoning_effort},
             }
+            if effort and effort != "none":
+                kwargs["reasoning"] = {"effort": effort}
             try:
                 response = self.client.responses.create(**kwargs, max_output_tokens=cap)
             except TypeError:
