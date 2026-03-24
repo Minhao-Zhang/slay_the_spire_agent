@@ -84,6 +84,25 @@ Capture runtime contracts to remove ambiguity during rewrite and identify implic
 - Reducers must be defined for any field that may receive concurrent updates.
 - Full-state recreation inside node logic is explicitly prohibited.
 
+## C8: Strategic Planner Collaboration Contract
+- Strategic planner is advisory and must not output directly executable commands.
+- Required `StrategicPlan` fields:
+  - `plan_id`
+  - `state_id`
+  - `turn_key`
+  - `trigger_reason` (`combat_start` | `long_term_impact`)
+  - `horizon`
+  - `primary_intent`
+  - `recommended_lines`
+  - `avoid_list`
+  - `risk_flags`
+  - `expires_at` or equivalent deterministic invalidation metadata
+- Tactical decision records alignment with strategic guidance:
+  - `followed`
+  - `partially_followed`
+  - `diverged` (+ required reason code)
+- Planner failure behavior must degrade safely to tactical-only flow with explicit telemetry.
+
 ## Command Grammar (Current)
 - Commands are free-form strings such as:
   - `PLAY 1`

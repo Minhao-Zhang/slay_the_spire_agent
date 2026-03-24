@@ -3,6 +3,9 @@
 ## Purpose
 Track the highest-risk engineering issues in the current codebase and define rewrite implications.
 
+## Program stance (aligned with `ARCHITECTURE.md`)
+The effort is a **greenfield rewrite**: new modules and naming are allowed; **CommunicationMod** and safety semantics stay correct under test. See `docs/restart/ARCHITECTURE.md` (program stance) and `docs/restart/08-migration-plan.md` for delivery and cutover expectations.
+
 ## Severity Legend
 - High: likely to cause correctness/reliability regressions.
 - Medium: maintainability/scalability risk.

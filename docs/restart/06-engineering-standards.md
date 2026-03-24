@@ -3,6 +3,11 @@
 ## Purpose
 Define non-negotiable software engineering practices for the rewrite.
 
+## Naming and codebase conventions
+- Prefer **clear, consistent names** over matching legacy (`main.py`, `dashboard`, etc.).
+- Cross-module **contract names** (`IngressState`, `AgentRuntimeState`, …) should stay stable once published to tests and telemetry; internal module paths are **not** frozen by these docs.
+- When renaming affects operators or integrators (HTTP paths, env vars), treat it as a **versioned surface** (changelog + `.env.example` + doc update).
+
 ## Build Baseline
 - Primary near-term requirement: runtime code must compile/import cleanly and start successfully in the target environment.
 - Optional quality tooling (lint/type/unit coverage) is recommended but not merge-blocking during early migration.
@@ -65,6 +70,7 @@ Define non-negotiable software engineering practices for the rewrite.
 - Do not place `interrupt(...)` inside broad `try/except` blocks.
 - Avoid non-idempotent side effects before an `interrupt(...)`; place side effects after approval or in downstream nodes.
 - Any node with multiple interrupts must preserve stable interrupt ordering across resumptions.
+- Strategic planner outputs are advisory by default; tactical command legality and final command emission remain independent safety checks.
 
 ## Persistence and Threading Standards
 - For graph runs that use a checkpointer, every invocation must include `thread_id` in configurable runtime config.

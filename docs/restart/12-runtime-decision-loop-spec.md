@@ -9,6 +9,7 @@ Define parity-critical runtime loop behavior currently implemented in `src/main.
 - Short-circuit actions that bypass LLM calls.
 - Multi-command sequence execution policy.
 - Proposal retry behavior requirements.
+- Strategic planner collaboration trigger policy (restart target).
 
 ## State Identity and Freshness
 - `state_id` is deterministic content identity (hash of normalized ingress payload), not monotonic.
@@ -76,6 +77,15 @@ Define parity-critical runtime loop behavior currently implemented in `src/main.
   - link trace to prior proposal via `retry_of`.
 - UI requirement:
   - add "Retry Proposal" control for current pending/invalid/rejected proposal.
+
+## Strategic Planner Collaboration (Planned Restart Behavior)
+- Planner authority is advisory; tactical command legality and final selection remain safety-gated by current validation rules.
+- Planner trigger conditions:
+  - beginning of each combat,
+  - decisions classified as long-term impact.
+- Tactical step consumes active strategic guidance context and records whether it followed or diverged from plan intent.
+- Divergence must include a reason code in telemetry for replay and review.
+- Planner failure/timeout must degrade to tactical-only flow for that decision cycle.
 
 ## LangGraph Mapping Guidance
 - Keep ingress event debouncing/stability gating in `decision_engine` before LLM node entry.

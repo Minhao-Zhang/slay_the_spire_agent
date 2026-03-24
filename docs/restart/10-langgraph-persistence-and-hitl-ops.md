@@ -71,6 +71,10 @@ Operationalize LangGraph persistence and interrupt/resume rules for this project
   - compare branch outcomes
 - Streaming inspector should support LangGraph v2 event shape (`type`, `ns`, `data`) and interrupt extraction.
 
+Streaming contract and provider-compatibility details are specified in:
+- `docs/restart/15-streaming-reasoning-and-output-spec.md`
+- `docs/restart/16-sqlite-telemetry-and-history-explorer-spec.md`
+
 ## Audit Events (Minimum)
 - `thread_started`
 - `checkpoint_written`

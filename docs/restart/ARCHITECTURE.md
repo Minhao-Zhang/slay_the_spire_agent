@@ -3,18 +3,25 @@
 ## Purpose
 This document defines the target architecture for the clean restart and acts as the implementation reference for the `docs/restart` plan set.
 
+## Program stance: greenfield rewrite
+The team is **replacing the existing implementation with a new codebase**, not carrying the old one forward behind a permanent dual-runtime. We accept the cost: schedule risk, re-validation effort, and breaking internal APIs. What must stay stable is **external game I/O (CommunicationMod)** and **operator-visible safety semantics** (command legality, stale handling, HITL), validated by contracts and replay—not by preserving old module names or file layout.
+
+**Naming and layout:** Module names (`game_adapter`, `state_projection`, etc.), package paths under `src/`, HTTP routes, and UI structure are **defaults in this document set**. They may be renamed or reorganized whenever a clearer convention emerges. When names change, update both `docs/restart` and `docs/restart_refined` and log the decision in the risk register or an ADR.
+
+**Delivery style:** Work still lands in **vertical slices** with merge-blocking tests, but slices are milestones **inside the new tree**, not a strangler alongside a long-lived legacy path.
+
 ## Goals
-- Preserve all current functionality with explicit contracts.
+- Preserve parity-critical behavior (protocol, safety, operator workflows) with explicit contracts—not parity of legacy code shape.
 - Remove cross-layer coupling and stringly-typed behavior.
 - Keep side effects isolated at system boundaries.
-- Enforce quality gates from the first rewrite slice.
+- Enforce quality gates from the first shipped slice of the new codebase.
 
 ## Architectural Principles
 - Domain-first design: business logic is independent of frameworks and providers.
 - Typed boundaries: all cross-module interfaces use explicit schemas.
 - Deterministic core: projection, resolution, and validation are pure where possible.
 - Observable runtime: structured telemetry with trace correlation.
-- Incremental migration: ship vertical slices with parity checks.
+- Iterative delivery: ship vertical slices in the new codebase with replay and contract tests; legacy code is reference for behavior, not a routing fallback forever.
 
 ## LangChain and LangGraph Decisions
 - Orchestration runtime: LangGraph (`StateGraph`) for durable, stateful execution.
@@ -50,6 +57,9 @@ This document defines the target architecture for the clean restart and acts as 
 - Parses model output to typed decision schema.
 - Resolves decisions to legal commands with explainable fallback order.
 - Enforces structured output schema at agent boundary.
+- Supports role-specific schemas/prompts for:
+  - strategic planning guidance (advisory),
+  - tactical command proposal (executable candidate).
 
 ### `llm_gateway`
 - Encapsulates all model provider interactions.
@@ -106,10 +116,11 @@ flowchart LR
 1. `game_adapter` receives raw game payload.
 2. `state_projection` builds typed decision/UI models.
 3. `decision_engine` determines mode behavior.
-4. In AI modes, `agent_core` requests model work via `llm_gateway`.
-5. `agent_core` validates/resolves command against legal actions.
-6. `decision_engine` authorizes execution or waits for approval.
-7. `game_adapter` emits final command to the game.
+4. In AI modes, `decision_engine` may trigger strategic planner guidance for combat-start or long-term-impact decisions.
+5. `agent_core` requests model work via `llm_gateway` for strategic/tactical steps.
+6. `agent_core` validates/resolves tactical command against legal actions.
+7. `decision_engine` authorizes execution or waits for approval.
+8. `game_adapter` emits final command to the game.
 
 ### 2) Human-in-the-Loop Flow
 1. Approval node/tool issues LangGraph `interrupt(...)` with a typed review payload.
@@ -223,13 +234,17 @@ src/
   evaluation/
 ```
 
-## Migration Note
-This architecture is implemented incrementally following `docs/restart/08-migration-plan.md` to maintain behavior parity and avoid a risky big-bang cutover.
+## Implementation note
+Implement this architecture in a **new codebase** (or a clearly bounded new package tree), following the slice order in `docs/restart/08-migration-plan.md`. **Behavior parity** is proven with fixtures, replay, and integration tests—not by keeping the old runtime in production past an agreed cutover. Until cutover, the legacy app may still run for comparison; after cutover, legacy is **archive/reference only**.
 
 ## Related Design Specs
 - `docs/restart/09-observability-and-debugger-design.md` defines canonical event schema, dashboard UX, and logging/tracing sink strategy.
 - `docs/restart/10-langgraph-persistence-and-hitl-ops.md` defines thread/checkpoint operations, replay/update-state governance, and HITL runtime rules.
 - `docs/restart/11-memory-strategy.md` defines short-term vs long-term memory design, retention controls, and store policy.
+- `docs/restart/13-strategic-planner-collaboration.md` defines advisory strategic+tactical multi-agent collaboration, trigger policy, and alignment telemetry.
+- `docs/restart/14-debugger-frontend-redesign-spec.md` defines complete debugger UX redesign, IA, dual-theme behavior, and phased rollout requirements.
+- `docs/restart/15-streaming-reasoning-and-output-spec.md` defines canonical streaming contracts, OpenAI Responses/Completions compatibility, and edge-case handling for debugger streams.
+- `docs/restart/16-sqlite-telemetry-and-history-explorer-spec.md` defines canonical local SQLite telemetry schema, migration, and debugger history explorer requirements.
 
 ## Context7 Feature Notes
 - The planning assumptions in this document are aligned with recent LangChain/LangGraph docs surfaced through Context7, especially:

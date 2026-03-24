@@ -3,11 +3,13 @@
 ## Purpose
 Define the clean-slate architecture and dependency boundaries before implementation.
 
+**Rewrite stance:** Module names in this document (`game_adapter`, `state_projection`, …) describe **responsibilities**, not immutable identifiers. The team may rename packages, files, and public types for clarity; update architecture docs when they do.
+
 ## Proposed Modules
 - `game_adapter`: protocol boundary for CommunicationMod I/O.
 - `state_projection`: pure transform from raw state to typed decision state and UI state.
 - `decision_engine`: orchestration of modes, proposal lifecycle, sequence queue, retries.
-- `agent_core`: model-agnostic policy, output parser, validation, command resolution.
+- `agent_core`: model-agnostic policy, output parser, validation, command resolution, strategic+tactical role schemas.
 - `llm_gateway`: provider adapters, retry/timeout policy, model routing.
 - `knowledge_service`: indexed read-only game knowledge lookups.
 - `control_api`: REST/WS human-in-the-loop API.
@@ -48,6 +50,7 @@ flowchart LR
 - `DecisionState`: current mode, current turn key, proposal state, failure streak, queued commands.
 - `ProposalState`: request id, state id, status, timestamps, result/error.
 - `ExecutionState`: last executed command, origin, outcome.
+- `StrategicPlanState`: active plan id, trigger reason, horizon, expiry, last tactical alignment.
 
 ## Framework Mapping
 - `decision_engine` -> LangGraph `StateGraph` runtime.
@@ -84,10 +87,15 @@ flowchart LR
 - If deploying via LangSmith Agent Server/API, rely on managed checkpoint/store infrastructure where available.
 - Persisted checkpoint payloads should use encrypted serializer in sensitive environments.
 
+## Local Canonical Telemetry Storage
+- Use SQLite as the canonical local telemetry/event store for debugger and replay query paths.
+- Canonical schema includes events, stream events, decisions, interrupts, checkpoints, and recovery outbox.
+- JSON sidecar logs are retained as migration/export artifacts, not canonical source of truth.
+
 ## Implementation Notes
 - Start with domain package and interfaces.
 - Add adapters after domain APIs compile.
-- Introduce compatibility adapter to keep current game protocol unchanged during migration.
+- Keep the **game protocol** unchanged via `game_adapter` (typed ingress/egress); this is not a commitment to legacy **Python module** names or internal APIs.
 
 ## Context7 References (Validated)
 - LangGraph persistence (`thread_id`, checkpoints, `get_state` with `checkpoint_id`): https://docs.langchain.com/oss/python/langgraph/persistence

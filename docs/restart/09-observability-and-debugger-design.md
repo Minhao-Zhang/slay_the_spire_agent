@@ -3,12 +3,18 @@
 ## Purpose
 Define a practical, production-ready logging format and debugger dashboard specification for the restart.
 
+UI architecture and workflow-level redesign requirements are additionally specified in:
+- `docs/restart/14-debugger-frontend-redesign-spec.md`
+- `docs/restart/15-streaming-reasoning-and-output-spec.md`
+- `docs/restart/16-sqlite-telemetry-and-history-explorer-spec.md`
+
 ## Design Decision
 - Use a **hybrid observability model**:
   - **Canonical**: project-owned structured event logs (required for replay/parity).
   - **Secondary**: LangSmith/Langfuse trace export (optional but recommended).
 - Never make external tracing the only source of truth for command safety or replay analytics.
 - Canonical event append must be idempotent and reconcilable with checkpoint history.
+- Local/dev canonical persistence target is SQLite (canonical events + stream events + query indexes); JSON sidecars remain migration/export artifacts.
 
 ## Logging Format (Canonical)
 
@@ -45,6 +51,10 @@ Define a practical, production-ready logging format and debugger dashboard speci
 - `memory_read`
 - `memory_written`
 - `mode_changed`
+- `strategic_plan_started`
+- `strategic_plan_completed`
+- `strategic_plan_failed`
+- `tactical_plan_alignment_recorded`
 
 ### Example (shape only)
 ```json
@@ -108,6 +118,7 @@ Define a practical, production-ready logging format and debugger dashboard speci
 - Resume an interrupt with typed decisions (`approve`, `edit`, `reject`, `feedback`) and show the exact resume payload.
 - Stream inspector for LangGraph v2 chunks (`type`, `ns`, `data`) with interrupt detection in update streams.
 - Multi-interrupt resolution UI that maps each interrupt id to its response payload.
+- Show strategic-plan alignment markers (`followed`, `partially_followed`, `diverged`) on tactical decision events.
 
 ## Performance Targets
 - Live refresh <= 1s for critical status widgets.
