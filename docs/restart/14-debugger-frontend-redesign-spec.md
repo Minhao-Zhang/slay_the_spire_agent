@@ -196,8 +196,8 @@ Specialized forensic surface:
 - Replay and live data boundaries are explicit to avoid operator mistakes.
 
 ### NFR4: Maintainability
-- Redesign spec assumes eventual split from monolithic inline CSS/JS templates into modular assets during implementation phase.
-- Shared component vocabulary must be documented and reused across `/` and `/ai`.
+- Implementation target is a **Vite + React + TypeScript + Tailwind** SPA in the monorepo at **`apps/web`**, replacing monolithic inline CSS/JS templates.
+- Shared component vocabulary must be documented and reused across `/` and `/ai` (as routes or layouts inside the SPA).
 
 ## Component Inventory (Target)
 - `RunCommandBar`
@@ -232,7 +232,7 @@ Specialized forensic surface:
    - decision inbox,
    - evidence pack,
    - timeline drill-down.
-4. **Implementation phase** in restart frontend architecture.
+4. **Implementation phase** in `apps/web` (Vite/React/TS/Tailwind), integrated with `control_api` (static serve and/or dev proxy).
 5. **DB-backed history explorer phase** with query APIs and timeline virtualization.
 6. **Shadow mode validation** against legacy UI during parity testing.
 7. **Cutover** after quality gates and operator acceptance checklist pass.

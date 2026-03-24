@@ -7,8 +7,12 @@ This project aims to create an LLM-powered bot capable of playing Slay the Spire
 
 ## Current Project Structure
 
+The repository is organized as a **monorepo**: Python agent/runtime at the repo root (`src/`), and a **planned** operator UI under `apps/web` built with **Vite, React, TypeScript, and Tailwind CSS**. Until that app is implemented and wired to the API, the live dashboard remains the **FastAPI + Jinja templates** under `src/ui/`.
+
 ```text
 slay_the_spire_agent/
+├── apps/
+│   └── web/                # (planned) Vite + React + TS + Tailwind operator UI
 ├── data/
 │   ├── processed/          # Cleaned JSON facts (cards, relics, monsters)
 │   └── raw/                # Excel source files
@@ -20,13 +24,17 @@ slay_the_spire_agent/
 │   ├── reference/          # Local knowledge base queries for game entities
 │   │   ├── __init__.py
 │   │   └── knowledge_base.py
-│   └── ui/                 # Real-time FastAPI debugging dashboard
+│   └── ui/                 # Real-time FastAPI debugging dashboard (current)
 │       ├── dashboard.py
 │       └── templates/
-│           └── index.html
+│           ├── index.html
+│           └── ai_debugger.html
+├── package.json            # (planned) root workspace for apps/web
 ├── requirements.txt
 └── README.md
 ```
+
+Greenfield rewrite plans and architecture notes live under [`docs/restart/README.md`](docs/restart/README.md).
 
 ## Setup & Configuration
 

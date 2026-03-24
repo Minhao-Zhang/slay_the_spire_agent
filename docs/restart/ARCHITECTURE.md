@@ -6,7 +6,7 @@ This document defines the target architecture for the clean restart and acts as 
 ## Program stance: greenfield rewrite
 The team is **replacing the existing implementation with a new codebase**, not carrying the old one forward behind a permanent dual-runtime. We accept the cost: schedule risk, re-validation effort, and breaking internal APIs. What must stay stable is **external game I/O (CommunicationMod)** and **operator-visible safety semantics** (command legality, stale handling, HITL), validated by contracts and replay—not by preserving old module names or file layout.
 
-**Naming and layout:** Module names (`game_adapter`, `state_projection`, etc.), package paths under `src/`, HTTP routes, and UI structure are **defaults in this document set**. They may be renamed or reorganized whenever a clearer convention emerges. When names change, update both `docs/restart` and `docs/restart_refined` and log the decision in the risk register or an ADR.
+**Naming and layout:** Module names (`game_adapter`, `state_projection`, etc.), package paths under `src/`, HTTP routes, and UI structure are **defaults in this document set**. They may be renamed or reorganized whenever a clearer convention emerges. When names change, update the affected files under `docs/restart` (starting with this document and the [hub index](README.md)) and log the decision in the risk register or an ADR.
 
 **Delivery style:** Work still lands in **vertical slices** with merge-blocking tests, but slices are milestones **inside the new tree**, not a strangler alongside a long-lived legacy path.
 
@@ -31,6 +31,14 @@ The team is **replacing the existing implementation with a new codebase**, not c
   - short-term conversational state in graph state/checkpoint,
   - long-term memory through store-backed runtime tools.
 - Debug and recovery: use checkpoint history for replay/time-travel style debugging.
+
+### Framework mapping (concise)
+- `decision_engine` → LangGraph `StateGraph` runtime.
+- `control_api` approve/reject/edit → LangGraph `interrupt(...)` and `Command(resume=...)`.
+- `trace_telemetry` and replay analytics → graph checkpoints plus canonical event logs.
+- `agent_core` output typing → LangChain structured response models (`ProviderStrategy` / `ToolStrategy` as in the Context7 links below).
+
+Normative detail on persistence, `thread_id`, checkpointer/store choices, `update_state`, and HITL runtime rules lives in `10-langgraph-persistence-and-hitl-ops.md`. Canonical SQLite telemetry schema is in `16-sqlite-telemetry-and-history-explorer-spec.md`.
 
 ## Logical Modules
 
@@ -76,6 +84,12 @@ The team is **replacing the existing implementation with a new codebase**, not c
 - Publishes websocket events for live updates.
 - Uses versioned DTOs for all request/response payloads.
 - Translates approval/reject/edit requests into graph resume commands.
+- Serves the **operator UI** as a static bundle built from the **`apps/web`** package (Vite + React + TypeScript + Tailwind) in production; local development may use the Vite dev server with API proxying to `control_api`.
+
+### Repository layout (monorepo)
+- **`apps/web`**: browser UI only—routing, layout, components, and client state; no game or LLM logic.
+- **Python packages** (see Suggested Package Layout below): live under `src/` (or a renamed tree); they implement `control_api`, domain logic, and adapters.
+- Root **Node** workspace config (for example `package.json` workspaces) owns `apps/web` dependencies and scripts; Python dependencies remain managed separately (`uv` / `requirements.txt`).
 
 ### `trace_telemetry`
 - Emits runtime events, statuses, and diagnostics.
@@ -145,6 +159,14 @@ flowchart LR
 
 All contracts are versioned and tested with contract fixtures.
 
+## Domain state aggregates (informative)
+These are logical buckets that map into fields of the canonical `AgentRuntimeState` (see below); they are not separate competing schemas.
+
+- `DecisionState`: current mode, current turn key, proposal state, failure streak, queued commands.
+- `ProposalState`: request id, state id, status, timestamps, result/error.
+- `ExecutionState`: last executed command, origin, outcome.
+- `StrategicPlanState`: active plan id, trigger reason, horizon, expiry, last tactical alignment.
+
 ## Canonical Graph State (LangGraph)
 The runtime must use one canonical `AgentRuntimeState` schema across all nodes.
 
@@ -210,6 +232,11 @@ Minimum requirements by deployment profile:
 - `remote-dev`: authenticated HTTP and websocket channels, CSRF/CORS policy, request rate limits on mutating endpoints.
 - `prod`: role-based authorization (`viewer`/`operator`/`admin`), audit logs for all mutating actions, replay/update-state permissions gated to privileged roles.
 
+## Replay and evaluation modes
+- **Deterministic** (merge-blocking CI): recorded or mocked `llm_gateway` responses and fixed fixtures; strict assertions on decision legality and lifecycle transitions.
+- **Stochastic** (non-blocking trend monitoring): live provider calls with bounded variance expectations; drift metrics and alerts on sustained degradation.
+- Required merge checks use **deterministic** mode only.
+
 ## Quality Gate Integration
 Implementation is blocked unless:
 - compile/import smoke checks pass,
@@ -235,20 +262,24 @@ src/
 ```
 
 ## Implementation note
-Implement this architecture in a **new codebase** (or a clearly bounded new package tree), following the slice order in `docs/restart/08-migration-plan.md`. **Behavior parity** is proven with fixtures, replay, and integration tests—not by keeping the old runtime in production past an agreed cutover. Until cutover, the legacy app may still run for comparison; after cutover, legacy is **archive/reference only**.
+Implement this architecture in a **new codebase** (or a clearly bounded new package tree), following the **staged order and verification gates** in `docs/restart/08-migration-plan.md`. **Behavior parity** is proven with fixtures, replay, and integration tests—not by keeping the old runtime in production past an agreed cutover. Until cutover, the legacy app may still run for comparison; after cutover, legacy is **archive/reference only**.
 
-## Related Design Specs
-- `docs/restart/09-observability-and-debugger-design.md` defines canonical event schema, dashboard UX, and logging/tracing sink strategy.
-- `docs/restart/10-langgraph-persistence-and-hitl-ops.md` defines thread/checkpoint operations, replay/update-state governance, and HITL runtime rules.
-- `docs/restart/11-memory-strategy.md` defines short-term vs long-term memory design, retention controls, and store policy.
-- `docs/restart/13-strategic-planner-collaboration.md` defines advisory strategic+tactical multi-agent collaboration, trigger policy, and alignment telemetry.
-- `docs/restart/14-debugger-frontend-redesign-spec.md` defines complete debugger UX redesign, IA, dual-theme behavior, and phased rollout requirements.
-- `docs/restart/15-streaming-reasoning-and-output-spec.md` defines canonical streaming contracts, OpenAI Responses/Completions compatibility, and edge-case handling for debugger streams.
-- `docs/restart/16-sqlite-telemetry-and-history-explorer-spec.md` defines canonical local SQLite telemetry schema, migration, and debugger history explorer requirements.
+## Related documents
+- **Hub:** [`README.md`](README.md) — full index of this folder and suggested reading order.
+- **Legacy baseline:** [`01-system-inventory.md`](01-system-inventory.md), [`02-feature-catalog.md`](02-feature-catalog.md), [`03-contracts-and-data-models.md`](03-contracts-and-data-models.md), [`04-risk-register.md`](04-risk-register.md)
+- **Standards and delivery:** [`06-engineering-standards.md`](06-engineering-standards.md), [`07-quality-gates.md`](07-quality-gates.md), [`08-migration-plan.md`](08-migration-plan.md), [`12-runtime-decision-loop-spec.md`](12-runtime-decision-loop-spec.md)
+- **Observability and operator UI:** [`09-observability-and-debugger-design.md`](09-observability-and-debugger-design.md) — canonical event schema, dashboard UX, logging/tracing sink strategy.
+- **Persistence and HITL:** [`10-langgraph-persistence-and-hitl-ops.md`](10-langgraph-persistence-and-hitl-ops.md) — thread/checkpoint operations, replay/update-state governance, HITL runtime rules.
+- **Memory:** [`11-memory-strategy.md`](11-memory-strategy.md) — short-term vs long-term memory, retention, store policy.
+- **Planner:** [`13-strategic-planner-collaboration.md`](13-strategic-planner-collaboration.md) — strategic+tactical collaboration, triggers, alignment telemetry.
+- **Debugger UI:** [`14-debugger-frontend-redesign-spec.md`](14-debugger-frontend-redesign-spec.md) — UX redesign, IA, dual-theme behavior, rollout.
+- **Streaming:** [`15-streaming-reasoning-and-output-spec.md`](15-streaming-reasoning-and-output-spec.md) — streaming contracts, OpenAI Responses/Completions compatibility, debugger edge cases.
+- **Telemetry DB:** [`16-sqlite-telemetry-and-history-explorer-spec.md`](16-sqlite-telemetry-and-history-explorer-spec.md) — SQLite schema, migration, history explorer.
 
-## Context7 Feature Notes
-- The planning assumptions in this document are aligned with recent LangChain/LangGraph docs surfaced through Context7, especially:
-  - LangChain v1 structured output strategies,
-  - LangGraph checkpointers for durable execution,
-  - interrupt/resume workflows for human approval,
-  - typed state schemas and subgraph-oriented composition.
+## Context7 references (LangChain / LangGraph)
+- [LangGraph persistence](https://docs.langchain.com/oss/python/langgraph/persistence) (`thread_id`, checkpoints, `get_state` with `checkpoint_id`)
+- [LangGraph add memory](https://docs.langchain.com/oss/python/langgraph/add-memory) (`InMemorySaver` compilation/invocation patterns)
+- [LangGraph interrupts and resume](https://docs.langchain.com/oss/python/langgraph/interrupts) (`interrupt(...)`, `Command(resume=...)`, multi-interrupt resume map)
+- [LangChain structured output](https://docs.langchain.com/oss/python/langchain/structured-output) (`ProviderStrategy` / `ToolStrategy`)
+
+These align with the integration choices above: structured output strategies, durable checkpointers, interrupt/resume for approval, and typed graph state.
