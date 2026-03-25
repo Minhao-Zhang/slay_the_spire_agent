@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from src.agent.config import get_agent_config, load_system_prompt
+from src.repo_paths import REPO_ROOT
 from src.ui.state_processor import process_state
 
 app = FastAPI()
@@ -16,7 +17,7 @@ manual_actions_queue = []
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
-LOGS_DIR = os.path.join(BASE_DIR, "..", "..", "logs")
+LOGS_DIR = os.path.join(str(REPO_ROOT), "logs")
 AGENT_CONFIG = get_agent_config()
 SYSTEM_PROMPT = load_system_prompt()
 

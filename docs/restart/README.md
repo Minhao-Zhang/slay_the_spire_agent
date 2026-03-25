@@ -19,6 +19,7 @@ This folder holds the **greenfield rewrite** plan: target architecture, legacy b
 | File | Summary |
 | --- | --- |
 | [`TODO.md`](TODO.md) | Bootstrap checklist (Step 0: archive `src/`; Step 1: monorepo) + migration stage checkboxes |
+| [`MONOREPO.md`](MONOREPO.md) | Frontend (`apps/web`) + Python API layout, dev proxy, production static serve |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Target architecture, module graph, graph state, security, replay/eval modes, related specs |
 | [`01-system-inventory.md`](01-system-inventory.md) | Current codebase layout and integration points |
 | [`02-feature-catalog.md`](02-feature-catalog.md) | User-visible and system features, paths, failures |

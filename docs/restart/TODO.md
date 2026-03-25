@@ -4,34 +4,29 @@ Actionable bootstrap and delivery tasks for the greenfield rewrite. **Detail, ve
 
 ## Bootstrap (do first)
 
-- [ ] **Step 0 — Archive the current implementation**  
-  Move the existing Python tree out of the way so the repo root can host the new layout without losing reference code.  
-  - Example: `archive/legacy_src/` or `legacy/src/` containing today’s `src/` contents (e.g. `git mv src archive/legacy_src` on a branch, or copy then remove `src/` if you prefer a clean history).  
-  - Update any **local** scripts, IDE configs, or CommunicationMod `command=` paths that still point at `src/main.py`; they should target **`archive/...`** until the new entrypoint exists.  
-  - Keep `data/`, `logs/`, `docs/`, etc. at repo root unless you explicitly relocate them.  
-  - Commit with a message that records the move so `git log` can find the old paths.
+- [x] **Step 0 — Archive the current implementation**  
+  Legacy code lives under `archive/legacy_src/` for **reference only** — do not import or reuse it in the new `src/` package (see [`archive/README.md`](../../archive/README.md)).
 
-- [ ] **Step 1 — Create the monorepo structure**  
-  - Root **`package.json`** with **`workspaces`** (e.g. `"workspaces": ["apps/*"]`) and `private: true`.  
-  - Scaffold **`apps/web`** with **Vite + React + TypeScript + Tailwind** (or add a minimal `apps/web/README.md` placeholder until you scaffold).  
-  - Decide where the **new** Python package tree will live (e.g. fresh `src/` per [`ARCHITECTURE.md`](ARCHITECTURE.md) suggested layout, or `packages/agent`—document the choice in the root README).  
-  - Root **Python** deps: `pyproject.toml` / `uv` / `requirements.txt` aligned with the new tree; `.gitignore` entries for `node_modules/`, `dist/`, build artifacts.  
-  - Optional: root `README.md` section describing **two terminals** (`apps/web` dev server + Python API) and env vars.
+- [x] **Step 1 — Create the monorepo structure**  
+  - Root **`pyproject.toml`** + **`uv sync`** for the Python package (editable `src/`).  
+  - Root **`package.json`** workspaces + **`apps/web`** (Vite + React + TS + Tailwind; proxy `/api` + `/ws` → port 8000). See [`MONOREPO.md`](MONOREPO.md).  
+  - `.gitignore` includes `node_modules/`; `dist/` is ignored.
 
 ## Migration stages (from [`08-migration-plan.md`](08-migration-plan.md))
 
 After Steps 0–1, work through these in order; each stage has its own **verification** and **gate** in the migration plan.
 
-- [ ] **Stage 1** — Contracts and serialization spine  
-- [ ] **Stage 2** — State projection and legal actions  
-- [ ] **Stage 3** — Early debug UI, `control_api`, game ingest (read path; no LangGraph, no LLM)  
-- [ ] **Stage 4** — LangGraph shell, checkpointer, `thread_id`  
-- [ ] **Stage 5** — Decision engine modes and proposal lifecycle (mocked / no live LLM)  
-- [ ] **Stage 6** — HITL interrupts, resume, minimal approval UI  
-- [ ] **Stage 7** — LLM gateway and agent core  
-- [ ] **Stage 8** — Game adapter write path and full command loop  
-- [ ] **Stage 9** — Memory layer  
-- [ ] **Stage 10** — Trace telemetry and evaluation  
+- [x] **Stage 1** — Contracts and serialization spine (`src/domain/contracts/`, `state_id`, pytest)  
+- [x] **Stage 2** — State projection and legal actions (`src/domain/state_projection/`, fixtures under `tests/fixtures/`)  
+- [x] **Stage 3** — Early debug UI, `control_api`, game ingest (read path; no LangGraph, no LLM)  
+  - Optional later: richer parity with legacy modes (queued sequences).  
+- [x] **Stage 4** — LangGraph shell, checkpointer, `thread_id` (`src/decision_engine/graph.py`, pytest)  
+- [x] **Stage 5** — Decision engine modes and proposal lifecycle (mocked / no live LLM; `decision_engine/graph.py`, `proposal_logic.py`, pytest)  
+- [x] **Stage 6** — HITL via `control_api`: agent graph on ingress, `GET /api/agent/status`, `POST /api/agent/resume`; snapshot + WS include `agent`; debug UI approval panel; `SLAY_AGENT_MODE` / `SLAY_AGENT_THREAD_ID`  
+- [x] **Stage 7** — LLM gateway (`src/llm_gateway/`) + agent core (`src/agent_core/`); `SLAY_PROPOSER=mock|llm`, `SLAY_LLM_BACKEND=stub|openai`; graph uses `propose_for_view_model`  
+- [x] **Stage 8** — Game adapter (`src/game_adapter/`) + `domain.legal_command`; validated enqueue in `control_api`; `main.py` validates poll + idle before emit  
+- [x] **Stage 9** — Memory layer (`src/memory/`: bounded `memory_log` in graph, `InMemoryMemoryStore` namespaces; `SLAY_MEMORY_MAX_TURNS`)  
+- [x] **Stage 10** — Trace telemetry and evaluation (`src/trace_telemetry/`, `src/evaluation/replay.py`; `GET /api/debug/trace`; `SLAY_TRACE_ENABLED`, `SLAY_TRACE_MAX_EVENTS`; optional `trace_idempotency_key` / `trace_store` in LangGraph `configurable`)  
 - [ ] **Stage 11** — Strategic planner (advisory)  
 - [ ] **Stage 12** — Full operator UI + streaming  
 - [ ] **Stage 13** — SQLite canonical telemetry and history explorer  

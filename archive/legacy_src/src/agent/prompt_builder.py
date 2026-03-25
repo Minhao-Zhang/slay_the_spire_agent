@@ -5,6 +5,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from src.repo_paths import REPO_ROOT
+
 # Lazy-loaded map of buff/power name -> description (from buff_descriptions.json + powers)
 _BUFF_DESCRIPTIONS: dict[str, str] | None = None
 _TOKEN_PATTERN = re.compile(r"\[([^\]]+)\]")
@@ -15,8 +17,7 @@ def _get_buff_descriptions() -> dict[str, str]:
     global _BUFF_DESCRIPTIONS
     if _BUFF_DESCRIPTIONS is not None:
         return _BUFF_DESCRIPTIONS
-    base = Path(__file__).resolve().parent.parent.parent
-    path = base / "data" / "processed" / "buff_descriptions.json"
+    path = REPO_ROOT / "data" / "processed" / "buff_descriptions.json"
     if path.exists():
         with open(path, encoding="utf-8") as f:
             _BUFF_DESCRIPTIONS = json.load(f)

@@ -1,0 +1,52 @@
+{
+  "in_game": true,
+  "ready_for_command": true,
+  "available_commands": ["end", "play", "potion"],
+  "game_state": {
+    "class": "IRONCLAD",
+    "floor": 5,
+    "gold": 123,
+    "current_hp": 50,
+    "max_hp": 80,
+    "screen_type": "NONE",
+    "screen_state": {},
+    "relics": [],
+    "potions": [],
+    "deck": [],
+    "combat_state": {
+      "turn": 1,
+      "player": {
+        "energy": 3,
+        "block": 0,
+        "powers": [],
+        "orbs": []
+      },
+      "hand": [
+        {
+          "name": "Strike",
+          "cost": 1,
+          "is_playable": true,
+          "has_target": true,
+          "uuid": "abcdef123456"
+        }
+      ],
+      "draw_pile": [],
+      "discard_pile": [],
+      "exhaust_pile": [],
+      "monsters": [
+        {
+          "name": "Cultist",
+          "current_hp": 40,
+          "max_hp": 48,
+          "is_gone": false,
+          "half_dead": false,
+          "intent": "attack",
+          "move_base_damage": 6,
+          "move_hits": 1,
+          "move_adjusted_damage": 6,
+          "powers": []
+        }
+      ]
+    }
+  }
+}

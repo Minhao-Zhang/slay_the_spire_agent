@@ -90,6 +90,7 @@ Normative detail on persistence, `thread_id`, checkpointer/store choices, `updat
 - **`apps/web`**: browser UI only—routing, layout, components, and client state; no game or LLM logic.
 - **Python packages** (see Suggested Package Layout below): live under `src/` (or a renamed tree); they implement `control_api`, domain logic, and adapters.
 - Root **Node** workspace config (for example `package.json` workspaces) owns `apps/web` dependencies and scripts; Python dependencies remain managed separately (`uv` / `requirements.txt`).
+- **Concrete commands** (dev proxy, production static mount): [`MONOREPO.md`](MONOREPO.md).
 
 ### `trace_telemetry`
 - Emits runtime events, statuses, and diagnostics.

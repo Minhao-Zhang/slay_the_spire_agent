@@ -1,0 +1,11 @@
+{
+  "name": "slay-the-spire-agent",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w @slay/web",
+    "build:web": "npm run build -w @slay/web"
+  }
+}

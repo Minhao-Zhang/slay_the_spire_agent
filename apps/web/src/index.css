@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@theme {
+  --font-telemetry: "JetBrains Mono", ui-monospace, monospace;
+  /* Sora: geometric / operator-console — pairs with mono readouts */
+  --font-console: "Sora", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-console);
+    @apply bg-[#080a0c] text-slate-300 antialiased;
+  }
+}
+
+/* Fused deck readout — inset chassis */
+.deck-telemetry {
+  font-family: var(--font-telemetry);
+  background: linear-gradient(180deg, rgb(15 23 42 / 0.92) 0%, rgb(2 6 23 / 0.98) 100%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.05),
+    inset 0 -1px 0 rgb(0 0 0 / 0.35),
+    0 1px 3px rgb(0 0 0 / 0.4);
+}
+
+.custom-scroll::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.custom-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scroll::-webkit-scrollbar-thumb {
+  background: #64748b;
+  border-radius: 4px;
+}
+.custom-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.sts-card {
+  transition: transform 0.1s;
+}
+.sts-card:hover {
+  transform: translateY(-8px);
+}
+

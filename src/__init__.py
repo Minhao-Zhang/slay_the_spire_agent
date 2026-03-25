@@ -1,1 +1,1 @@
-# This file makes 'src' a package.
+"""Greenfield agent package. Do not import from `archive/` — reference only."""

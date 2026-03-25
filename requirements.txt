@@ -1,3 +1,6 @@
+# Deprecated: use `uv sync` and pyproject.toml for dependencies.
+# Kept for occasional `uv pip install -r` workflows only.
+
 pandas
 python-dotenv
 openpyxl

@@ -8,9 +8,10 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DEFAULT_PROMPT_PATH = BASE_DIR / "src" / "agent" / "prompts" / "system_prompt.md"
-DEFAULT_STRATEGY_CORPUS_PATH = BASE_DIR / "data" / "strategy" / "curated_strategy.md"
+from src.repo_paths import LEGACY_SRC_ROOT, REPO_ROOT
+
+DEFAULT_PROMPT_PATH = LEGACY_SRC_ROOT / "agent" / "prompts" / "system_prompt.md"
+DEFAULT_STRATEGY_CORPUS_PATH = REPO_ROOT / "data" / "strategy" / "curated_strategy.md"
 
 
 def _normalize_llm_slot(raw: str, default: str = "reasoning") -> str:
