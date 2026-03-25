@@ -22,6 +22,7 @@ dependencies = [
     "langchain-core",
     "langchain-openai",
     "langgraph",
+    "langgraph-checkpoint-sqlite>=2.0.0",
 ]
 
 [dependency-groups]

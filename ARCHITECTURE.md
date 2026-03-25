@@ -1,120 +1,288 @@
-# Architecture
+# Architecture (greenfield)
 
-## Current Runtime Data Flow
+This file describes the **current** layout under [`src/`](src/) and [`apps/web/`](apps/web/). Target-state design notes and migration staging live under [`docs/restart/`](docs/restart/). The **pre-rewrite** Python app (dashboard, old `main`, LangGraph under `src/agent/`, etc.) is frozen in [`archive/legacy_src/`](archive/legacy_src/)—do not treat paths there as live.
+
+## 1. General information flow
+
+At a program level, the system lets operators **see** what the game reports, **decide** (or delegate) the next move under clear safety rules, and **act** only through paths the game already allows. Nobody injects arbitrary text into the mod; everything passes through a **shared picture of the situation** and a **single ordered queue** of validated next actions.
 
 ```mermaid
-flowchart LR
-    game[CommunicationModOrGame] -->|"raw state JSON (stdin)"| main[src/main.py]
+flowchart TB
+  subgraph gameSide [Game_and_mod]
+    liveState[Game_sends_state_updates]
+    expectsCmd[Game_waits_for_valid_command]
+  end
 
-    subgraph vmLayer [VMAndControlSync]
-        main -->|"process_state(raw)"| stateProc[src/ui/state_processor.py]
-        stateProc -->|"vm + legal actions + KB enrichment"| main
-        main -->|"POST /update_state (state + state_id)"| dashboard[src/ui/dashboard.py]
-        dashboard -->|"broadcast state + trace + logs"| ui[index.html + ai_debugger.html]
-        ui -->|"manual/approve/reject/mode"| dashboard
-        dashboard -->|"GET /poll_instruction"| main
-    end
+  subgraph bridge [In_game_bridge_process]
+    syncWhenNeeded[Share_new_state_with_control_plane]
+    askNext[When_allowed_fetch_next_intent]
+    safeSend[Send_only_whitelisted_actions_to_game]
+  end
 
-    subgraph decisionLayer [AgentDecisionLayer]
-        main -->|"start_proposal(vm,state_id,mode)"| graph[src/agent/graph.py]
-        graph -->|"build prompt sections"| prompt[src/agent/prompt_builder.py]
-        graph -->|"scene memory + compaction + strategy slots"| session[src/agent/session_state.py]
-        graph -->|"optional planner node (LLM_ENABLE_PLANNER)"| planner[plan_turn]
-        prompt -->|"system prompt + user prompt"| llm[src/agent/llm_client.py]
-        llm -->|"stream deltas + tool calls"| graph
-        graph -->|"execute registered tool"| tools[src/agent/tool_registry.py]
-        tools -->|"tool outputs"| graph
-        graph -->|"parse + resolve intent to legal command"| policy[src/agent/policy.py]
-        graph -->|"live trace updates"| trace[src/agent/tracing.py + schemas.py]
-        trace -->|"POST /agent_trace"| dashboard
-    end
+  subgraph svcControl [Control_plane_service]
+    sharedView[Maintain_authoritative_snapshot]
+    runPolicy[Run_decision_policy_per_update]
+    lineUp[Intents_wait_in_order]
+    notifyUi[Push_updates_to_operators]
+  end
 
-    subgraph persistence [PersistenceAndEval]
-        main -->|"write state logs"| logs[logs/<run>/<event>.json]
-        trace -->|"write sidecar logs"| ailogs[logs/<run>/<event>.ai.json]
-        ailogs -->|"offline metrics"| replay[src/eval/replay.py]
-    end
+  subgraph policy [Decision_logic_inside_service]
+    interpret[Turn_state_into_allowed_moves_and_UI_view]
+    choose[Auto_suggest_or_pause_for_human]
+    outcome[Approved_or_auto_intent_to_queue]
+  end
 
-    main -->|"only execution boundary: print(action)"| game
+  subgraph operators [Operator_experience]
+    console[Dashboard_review_and_submit_moves]
+  end
+
+  liveState --> syncWhenNeeded
+  syncWhenNeeded --> sharedView
+  sharedView --> interpret
+  sharedView --> runPolicy
+  runPolicy --> choose
+  choose --> outcome
+  outcome --> lineUp
+  runPolicy --> notifyUi
+  interpret --> notifyUi
+
+  expectsCmd --> askNext
+  askNext --> lineUp
+  lineUp --> askNext
+  askNext --> safeSend
+  safeSend --> expectsCmd
+
+  console -->|paste_or_load_state| sharedView
+  console -->|manual_or_approval| lineUp
+  notifyUi --> console
 ```
 
-## Decision Loop Details
+**In plain terms:** the game repeatedly reports the situation and sometimes signals it is ready for a command. The bridge keeps the control plane informed (without repeating identical snapshots) and, when the game is ready, takes the next queued intent—or a safe idle/refresh if nothing is queued. The control plane keeps **allowed moves**, **suggestions**, and **operator actions** aligned. File- and API-level detail is in section 3 and the table below.
 
-1. `src/main.py` reads raw JSON state, computes deterministic `state_id`, builds VM with `process_state()`.
-2. `src/main.py` sends state to dashboard and polls instruction channel (`manual_action`, `approved_action`, `agent_mode`).
-3. If eligible, it starts one background proposal (`ThreadPoolExecutor`, single worker).
-4. If a proposal is still in-flight but the game advances to a different `state_id`, the in-flight proposal is discarded and a fresh proposal can start for the new state.
-5. Before requesting any new proposal, `src/main.py` drains queued follow-up commands from an approved multi-command sequence (`final_decision_sequence`) and resolves tokenized `PLAY <card_token>` commands against current legal actions.
-6. If there is exactly one legal action (or only `CONFIRM`/`CANCEL` in the auto-confirm case), `src/main.py` creates a trace and short-circuits without an LLM call.
-7. `src/agent/graph.py` runs:
-   - `build_prompt` (session scene key, compaction, strategy memory update),
-   - optional `plan_turn` (heuristic `## TURN PLAN`, `LLM_ENABLE_PLANNER`; skipped in combat in favor of the combat guide),
-   - optional combat-opening plan (same `LLM_ENABLE_PLANNER`): one non-tool LLM call stores a session guide keyed by `combat_encounter_fingerprint`, injected as `COMBAT PLAN GUIDE` each combat turn,
-   - `run_agent` (streaming LLM call),
-   - `run_tool` loop (bounded by `max_tool_roundtrips`),
-   - `validate_decision`.
-8. `src/agent/policy.py` validates decision with command normalization and intent fallbacks (`chosen_label`, `action_type`, `choice_index`).
-9. Final action is executed only by `print(action)` in `src/main.py` (manual/propose/auto policy applied there).
+---
 
-## Control Plane and Execution Modes
+## 2. Technology shape following the same flow
 
-- `manual`: only operator/manual actions execute.
-- `propose`: AI proposes, human approves/edits/rejects in dashboard.
-- `auto`: AI proposal auto-executes when valid.
-- Dashboard is control-plane only; it never emits game commands directly.
+The diagram below follows the **same story as section 1** (game → bridge → control plane → policy engine → operators), layering **technology categories and ideas** instead of product names. Concrete library choices live in [`pyproject.toml`](pyproject.toml) and [`apps/web/package.json`](apps/web/package.json).
 
-## Tooling Path (Current)
+```mermaid
+flowchart TB
+  subgraph gameSide [Game_and_mod_LayerA]
+    modContract[Community_mod_line_protocol_JSON]
+  end
 
-Tools are centralized in `src/agent/tool_registry.py` and exposed by `src/agent/llm_client.py`:
+  subgraph bridge [Bridge_LayerB]
+    hostedRuntime[General_purpose_hosted_runtime]
+    lineIO[Standard_streams_with_game_process]
+    outboundCalls[HTTP_calls_up_to_control_plane]
+  end
 
-- `inspect_draw_pile`
-- `inspect_discard_pile`
-- `inspect_exhaust_pile`
-- `inspect_deck_summary`
+  subgraph svcControl [Control_plane_LayerC]
+    syncFacades[Synchronous_request_API]
+    liveUpdates[Push_channel_for_live_dashboard]
+    coordState[In_memory_coordination_and_ordering]
+  end
 
-`graph.py` executes tools via the registry and feeds `function_call_output` back to the model for continuation.
+  subgraph orchestration [Policy_and_orchestration_LayerD]
+    durableSteps[Stateful_multi_step_workflow]
+    contracts[Strong_typing_at_boundaries]
+    safetyLayer[Deterministic_legality_checks]
+    modelOptional[Optional_external_model_inference]
+  end
 
-## Prompt and Memory Inputs
+  subgraph operators [Operator_LayerE]
+    webUi[Browser_hosted_console]
+    interactiveUi[Component_based_interactive_UI]
+    presentationLayer[Utility_first_styling]
+  end
 
-`src/agent/prompt_builder.py` composes sections including:
+  subgraph supporting [Off_hot_path]
+    referenceData[Static_reference_dataset]
+    regressionTests[Automated_regression_suite]
+  end
 
-- `PLAYER STATE`, `LEGAL ACTIONS`, `VALID PLAYS`,
-- `MONSTERS`, `HAND`, `PLAYER POWERS`, `RELICS`, `POTIONS`,
-- `MAP PLANNING`, `MAP SCENE` (when applicable),
-- `CURRENT SCREEN`, `RECENT EXECUTED ACTIONS`,
-- `STRATEGY MEMORY` (structured slots),
-- `TOOLING NOTES`.
+  modContract --> lineIO
+  lineIO --> hostedRuntime
+  hostedRuntime --> outboundCalls
+  outboundCalls --> syncFacades
+  syncFacades --> coordState
+  coordState --> durableSteps
+  durableSteps --> contracts
+  contracts --> safetyLayer
+  safetyLayer --> modelOptional
+  modelOptional --> coordState
+  coordState --> liveUpdates
+  liveUpdates --> webUi
+  webUi --> interactiveUi
+  webUi --> presentationLayer
+  webUi -->|operator_input| syncFacades
+  hostedRuntime -->|poll_next_intent| coordState
 
-Memory behavior in `src/agent/session_state.py`:
+  contracts --> referenceData
+  durableSteps --> regressionTests
+```
 
-- Global chat history across the run.
-- Scene-scoped recent executed actions.
-- Compaction into `## COMPACTED HISTORY` when token threshold is exceeded.
-- Structured strategy memory slots (`deck_plan`, `pathing_goal`, `boss_prep`, `constraints`).
+**How to read it:** the **bridge** is intentionally thin so the mod integration stays a simple line protocol; the **control plane** owns the live session everyone agrees on. **Orchestration** is where multi-step policy runs (including human-in-the-loop pauses when you want them). **Optional inference** is deployment-specific—the same flow works with fixed stub logic for lab or CI. **Supporting** boxes are governance and correctness, not part of every request path.
 
-## Reliability and Fallback
+---
 
-`src/main.py` tracks proposal failure streaks:
+## 3. Detailed flow: modules, classes, and entrypoints
 
-- Transient proposal failure does not immediately disable AI.
-- AI is disabled for run only after `LLM_PROPOSAL_FAILURE_STREAK_LIMIT`.
-- On success, streak resets and normal operation resumes.
-- In-flight proposals are discarded when the game state advances to a new `state_id` before completion.
+Call chain for a **new ingress** through the HTTP path and **`step_ingress`**. Resume/retry paths noted inline.
 
-## Trace and Log Schema (Current)
+```mermaid
+flowchart TB
+  subgraph fastapi [control_api_app_py]
+    routeIngress[post_debug_ingress]
+    applyBody["_apply_ingress_body"]
+    stepCall["agent_runtime.step_ingress"]
+    enqueue["_enqueue_manual_command"]
+    canon["canonical_legal_command"]
+  end
 
-Live `AgentTrace` includes:
+  subgraph domain [domain_package]
+    parseEnv["parse_ingress_envelope_to_GameAdapterInput"]
+    sid["compute_state_id"]
+    proj["project_state_ViewModel"]
+    legal["legal_command.canonical_legal_command"]
+  end
 
-- decision/state identity (`decision_id`, `state_id`, `turn_key`),
-- planning/prompt/response fields,
-- parsed proposal + validation,
-- tool names used,
-- planner summary,
-- combat plan model id (`combat_plan_model_used`) when planner runs,
-- experiment fields: `prompt_profile`, `llm_model_used`, `llm_turn_model_key`,
-- token usage + latency,
-- execution outcome and approval status.
+  subgraph graphMod [decision_engine_graph_py]
+    build["build_agent_graph_StateGraph"]
+    nIngest["_ingest_and_project_node"]
+    nMem["memory_update_node"]
+    nHygiene["_proposal_hygiene_node"]
+    nManual["_manual_lane"]
+    nAuto["_auto_lane"]
+    nPropose["_propose_lane"]
+    nHITL["_approval_interrupt_node"]
+  end
 
-Persisted sidecar log (`*.ai.json`) includes matching diagnostic fields to support replay evaluation in `src/eval/replay.py` (including grouped metrics by profile and model).
+  subgraph propose [decision_engine_proposer_py]
+    dispatch["propose_for_view_model"]
+    mock["mock_propose_command"]
+    gateway["propose_from_gateway"]
+  end
 
-Run-level outcomes (max floor, `GAME_OVER` victory) are derived from raw state logs in `replay.py`, not from sidecars alone.
+  subgraph agentCore [agent_core_package]
+    tactPrompt["build_tactical_prompt"]
+    parseP["parse_proposal_json"]
+    resolve["resolve_to_legal_command"]
+  end
+
+  subgraph llm [llm_gateway]
+    gw["LlmGateway.complete"]
+  end
+
+  subgraph logic [decision_engine_proposal_logic_py]
+    hygiene["apply_hygiene_on_proposal"]
+    finalize["finalize_approval"]
+    interruptLG["langgraph_interrupt"]
+  end
+
+  subgraph runtime [control_api_agent_runtime_py]
+    compileG["_get_compiled_graph"]
+    invoke["CompiledGraph.invoke"]
+    summ["summarize_graph_out"]
+    record["record_agent_invocation"]
+  end
+
+  subgraph memTrace [memory_and_trace]
+    memNode["memory_update_node calls get_app_memory_store"]
+    traceRec["recorder builds agent_step_event"]
+  end
+
+  routeIngress --> applyBody
+  applyBody --> parseEnv
+  applyBody --> proj
+  applyBody --> sid
+  routeIngress --> stepCall
+  stepCall --> compileG
+  compileG --> build
+  stepCall --> invoke
+  invoke --> nIngest
+  nIngest --> parseEnv
+  nIngest --> sid
+  nIngest --> proj
+  nIngest --> nMem
+  nMem --> memNode
+  nMem --> nHygiene
+  nHygiene --> hygiene
+  nHygiene --> nManual
+  nHygiene --> nAuto
+  nHygiene --> nPropose
+  nAuto --> dispatch
+  nPropose --> dispatch
+  dispatch --> mock
+  dispatch --> gateway
+  gateway --> tactPrompt
+  gateway --> gw
+  gateway --> parseP
+  gateway --> resolve
+  nPropose --> nHITL
+  nHITL --> interruptLG
+  nHITL --> finalize
+  finalize --> legal
+  invoke --> summ
+  summ --> record
+  record --> traceRec
+  stepCall -->|"after_invoke_and_summary"| enqueue
+  enqueue --> canon
+  canon --> legal
+
+  resumeAgent["agent_runtime.resume_agent"]
+  resumeAgent --> invoke
+```
+
+**Legend and gaps in the diagram**
+
+| Topic | Code fact |
+|-------|-----------|
+| `proposal_hygiene` routing | `_route_mode` runs **exactly one** of `manual_lane`, `auto_lane`, or `propose_lane` after hygiene (edges show all three for reference). |
+| `propose_for_view_model` | **`mock`** → `mock_propose_command`; **`llm`** → `propose_from_gateway` (both edges from `dispatch` are mutually exclusive). |
+| `GameAdapterInput`, `ViewModel` | Pydantic models in [`src/domain/contracts/`](src/domain/contracts/); `project_state` returns `ViewModel`. |
+| Graph state | `AgentGraphState` (`TypedDict` in [`graph.py`](src/decision_engine/graph.py)) holds `ingress_raw`, `view_model`, `proposal`, `emitted_command`, `memory_log`, etc. |
+| `resume_agent` | `CompiledGraph.invoke(Command(resume=...))` resumes from checkpoint; [`finalize_approval`](src/decision_engine/proposal_logic.py) applies approve / reject / edit. |
+| `main.py` (not drawn) | Calls `parse_ingress_envelope`, `compute_state_id`, `project_state`, `validate_operator_command` / `validate_idle_command` from [`src/game_adapter/emit.py`](src/game_adapter/emit.py) before `print`. |
+| `GET /api/debug/poll_instruction` | Pops [`_manual_command_queue`](src/control_api/app.py); same queue receives UI `POST /api/debug/manual_command` and graph-enqueued commands after `canonical_legal_command` in `_enqueue_manual_command`. |
+| `retry_agent` | May `invoke(Command(resume="reject"))` then `invoke({"ingress_raw": ...})` — see [`agent_runtime.retry_agent`](src/control_api/agent_runtime.py). |
+| Tests | [`src/evaluation/replay.py`](src/evaluation/replay.py) builds a fresh `build_agent_graph` + `InMemorySaver` per sequence. |
+
+---
+
+## Components (summary)
+
+| Piece | Role |
+|-------|------|
+| [`src/main.py`](src/main.py) | Mod I/O: `ready`, read JSON, push ingress to API (deduped), poll queue, validate, `print` command or idle. |
+| [`src/control_api/app.py`](src/control_api/app.py) | FastAPI: debug ingress/snapshot/trace, manual queue, agent resume/retry, WebSocket broadcast. |
+| [`src/control_api/agent_runtime.py`](src/control_api/agent_runtime.py) | In-process LangGraph compile (`build_agent_graph`), checkpointer from [`checkpoint_factory`](src/control_api/checkpoint_factory.py), `step_ingress` / `resume_agent` / `retry_agent`. |
+| [`src/control_api/history.py`](src/control_api/history.py) | Read-only `GET /api/history/threads`, `/events`, `/checkpoints`. |
+| [`src/control_api/checkpoint_factory.py`](src/control_api/checkpoint_factory.py) | `SLAY_CHECKPOINTER` = `memory` \| `sqlite` + `SLAY_SQLITE_PATH`. |
+| [`src/decision_engine/graph.py`](src/decision_engine/graph.py) | LangGraph: ingest → project → **manual** / **auto** / **propose** (HITL `interrupt`) → memory node. |
+| [`src/decision_engine/proposer.py`](src/decision_engine/proposer.py) | `mock` vs `llm` → [`src/agent_core/`](src/agent_core/) + [`src/llm_gateway/`](src/llm_gateway/). |
+| [`src/domain/state_projection/`](src/domain/state_projection/) | Ingress → `ViewModel`, legal actions, KB enrichment via [`src/reference/knowledge_base.py`](src/reference/knowledge_base.py) and `data/processed/*.json`. |
+| [`src/game_adapter/`](src/game_adapter/) | Emit-side validation (`validate_operator_command`, `validate_idle_command`). |
+| [`src/memory/`](src/memory/) | Bounded episodic `memory_log` in graph state; in-process namespaced store (`last_turn` per class). |
+| [`src/trace_telemetry/`](src/trace_telemetry/) | `SLAY_TRACE_BACKEND` = `memory` \| `sqlite`; `GET /api/debug/trace`; `SLAY_TRACE_ENABLED`, `SLAY_TRACE_MAX_EVENTS` (memory cap only). |
+| [`src/evaluation/replay.py`](src/evaluation/replay.py) | Test/CI helpers: replay ingress sequences against a fresh checkpointer (not log-dir CLI). |
+| [`apps/web/`](apps/web/) | Operator UI: projection, legal actions, HITL, history explorer rail, live WS (proxies to API :8000). |
+
+## Decision modes (env)
+
+- `SLAY_AGENT_MODE`: `manual` | `auto` | `propose` (default `propose`).
+- `SLAY_PROPOSER`: `mock` | `llm`; `SLAY_LLM_BACKEND`: `stub` | `openai`.
+- `SLAY_AGENT_THREAD_ID`: LangGraph thread (default `default`). With `SLAY_CHECKPOINTER=sqlite`, keep this stable across API restarts to continue the same session.
+
+## Persistence (checkpoints + telemetry)
+
+- **`SLAY_CHECKPOINTER`**: `memory` (default) or `sqlite`. SQLite uses LangGraph `SqliteSaver` tables in one file.
+- **`SLAY_SQLITE_PATH`**: optional; defaults to `logs/slay_agent.sqlite` (directory created as needed). Checkpoints and `trace_events` share this file when both use SQLite.
+- **`SLAY_TRACE_BACKEND`**: `memory` (default) or `sqlite` for append-only `agent_step` rows (`trace_events` table).
+- **API**: `GET /api/history/threads`, `GET /api/history/events`, `GET /api/history/checkpoints?thread_id=…` (checkpoint timeline via `CompiledStateGraph.get_state_history`).
+- **Future**: full [`docs/restart/16-sqlite-telemetry-and-history-explorer-spec.md`](docs/restart/16-sqlite-telemetry-and-history-explorer-spec.md) schema (`runs`, `decisions`, `stream_events`, …) is not implemented yet—current `trace_events` is the minimal append log.
+
+## Planned / not this tree
+
+- Standalone **log-directory replay CLI** over recorded CommunicationMod runs (legacy pattern under `archive/`).
+- **Dedicated `knowledge_service`** process (enrichment stays in [`src/domain/state_projection/`](src/domain/state_projection/) + [`src/reference/`](src/reference/)).

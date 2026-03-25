@@ -12,17 +12,17 @@ from src.trace_telemetry.runtime import (
     trace_recording_enabled,
 )
 from src.trace_telemetry.schema import build_agent_step_event
-from src.trace_telemetry.store import InMemoryTraceStore
+from src.trace_telemetry.store_protocol import TraceStore
 
 StepKindLit = Literal["ingress", "resume"]
 
 
-def _select_store(cfg: RunnableConfig, explicit: InMemoryTraceStore | None) -> InMemoryTraceStore | None:
+def _select_store(cfg: RunnableConfig, explicit: TraceStore | None) -> TraceStore | None:
     if explicit is not None:
         return explicit
     conf = cfg.get("configurable") or {}
     ts = conf.get("trace_store")
-    if isinstance(ts, InMemoryTraceStore):
+    if ts is not None and isinstance(ts, TraceStore):
         return ts
     if trace_recording_enabled():
         return get_app_trace_store()
@@ -36,7 +36,7 @@ def record_agent_invocation(
     summary: dict[str, Any],
     step_kind: StepKindLit,
     resume_kind: str | None = None,
-    store: InMemoryTraceStore | None = None,
+    store: TraceStore | None = None,
 ) -> None:
     st = _select_store(cfg, store)
     if st is None:

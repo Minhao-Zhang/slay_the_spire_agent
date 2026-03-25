@@ -79,3 +79,20 @@ export interface WsMessage {
   payload?: DebugSnapshotPayload;
   detail?: string;
 }
+
+export interface HistoryThreadSummaryDTO {
+  thread_id: string;
+  event_count: number;
+  last_step_seq?: number;
+}
+
+export interface HistoryCheckpointDTO {
+  checkpoint_id?: string | null;
+  checkpoint_ns?: string | null;
+  parent_checkpoint_id?: string | null;
+  created_at?: string | null;
+  state_id?: string | null;
+  next?: string[];
+  metadata?: Record<string, unknown>;
+  interrupts?: unknown[];
+}

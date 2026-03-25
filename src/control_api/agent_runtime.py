@@ -10,38 +10,69 @@ In-process LangGraph runner for the control API (Stage 6 HITL).
 from __future__ import annotations
 
 import os
+import sqlite3
 import threading
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import Command
 
+from src.control_api.checkpoint_factory import create_checkpointer
 from src.decision_engine.graph import build_agent_graph
 from src.trace_telemetry.recorder import record_agent_invocation
 from src.trace_telemetry.runtime import get_app_trace_store, reset_app_trace_store_for_tests
 
 _agent_lock = threading.Lock()
 _graph = None
-_checkpointer: InMemorySaver | None = None
+_checkpointer: BaseCheckpointSaver | None = None
+_sqlite_conn: sqlite3.Connection | None = None
 _last_summary: dict[str, Any] | None = None
 
 
 def reset_agent_runtime_for_tests() -> None:
-    global _graph, _checkpointer, _last_summary
+    global _graph, _checkpointer, _sqlite_conn, _last_summary
     with _agent_lock:
         _graph = None
         _checkpointer = None
         _last_summary = None
+        if _sqlite_conn is not None:
+            try:
+                _sqlite_conn.close()
+            except sqlite3.Error:
+                pass
+            _sqlite_conn = None
     reset_app_trace_store_for_tests()
 
 
+def shutdown_checkpoint_resources() -> None:
+    """Close SQLite checkpointer connection (FastAPI shutdown)."""
+    global _graph, _checkpointer, _sqlite_conn, _last_summary
+    with _agent_lock:
+        _graph = None
+        _checkpointer = None
+        _last_summary = None
+        if _sqlite_conn is not None:
+            try:
+                _sqlite_conn.close()
+            except sqlite3.Error:
+                pass
+            _sqlite_conn = None
+
+
 def _get_compiled_graph():
-    global _graph, _checkpointer
+    global _graph, _checkpointer, _sqlite_conn
     if _graph is None:
-        _checkpointer = InMemorySaver()
-        _graph = build_agent_graph(checkpointer=_checkpointer)
+        saver, conn = create_checkpointer()
+        _checkpointer = saver
+        _sqlite_conn = conn
+        _graph = build_agent_graph(checkpointer=saver)
     return _graph
+
+
+def get_compiled_agent_graph():
+    """Read-only access for history/debug endpoints (same instance as invocations)."""
+    return _get_compiled_graph()
 
 
 def agent_thread_id() -> str:

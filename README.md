@@ -7,12 +7,12 @@ This project aims to create an LLM-powered bot capable of playing Slay the Spire
 
 ## Repository layout
 
-- **`src/`** — **Greenfield** Python package (the only code `uv` installs). Entrypoint: `python -m src.main`. **`src/game_adapter/`**, **`src/domain/`**, **`src/decision_engine/`**, **`src/control_api/`**, **`src/llm_gateway/`**, **`src/agent_core/`**, **`src/memory/`** (bounded episodic log + namespaced store). Do **not** import from `archive/`.
+- **`src/`** — **Greenfield** Python package (the only code `uv` installs). Entrypoint: `python -m src.main`. Major areas: **`src/game_adapter/`**, **`src/domain/`**, **`src/decision_engine/`**, **`src/control_api/`**, **`src/llm_gateway/`**, **`src/agent_core/`**, **`src/memory/`**, **`src/trace_telemetry/`**, **`src/evaluation/`** (test replay helpers). Do **not** import from `archive/`.
 - **`archive/legacy_src/`** — Historical snapshot for **reference only** (read [`archive/README.md`](archive/README.md)).
 - **`apps/web/`** — Vite + React + TypeScript + Tailwind operator UI (workspace **`@slay/web`**). Dev server proxies `/api` and `/ws` to `127.0.0.1:8000`. See [`docs/restart/MONOREPO.md`](docs/restart/MONOREPO.md) and [`apps/web/README.md`](apps/web/README.md).
 - **`data/`**, **`logs/`**, **`docs/`** — Game data, runtime logs, and documentation.
 
-Greenfield plans and staged migration: [`docs/restart/README.md`](docs/restart/README.md).
+**As-built architecture (data flow, endpoints, gaps):** [`ARCHITECTURE.md`](ARCHITECTURE.md). Target design and migration specs: [`docs/restart/README.md`](docs/restart/README.md).
 
 ### Monorepo: install both toolchains
 
@@ -54,11 +54,15 @@ Open `http://127.0.0.1:5173`, click **Load sample state**, or paste a Communicat
 - `GET /api/debug/poll_instruction` — pop one queued manual command (`manual_action`) for `python -m src.main`  
 - `GET /api/agent/status` — LangGraph agent + pending approval (HITL)  
 - `POST /api/agent/resume` — body `kind`: `approve`, `reject`, or `edit` (optional `command` for edit); continues after interrupt; `approve` queues the proposed command  
+- `POST /api/agent/retry` — re-run the graph on the snapshot’s current ingress (skips unchanged-state short-circuit; clears pending interrupt via reject when needed)  
+- `GET /api/history/threads` — distinct `thread_id` summaries from stored agent-step events  
+- `GET /api/history/events` — paginated trace events (`thread_id`, `limit`, `offset`)  
+- `GET /api/history/checkpoints` — LangGraph checkpoint timeline for a `thread_id`  
 - `WebSocket /ws` — `{ type: "snapshot", payload: {...} }`; `payload.agent` has pending approval and env-derived mode/thread.
 
-**Agent mode (API process env):** `SLAY_AGENT_MODE` = `propose` (default, interrupt in UI), `auto`, or `manual`. `SLAY_AGENT_THREAD_ID` defaults to `default`. **Stage 7:** `SLAY_PROPOSER` = `mock` (default, first legal action) or `llm` (JSON proposal via `agent_core`); `SLAY_LLM_BACKEND` = `stub` (default, offline) or `openai` (needs `OPENAI_API_KEY`; `SLAY_OPENAI_MODEL` defaults to `gpt-5.4`). **Stage 9:** `SLAY_MEMORY_MAX_TURNS` (default `32`, cap `10000`) bounds episodic `memory_log` in the LangGraph state; long-term dev store is in-process (`src/memory/`). **Stage 10:** `SLAY_TRACE_ENABLED` (default on; set `0`/`false`/`off` to stop appending to the in-memory trace ring); `SLAY_TRACE_MAX_EVENTS` caps retained rows. CI replay: `src/evaluation/replay.py` (`replay_ingress_only`, `replay_with_resume`) with fixed `configurable.now` and an `InMemoryTraceStore` passed as `trace_store` (or rely on the default app store when recording is enabled).
+**Agent mode (API process env):** `SLAY_AGENT_MODE` = `propose` (default, interrupt in UI), `auto`, or `manual`. `SLAY_AGENT_THREAD_ID` defaults to `default`. **Stage 7:** `SLAY_PROPOSER` = `mock` (default, first legal action) or `llm` (JSON proposal via `agent_core`); `SLAY_LLM_BACKEND` = `stub` (default, offline) or `openai` (needs `OPENAI_API_KEY`; `SLAY_OPENAI_MODEL` defaults to `gpt-5.4`). **Stage 9:** `SLAY_MEMORY_MAX_TURNS` (default `32`, cap `10000`) bounds episodic `memory_log` in the LangGraph state; long-term dev store is in-process (`src/memory/`). **Persistence:** `SLAY_CHECKPOINTER` = `memory` (default) or `sqlite` (durable LangGraph checkpoints in `SLAY_SQLITE_PATH`, default `logs/slay_agent.sqlite`). **Trace:** `SLAY_TRACE_ENABLED` (default on); `SLAY_TRACE_BACKEND` = `memory` or `sqlite` (same DB file when sqlite); `SLAY_TRACE_MAX_EVENTS` caps **memory** backend only. CI replay: `src/evaluation/replay.py` with `InMemoryTraceStore` or injected `trace_store`.
 
-**Live game (CommunicationMod):** start `run_api.bat` / `run_api.sh`, then point the mod at `python -m src.main` (or `run_agent.bat`). Each stdin JSON line is posted to the control API (set `SLAY_CONTROL_API_URL` if the API is not on `http://127.0.0.1:8000`). When `ready_for_command` is true, the runner prints a **Valid Actions** click, an **agent-approved** command from the monitor, else `wait 10` / `state`, else `state`. Run the web monitor for manual actions and (in `propose` mode) approvals.
+**Live game (CommunicationMod):** start `run_api.bat` / `run_api.sh`, then point the mod at `python -m src.main` (or `run_agent.bat`). Each stdin JSON line is posted to the control API when the payload’s `state_id` changes (set `SLAY_CONTROL_API_URL` if the API is not on `http://127.0.0.1:8000`). When `ready_for_command` is true, the runner prints the next **queued** command from the monitor (manual submit or agent `auto` / approved `propose`), if legal; otherwise it prints `wait 10` or `state` when those appear in `available_commands`, else `state`. Use the web monitor for manual actions and (in `propose` mode) approvals.
 
 ## Setup (uv)
 
@@ -79,9 +83,9 @@ uv sync --group dev
 uv run pytest
 ```
 
-## Running the agent (stub)
+## Running the agent (CommunicationMod)
 
-The CommunicationMod entrypoint is wired to the **new** package:
+The CommunicationMod subprocess entrypoint is [`src/main.py`](src/main.py):
 
 ```bash
 uv run python -m src.main
@@ -89,7 +93,12 @@ uv run python -m src.main
 
 Or: `run_agent.bat` (Windows) / `run_agent.sh` (Unix).
 
-**Current behavior:** a bootstrap stub (see [`src/main.py`](src/main.py)) until the rewrite implements the `game_adapter` loop per [`docs/restart/08-migration-plan.md`](docs/restart/08-migration-plan.md).
+**Current behavior:** prints `ready`, reads JSON lines from stdin, and when the control API is reachable:
+
+- **Ingress sync:** POSTs each distinct game payload to `POST /api/debug/ingress` (skips duplicates using the same `state_id` as the API).
+- **Commands:** when `ready_for_command` is true, polls `GET /api/debug/poll_instruction` for a queued operator/agent command; if present, validates it against the **current** projected legal actions, then prints it; otherwise prefers `wait 10` or `state` from `available_commands`, else `state`.
+
+Without the API, ingress sync and queued commands are skipped; idle/`state` fallback still runs. Further migration items (e.g. richer game-loop policy, full spec-16 telemetry tables) are tracked in [`docs/restart/08-migration-plan.md`](docs/restart/08-migration-plan.md).
 
 ## Communication Mod configuration
 
@@ -107,6 +116,8 @@ command=c:\\ABSOLUTE\\PATH\\to\\slay_the_spire_agent\\.venv\\Scripts\\python.exe
 command=/ABSOLUTE/PATH/TO/slay_the_spire_agent/.venv/bin/python /ABSOLUTE/PATH/TO/slay_the_spire_agent/src/main.py
 ```
 
-## Replay evaluation (planned)
+## Replay evaluation
 
-The **debug monitor** (`control_api` + `apps/web`) is available (see above). **Replay** metrics / CLI against recorded logs are still to be reimplemented in the greenfield tree per the migration plan—not by reusing archived modules.
+**In place today:** [`src/evaluation/replay.py`](src/evaluation/replay.py) runs the compiled LangGraph deterministically for tests—`replay_ingress_only`, `replay_with_resume`, optional `InMemoryTraceStore`, and fixed `configurable.now` (see [`src/decision_engine/proposal_logic.py`](src/decision_engine/proposal_logic.py) `graph_now`). Used from pytest (`tests/test_evaluation_replay.py`), not as a standalone operator CLI.
+
+**Not in greenfield yet:** a **user-facing** replay tool over on-disk CommunicationMod / run logs (like the archived `python -m …eval.replay` flow) and a run browser (**`GET /api/runs`**). **Minimal** SQLite checkpoints + `trace_events` + `/api/history/*` + web **History** rail are implemented; the full multi-table explorer in [`docs/restart/16-sqlite-telemetry-and-history-explorer-spec.md`](docs/restart/16-sqlite-telemetry-and-history-explorer-spec.md) is still future work.

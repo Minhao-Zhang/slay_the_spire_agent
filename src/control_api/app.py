@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-
-from dotenv import load_dotenv
-
-load_dotenv()
 import json
 import sys
 import threading
 from collections import deque
+from contextlib import asynccontextmanager
 from typing import Any
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
@@ -21,10 +22,24 @@ from src.domain.contracts.ingress import GameAdapterInput
 from src.domain.legal_command import canonical_legal_command
 from src.domain.state_projection import project_state
 from src.control_api import agent_runtime
-from src.trace_telemetry.runtime import get_app_trace_store
+from src.control_api.history import router as history_router
+from src.trace_telemetry.runtime import get_app_trace_store, shutdown_trace_store
 from src.trace_telemetry.schema import TRACE_SCHEMA_VERSION
 
-app = FastAPI(title="Slay the Spire Agent — control API", version="0.1.0")
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    yield
+    agent_runtime.shutdown_checkpoint_resources()
+    shutdown_trace_store()
+
+
+app = FastAPI(
+    title="Slay the Spire Agent — control API",
+    version="0.1.0",
+    lifespan=_lifespan,
+)
+app.include_router(history_router)
 
 _lock = threading.Lock()
 _snapshot: dict[str, Any] = {

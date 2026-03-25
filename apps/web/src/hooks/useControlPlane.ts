@@ -4,6 +4,8 @@ import { SAMPLE_INGRESS } from "../data/sampleIngress";
 import type {
   AgentSnapshotDTO,
   DebugSnapshotPayload,
+  HistoryCheckpointDTO,
+  HistoryThreadSummaryDTO,
   WsMessage,
 } from "../types/viewModel";
 
@@ -18,6 +20,16 @@ export function useControlPlane() {
   const [logLines, setLogLines] = useState<
     { t: string; kind: string; msg: string }[]
   >([]);
+  const [historyThreads, setHistoryThreads] = useState<
+    HistoryThreadSummaryDTO[]
+  >([]);
+  const [historyEvents, setHistoryEvents] = useState<Record<string, unknown>[]>(
+    [],
+  );
+  const [historyCheckpoints, setHistoryCheckpoints] = useState<
+    HistoryCheckpointDTO[]
+  >([]);
+  const [historyThreadFilter, setHistoryThreadFilter] = useState<string>("");
   const wsRef = useRef<WebSocket | null>(null);
 
   const pushLog = useCallback((kind: string, msg: string) => {
@@ -105,6 +117,55 @@ export function useControlPlane() {
     [fetchSnapshot, pushLog],
   );
 
+  const refreshHistoryThreads = useCallback(async () => {
+    const r = await fetch("/api/history/threads");
+    if (!r.ok) {
+      pushLog("ERROR", "history/threads failed");
+      return;
+    }
+    const body = (await r.json()) as { threads?: HistoryThreadSummaryDTO[] };
+    setHistoryThreads(body.threads ?? []);
+    pushLog("SYSTEM", `History: ${body.threads?.length ?? 0} thread(s)`);
+  }, [pushLog]);
+
+  const loadHistoryEvents = useCallback(
+    async (threadId: string) => {
+      const q = new URLSearchParams({
+        thread_id: threadId,
+        limit: "100",
+        offset: "0",
+      });
+      const r = await fetch(`/api/history/events?${q}`);
+      if (!r.ok) {
+        pushLog("ERROR", "history/events failed");
+        return;
+      }
+      const body = (await r.json()) as {
+        events?: Record<string, unknown>[];
+      };
+      setHistoryEvents(body.events ?? []);
+    },
+    [pushLog],
+  );
+
+  const loadHistoryCheckpoints = useCallback(
+    async (threadId: string) => {
+      const q = new URLSearchParams({ thread_id: threadId, limit: "30" });
+      const r = await fetch(`/api/history/checkpoints?${q}`);
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        pushLog("ERROR", `checkpoints: ${JSON.stringify(err)}`);
+        setHistoryCheckpoints([]);
+        return;
+      }
+      const body = (await r.json()) as {
+        checkpoints?: HistoryCheckpointDTO[];
+      };
+      setHistoryCheckpoints(body.checkpoints ?? []);
+    },
+    [pushLog],
+  );
+
   const retryAgent = useCallback(async () => {
     const r = await fetch("/api/agent/retry", { method: "POST" });
     if (!r.ok) {
@@ -159,5 +220,13 @@ export function useControlPlane() {
     resumeAgent,
     retryAgent,
     pushLog,
+    historyThreads,
+    historyEvents,
+    historyCheckpoints,
+    historyThreadFilter,
+    setHistoryThreadFilter,
+    refreshHistoryThreads,
+    loadHistoryEvents,
+    loadHistoryCheckpoints,
   };
 }

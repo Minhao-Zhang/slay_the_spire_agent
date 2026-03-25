@@ -427,6 +427,14 @@ export function MonitorDashboard() {
     resumeAgent,
     retryAgent,
     pushLog,
+    historyThreads,
+    historyEvents,
+    historyCheckpoints,
+    historyThreadFilter,
+    setHistoryThreadFilter,
+    refreshHistoryThreads,
+    loadHistoryEvents,
+    loadHistoryCheckpoints,
   } = useControlPlane();
 
   const copyClipboard = useCallback(
@@ -905,6 +913,91 @@ export function MonitorDashboard() {
               title={envLine}
             >
               {envLine}
+            </div>
+
+            <div className="shrink-0 space-y-1.5 rounded border border-indigo-900/40 bg-slate-950/50 p-2">
+              <div className="flex items-center justify-between gap-1">
+                <span className={osdSectionLabel}>History</span>
+                <button
+                  type="button"
+                  className={osdBtnGhost}
+                  onClick={() => void refreshHistoryThreads()}
+                >
+                  Threads
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                <select
+                  value={historyThreadFilter}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setHistoryThreadFilter(v);
+                    if (v) {
+                      void loadHistoryEvents(v);
+                      void loadHistoryCheckpoints(v);
+                    }
+                  }}
+                  className="font-telemetry h-6 max-w-full flex-1 rounded border border-slate-700 bg-slate-950 px-1 text-[10px] text-slate-200 outline-none"
+                >
+                  <option value="">Thread…</option>
+                  {historyThreads.map((t) => (
+                    <option key={t.thread_id} value={t.thread_id}>
+                      {t.thread_id} ({t.event_count})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className={osdBtnGhost}
+                  onClick={() => {
+                    const tid =
+                      historyThreadFilter ||
+                      snapshot?.agent?.thread_id ||
+                      "default";
+                    setHistoryThreadFilter(tid);
+                    void loadHistoryEvents(tid);
+                    void loadHistoryCheckpoints(tid);
+                  }}
+                >
+                  Load
+                </button>
+              </div>
+              <div className="custom-scroll max-h-24 space-y-0.5 overflow-y-auto font-telemetry text-[9px] leading-tight text-slate-400">
+                {historyEvents.length === 0 ? (
+                  <div className="text-slate-600">No events loaded</div>
+                ) : (
+                  historyEvents.map((e, i) => (
+                    <div
+                      key={i}
+                      className="truncate border-b border-slate-800/50 border-b-transparent py-0.5"
+                      title={JSON.stringify(e)}
+                    >
+                      <span className="text-indigo-400">
+                        {String(e.step_kind ?? "?")}
+                      </span>{" "}
+                      · seq {String(e.step_seq ?? "—")} ·{" "}
+                      <span className="text-slate-500">
+                        {String(e.state_id ?? "—")}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="custom-scroll max-h-20 space-y-0.5 overflow-y-auto font-console text-[9px] text-slate-500">
+                {historyCheckpoints.length === 0 ? null : (
+                  <>
+                    <div className="font-semibold text-slate-400">
+                      Checkpoints
+                    </div>
+                    {historyCheckpoints.slice(0, 8).map((c, i) => (
+                      <div key={i} className="truncate">
+                        {c.checkpoint_id?.slice(0, 8) ?? "?"} ·{" "}
+                        {c.state_id != null ? String(c.state_id) : "—"}
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
             </div>
 
             {snapshot?.agent?.pending_approval ? (
