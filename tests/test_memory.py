@@ -69,6 +69,6 @@ def test_strategy_store_receives_class_namespace() -> None:
     g = build_agent_graph(checkpointer=InMemorySaver())
     cfg = {"configurable": {"thread_id": "mem-store", "agent_mode": "manual"}}
     g.invoke({"ingress_raw": raw}, cfg)
-    st = get_app_memory_store().get(("strategy", "IRONCLAD"), "last_turn")
+    st = get_app_memory_store().get(("strategy", "IRONCLAD", "mem-store"), "last_turn")
     assert st is not None
     assert "state_id" in st

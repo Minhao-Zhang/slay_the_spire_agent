@@ -6,7 +6,7 @@ from pathlib import Path
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
-from src.decision_engine.graph import build_agent_graph
+from src.decision_engine.graph import _proposal_hygiene, build_agent_graph
 
 _FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -127,6 +127,29 @@ def test_auto_failure_increments_failure_streak() -> None:
 
     r2 = graph.invoke({"ingress_raw": menu}, cfg)
     assert r2["failure_streak"] == 2
+
+
+def test_hygiene_clears_executed_when_command_not_legal_on_vm() -> None:
+    """Avoid showing e.g. reward ``choose 0`` against a combat action list (coarse state_id, stale VM)."""
+    state = {
+        "state_id": "sid-fixed",
+        "view_model": {
+            "actions": [{"command": "END"}],
+            "combat": {"hand": []},
+        },
+        "proposal": {
+            "status": "executed",
+            "for_state_id": "sid-fixed",
+            "command": "choose 0",
+            "resolve_tag": "shortcut:single_action",
+        },
+        "decision_trace": [],
+        "failure_streak": 0,
+    }
+    cfg = _cfg("t-hygiene-illegal", mode="auto")
+    out = _proposal_hygiene(state, cfg)
+    assert out["proposal"]["status"] == "idle"
+    assert "reset:executed_not_legal_on_vm" in (out["decision_trace"] or [])
 
 
 def test_approval_times_out_before_interrupt_when_ttl_negative() -> None:

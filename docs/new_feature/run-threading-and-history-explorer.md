@@ -7,19 +7,29 @@ This document is the **feature + architecture spec** for:
 
 It consolidates LangGraph persistence concepts, the current repo state, gaps, and an implementation checklist.
 
+## Plan of record (replacement scope)
+
+Near-term **history / debugger** delivery is driven by **this doc**: LangGraph checkpoints + existing `trace_events` + history HTTP APIs + Explorer UI. That is the intended **functional replacement** for migration **Stage 13–style** “SQLite telemetry + history explorer” work without building the full canonical schema in [`docs/restart/16-sqlite-telemetry-and-history-explorer-spec.md`](../restart/16-sqlite-telemetry-and-history-explorer-spec.md) first.
+
+- [**Stage 11**](../restart/TODO.md) (strategic planner) and [**Stage 12**](../restart/TODO.md) (full operator UI + streaming) are **orthogonal**; they are not delivered here.
+- [`docs/restart/14-debugger-frontend-redesign-spec.md`](../restart/14-debugger-frontend-redesign-spec.md) remains background product direction; Phase 2 here implements the **forensic** slice (timeline, JSON, checkpoints) toward that vision.
+
 ---
 
 ## Implementation checklist
 
 - [ ] **Per-game thread:** Seed-derived + `run-menu` threads; route **resume** to the **pending interrupt** thread when latest ingress is menu.
 - [ ] **Run boundary:** `extract_run_seed`; numeric seed → `run-{seed}`; menu / no-run → sentinel seed `menu`, `thread_id` `run-menu`.
-- [ ] **UI seed:** Expose `run_seed` and `thread_id` on snapshot / agent status; show in **MonitorDashboard** (e.g. command bar).
-- [ ] **Memory namespace:** Scope `InMemoryMemoryStore` by run / `thread_id` (or clear on new run).
+- [ ] **Effective `thread_id` in status:** [`get_agent_status()`](../../src/control_api/agent_runtime.py) and WebSocket snapshots must expose the **actual graph `thread_id`** used for the last `invoke` / resume (including `pending_graph_thread_id` / interrupt thread when applicable). Thread id is always ingress-derived, not overridable via env.
+- [ ] **Invariant:** For any open HITL interrupt, **`RunnableConfig` `thread_id`**, **trace_events `thread_id`**, and **operator-facing “active thread”** must all match the **interrupt’s** thread until the interrupt is cleared — not `run-menu` derived from the latest ingress.
+- [ ] **UI seed:** Expose `run_seed` and effective `thread_id` on snapshot / agent status; show in **MonitorDashboard** (e.g. command bar).
+- [ ] **Memory namespace:** Scope `InMemoryMemoryStore` by run / `thread_id` (or clear on new run); consider whether **episodic `memory_log`** in graph state should reset on run boundary (separate from store namespace).
+- [ ] **Menu ingress policy:** Define whether **menu-only** ingress runs the **full graph** on `run-menu` or **short-circuits** (skip / minimal path) to avoid unbounded checkpoints on `run-menu`; must remain consistent with HITL routing above.
 - [ ] **Router:** `apps/web` routes: `/` = monitor, `/explorer` = History Explorer with `?thread_id=`.
 - [ ] **Explorer layout:** Three-pane explorer wired to `/api/history/*`; timeline + JSON inspector.
-- [ ] **API:** `GET /api/history/checkpoint` (or `/state`) for full checkpoint values (safe serialization).
-- [ ] **Optional:** Merge thread list from checkpoint tables when `trace_events` has no row for a thread.
-- [ ] **Tests / ops:** Checkpoint-detail tests; note `SLAY_CHECKPOINTER=sqlite` and shared DB file in README or `ARCHITECTURE.md`.
+- [ ] **API:** Checkpoint detail (see **API extensions**): `get_state`-backed JSON with **allowlist**, **max response size**, and optional **debug-only** env gate for non-local hardening.
+- [ ] **Optional:** Merge thread list from checkpoint tables when `trace_events` has no row for a thread; **dedupe** `thread_id` when the same id appears in both stores.
+- [ ] **Tests / ops:** Integration tests (see **Tests**); document `SLAY_CHECKPOINTER=sqlite` and shared DB file in README or `ARCHITECTURE.md`.
 
 ---
 
@@ -41,6 +51,18 @@ Official persistence model ([LangGraph persistence](https://docs.langchain.com/o
 
 ---
 
+## Runtime thread resolution (HITL + menu)
+
+Use a single internal notion of **effective graph `thread_id`** for each operation:
+
+- **Idle / menu, no interrupt:** ingress-derived `run-menu` (or seed → `run-{seed}` when in run).
+- **In run, no pending interrupt:** seed-derived `run-{seed}` for invoke and traces.
+- **Pending HITL interrupt:** `thread_id` for **all** `Command(resume=...)`, trace writes, and status fields that describe “where the graph is waiting” must remain the **interrupt thread** (the run that entered `interrupt`), even if the **latest** CommunicationMod payload is menu-shaped and would map to `run-menu`.
+
+Document implementer-facing states loosely as: **idle_menu** → **in_run** → **awaiting_hitl** (awaiting may coincide with menu ingress — routing must still prefer the interrupt thread until cleared).
+
+---
+
 ## What this repo already stores and exposes
 
 ### 1. Checkpoints (LangGraph)
@@ -49,10 +71,13 @@ Official persistence model ([LangGraph persistence](https://docs.langchain.com/o
 - Runtime: [`src/control_api/agent_runtime.py`](../../src/control_api/agent_runtime.py).
 - With `memory`, checkpoint history is **process-scoped**. **Durable** forensics need `sqlite`.
 
+**Implemented:** [`get_agent_status()`](../../src/control_api/agent_runtime.py) exposes the effective graph `thread_id` from the last summary (ingress seed / interrupt pin).
+
 ### 2. Trace events (app-owned)
 
 - [`src/trace_telemetry/sqlite_store.py`](../../src/trace_telemetry/sqlite_store.py): table **`trace_events`** (JSON payloads, indexed by `thread_id`, `state_id`, `step_seq`).
 - Same SQLite file as checkpoints when `sqlite` is enabled: **one file, two subsystems**.
+- [`record_agent_invocation`](../../src/trace_telemetry/recorder.py) keys off **`configurable.thread_id`** — it must stay aligned with the same `RunnableConfig` as `invoke` / `Command(resume=...)`.
 
 ### 3. Read-only history HTTP API
 
@@ -110,7 +135,7 @@ LangGraph **already isolates by `thread_id`** (see `test_thread_ids_isolate_stat
 
 | Layer | Behavior |
 | ----- | -------- |
-| **Config** | `_run_config()` uses `SLAY_AGENT_THREAD_ID`, default `"default"`. |
+| **Config** | ~~Fixed env thread~~ Replaced by per-ingress `run-{seed}` / `run-menu`. |
 | **Checkpoints** | All runs share one checkpoint lineage for that id. |
 | **trace_events** | `step_seq` is monotonic **per thread** → one long stream across games. |
 | **Proposal hygiene** | [`_proposal_hygiene`](../../src/decision_engine/graph.py) can reset terminal proposals on `state_id` change; **does not** clear `memory_log` / `memory_seq_cursor`. |
@@ -121,8 +146,8 @@ LangGraph **already isolates by `thread_id`** (see `test_thread_ids_isolate_stat
 
 - **One `thread_id` = one run** (not one HTTP session). Use it for every `invoke` / `Command(resume=...)` until run identity changes.
 - **Implement in** [`agent_runtime.py`](../../src/control_api/agent_runtime.py): process-held key → `configurable.thread_id`.
-- **`get_agent_status()` / snapshots:** Expose **`thread_id`** and **`run_seed`** (see below).
-- **`SLAY_AGENT_THREAD_ID`:** **Test override** only; real play uses seed or menu sentinel.
+- **`get_agent_status()` / snapshots:** Expose **`thread_id`**, **`run_seed`**, and when needed **`pending_graph_thread_id`** (or equivalent) so operators never confuse menu ingress id with interrupt id.
+- **Env thread override:** removed; identity is always seed / menu from the wire.
 
 ### CommunicationMod seed as stable run key
 
@@ -131,6 +156,8 @@ LangGraph **already isolates by `thread_id`** (see `test_thread_ids_isolate_stat
 - **Where seed is today:** Not read in Python. [`GameAdapterInput`](../../src/domain/contracts/ingress.py) keeps `game_state` as `dict[str, Any]`; CommunicationMod typically includes **`game_state["seed"]`** (often a long int). [`project_state`](../../src/domain/state_projection/project.py) does not use `seed` yet.
 - **Helper:** `extract_run_seed(ingress) -> str` (single place; does not change `state_id` hashing unless explicitly requested).
 - **In-run:** Canonical string (e.g. `str(int(seed))`) → `thread_id = f"run-{seed}"`. **Seed collisions:** ignored for now per product.
+- **Validation:** Phase 1 should add **tests** with int seed, string numeric seed, missing seed, and `in_game: false`; optionally a **redacted** fixture of a real CommunicationMod payload.
+- **Mid-run seed change:** Rare (e.g. odd mod behavior). **Document the chosen policy** (e.g. always treat changed seed as **new `thread_id`**) so behavior is predictable.
 - **Menu / no active run:** Sentinel logical seed **`menu`** → **`thread_id = "run-menu"`**. Use when `in_game` is false **or** wire seed is missing/unusable. **All menu time shares one thread**; Explorer may filter `run-menu` later.
 
 ### Pending HITL while on menu
@@ -141,7 +168,7 @@ Latest ingress may map to **`run-menu`**, but an open interrupt belongs to **`ru
 
 - Aligns **game run identity** with LangGraph persistence.
 - **`state_id`** ≠ seed: content hash per snapshot vs run-stable key — keep separate.
-- **Menu sentinel** is explicit; **operational clarity** requires surfacing `run_seed` + `thread_id` on snapshot.
+- **Menu sentinel** is explicit; **operational clarity** requires surfacing `run_seed` + **effective** `thread_id` on snapshot.
 
 ### Run boundary fallbacks (if seed missing in odd modes)
 
@@ -163,7 +190,7 @@ Namespace by run, e.g. `("strategy", cls, thread_id)`, or clear `last_turn` on r
 
 ### A0. Seed visibility (with Phase 1 threading)
 
-- Add **`run_seed`** and **`thread_id`** to [`get_agent_status()`](../../src/control_api/agent_runtime.py) and WebSocket snapshot payload.
+- Add **`run_seed`** and **effective `thread_id`** to [`get_agent_status()`](../../src/control_api/agent_runtime.py) and WebSocket snapshot payload.
 - **MonitorDashboard:** show both in the status strip (alongside mode, proposer, `state_id`).
 
 ### A. Routing and History Explorer page
@@ -175,9 +202,10 @@ Namespace by run, e.g. `("strategy", cls, thread_id)`, or clear `last_turn` on r
 
 ### B. API extensions
 
-1. **`GET /api/history/checkpoint`** (or `/state`): `thread_id`, `checkpoint_id`, optional `checkpoint_ns` → `get_state` JSON (size caps / allowlist as needed).
-2. **Optional:** merge checkpoint-derived thread ids into `/api/history/threads`.
-3. **Later:** gated replay / fork endpoints.
+1. **Checkpoint detail:** Prefer extending the existing surface where natural, e.g. **`GET /api/history/checkpoints`** with optional `checkpoint_id` + `checkpoint_ns` to return **one** snapshot with serialized `values`, **or** a dedicated `GET /api/history/checkpoint` — same semantics: `graph.get_state` with `{ thread_id, checkpoint_id?, checkpoint_ns? }`.
+2. **Safe serialization:** Payloads may include large or sensitive fields (`ingress_raw`, LLM blobs). Apply a **field allowlist** (and/or denylist), **max JSON bytes**, and consider guarding the route behind **`SLAY_DEBUG_HISTORY_STATE=1`** (or equivalent) outside local dev.
+3. **Optional:** merge checkpoint-derived thread ids into `/api/history/threads` with **dedupe** when also present in `trace_events`.
+4. **Later:** gated replay / fork endpoints.
 
 ### C. Frontend types and hooks
 
@@ -187,6 +215,9 @@ Namespace by run, e.g. `("strategy", cls, thread_id)`, or clear `last_turn` on r
 ### D. Tests
 
 - Checkpoint detail route tests (pattern: [`tests/test_sqlite_persistence.py`](../../tests/test_sqlite_persistence.py)).
+- **SQLite:** Restart API process, same DB path, same seed → still able to **resume** an open HITL interrupt.
+- **HITL + menu:** With interrupt open, simulate menu-shaped ingress → **resume** must use **game** `thread_id`, not `run-menu`.
+- **Isolation:** New seed → new checkpoint lineage; `step_seq` in traces does not **continue** a prior run’s series under the new `thread_id`.
 
 ### E. Documentation / ops
 
@@ -196,9 +227,9 @@ Namespace by run, e.g. `("strategy", cls, thread_id)`, or clear `last_turn` on r
 
 ## Phased readiness
 
-**Phase 1 (foundation):** `extract_run_seed`, menu sentinel, seed-derived `thread_id`, **HITL vs menu routing**, snapshot **`run_seed` / `thread_id`**, MonitorDashboard, memory namespace by `thread_id`.
+**Phase 1 (foundation):** Ship **together** in one coherent change set: `extract_run_seed`, menu sentinel, seed-derived `thread_id`, **HITL vs menu routing**, **effective `thread_id` / `run_seed` on status + WS**, MonitorDashboard, memory namespace by `thread_id`, **menu ingress policy** (avoid `run-menu` checkpoint blow-up). *Do not* ship seed visibility alone without routing — the UI would mislead operators.
 
-**Phase 2 (debugger redesign):** Router, History Explorer page, checkpoint detail API, optional SQLite thread merge.
+**Phase 2 (debugger redesign):** Router, History Explorer page, checkpoint detail API (with serialization limits), optional SQLite thread merge.
 
 Phase 1 should **not** wait on the full doc-16 schema.
 
@@ -215,5 +246,6 @@ Phase 1 should **not** wait on the full doc-16 schema.
 ## References
 
 - [LangGraph persistence](https://docs.langchain.com/oss/python/langgraph/persistence)
+- [`docs/restart/10-langgraph-persistence-and-hitl-ops.md`](../restart/10-langgraph-persistence-and-hitl-ops.md)
 - [`docs/restart/14-debugger-frontend-redesign-spec.md`](../restart/14-debugger-frontend-redesign-spec.md)
 - [`docs/restart/16-sqlite-telemetry-and-history-explorer-spec.md`](../restart/16-sqlite-telemetry-and-history-explorer-spec.md)

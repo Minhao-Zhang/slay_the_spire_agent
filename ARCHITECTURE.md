@@ -272,7 +272,7 @@ flowchart TB
 
 - `SLAY_AGENT_MODE`: `manual` | `auto` | `propose` (default `propose`).
 - `SLAY_PROPOSER`: `mock` | `llm`; `SLAY_LLM_BACKEND`: `stub` | `openai`.
-- `SLAY_AGENT_THREAD_ID`: LangGraph thread (default `default`). With `SLAY_CHECKPOINTER=sqlite`, keep this stable across API restarts to continue the same session.
+- LangGraph `thread_id` is derived from each ingress (`run-{seed}` / `run-menu`); with `SLAY_CHECKPOINTER=sqlite`, the same seed continues the same checkpoint line across API restarts.
 
 ## Persistence (checkpoints + telemetry)
 

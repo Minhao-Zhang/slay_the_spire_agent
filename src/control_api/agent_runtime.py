@@ -1,10 +1,10 @@
 """
 In-process LangGraph runner for the control API (Stage 6 HITL).
 
-``SLAY_AGENT_THREAD_ID`` (default ``default``) and ``SLAY_AGENT_MODE`` (default
-``propose``) select graph config. After ``propose`` hits an interrupt, call
-``POST /api/agent/resume``; completed ``emitted_command`` values are queued for
-``poll_instruction`` / ``main.py`` like other manual actions.
+LangGraph ``thread_id`` is derived from the CommunicationMod payload (``run-{seed}``)
+or ``run-menu`` when not in-game / seed missing. After ``propose`` hits an interrupt,
+call ``POST /api/agent/resume``; resume uses the interrupt's ``thread_id`` even if the
+latest ingress maps to ``run-menu``.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from langgraph.types import Command
 
 from src.control_api.checkpoint_factory import create_checkpointer
 from src.decision_engine.graph import build_agent_graph
+from src.domain.run_identity import MENU_THREAD_ID, extract_run_seed_and_thread_id
 from src.trace_telemetry.recorder import record_agent_invocation
 from src.trace_telemetry.runtime import get_app_trace_store, reset_app_trace_store_for_tests
 
@@ -28,14 +29,18 @@ _graph = None
 _checkpointer: BaseCheckpointSaver | None = None
 _sqlite_conn: sqlite3.Connection | None = None
 _last_summary: dict[str, Any] | None = None
+_last_run_seed: str | None = None
+_last_ingress_derived_thread_id: str | None = None
 
 
 def reset_agent_runtime_for_tests() -> None:
-    global _graph, _checkpointer, _sqlite_conn, _last_summary
+    global _graph, _checkpointer, _sqlite_conn, _last_summary, _last_run_seed, _last_ingress_derived_thread_id
     with _agent_lock:
         _graph = None
         _checkpointer = None
         _last_summary = None
+        _last_run_seed = None
+        _last_ingress_derived_thread_id = None
         if _sqlite_conn is not None:
             try:
                 _sqlite_conn.close()
@@ -47,11 +52,13 @@ def reset_agent_runtime_for_tests() -> None:
 
 def shutdown_checkpoint_resources() -> None:
     """Close SQLite checkpointer connection (FastAPI shutdown)."""
-    global _graph, _checkpointer, _sqlite_conn, _last_summary
+    global _graph, _checkpointer, _sqlite_conn, _last_summary, _last_run_seed, _last_ingress_derived_thread_id
     with _agent_lock:
         _graph = None
         _checkpointer = None
         _last_summary = None
+        _last_run_seed = None
+        _last_ingress_derived_thread_id = None
         if _sqlite_conn is not None:
             try:
                 _sqlite_conn.close()
@@ -73,10 +80,6 @@ def _get_compiled_graph():
 def get_compiled_agent_graph():
     """Read-only access for history/debug endpoints (same instance as invocations)."""
     return _get_compiled_graph()
-
-
-def agent_thread_id() -> str:
-    return os.environ.get("SLAY_AGENT_THREAD_ID", "default")
 
 
 def agent_mode() -> str:
@@ -104,15 +107,53 @@ def agent_memory_max_turns() -> int:
         return 32
 
 
-def _run_config() -> RunnableConfig:
+def _run_config_for_thread(tid: str) -> RunnableConfig:
     return {
         "configurable": {
-            "thread_id": agent_thread_id(),
+            "thread_id": tid,
             "agent_mode": agent_mode(),
             "proposer": agent_proposer(),
             "memory_max_turns": agent_memory_max_turns(),
         },
     }
+
+
+def _interrupt_thread_from_summary(summary: dict[str, Any] | None) -> str | None:
+    if not summary or not summary.get("awaiting_interrupt"):
+        return None
+    pend = summary.get("pending_approval")
+    if isinstance(pend, dict):
+        t = pend.get("thread_id")
+        if t is not None:
+            return str(t)
+    t2 = summary.get("thread_id")
+    return str(t2) if t2 is not None else None
+
+
+def _resolve_ingress_config(
+    ingress_body: dict[str, Any],
+    *,
+    prior_summary: dict[str, Any] | None,
+) -> tuple[RunnableConfig, str, str, str]:
+    """
+    Returns ``(config, run_seed, effective_thread_id, ingress_derived_thread_id)``.
+    When HITL is pending, ``effective_thread_id`` is the interrupt thread; ingress
+    mapping still returns ``ingress_derived_thread_id`` for status display.
+    """
+    run_seed, ingress_tid = extract_run_seed_and_thread_id(ingress_body)
+    if prior_summary and prior_summary.get("pending_approval") is not None:
+        intr = _interrupt_thread_from_summary(prior_summary)
+        if intr is not None:
+            return _run_config_for_thread(intr), run_seed, intr, ingress_tid
+
+    return _run_config_for_thread(ingress_tid), run_seed, ingress_tid, ingress_tid
+
+
+def _resolve_resume_config(prior_summary: dict[str, Any] | None) -> RunnableConfig:
+    intr = _interrupt_thread_from_summary(prior_summary)
+    if intr is None:
+        raise ValueError("No pending interrupt thread for resume")
+    return _run_config_for_thread(intr)
 
 
 def _interrupt_payload(entry: Any) -> Any:
@@ -122,7 +163,7 @@ def _interrupt_payload(entry: Any) -> Any:
 
 
 def _trace_overlay(summary: dict[str, Any]) -> dict[str, Any]:
-    tid = str(summary.get("thread_id") or agent_thread_id())
+    tid = str(summary.get("thread_id") or MENU_THREAD_ID)
     events = get_app_trace_store().list_events(thread_id=tid)
     tail = events[-8:]
     summary["trace_tail"] = [
@@ -137,6 +178,24 @@ def _trace_overlay(summary: dict[str, Any]) -> dict[str, Any]:
     ]
     summary["trace_event_count"] = len(events)
     return summary
+
+
+def _llm_fields_from_proposal(proposal: Any) -> dict[str, Any]:
+    """Copy usage/model from nested ``proposal.parsed_model`` to summary top-level."""
+    if not isinstance(proposal, dict):
+        return {}
+    pm = proposal.get("parsed_model")
+    if not isinstance(pm, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for key in ("llm_input_tokens", "llm_output_tokens", "llm_total_tokens", "llm_model"):
+        v = pm.get(key)
+        if v is not None:
+            out[key] = v
+    sc = pm.get("sub_calls")
+    if isinstance(sc, list) and sc:
+        out["sub_calls"] = sc
+    return out
 
 
 def summarize_graph_out(out: dict[str, Any], cfg: RunnableConfig) -> dict[str, Any]:
@@ -161,19 +220,41 @@ def summarize_graph_out(out: dict[str, Any], cfg: RunnableConfig) -> dict[str, A
     conf = cfg.get("configurable") or {}
     tid = conf.get("thread_id")
     mode = conf.get("agent_mode")
-    return {
+    sc_log = out.get("shortcut_log")
+    sc_tail = (
+        list(sc_log)[-20:]
+        if isinstance(sc_log, list) and sc_log
+        else []
+    )
+    summ: dict[str, Any] = {
         "state_id": str(sid) if sid is not None else None,
         "pending_approval": pending,
         "emitted_command": emitted,
         "proposal": out.get("proposal"),
         "failure_streak": out.get("failure_streak", 0),
         "decision_trace": tail,
+        "shortcut_log_tail": sc_tail,
         "awaiting_interrupt": pending is not None,
         "agent_mode": str(mode).lower() if mode is not None else agent_mode(),
-        "thread_id": str(tid) if tid is not None else agent_thread_id(),
+        "thread_id": str(tid) if tid is not None else MENU_THREAD_ID,
         "memory_turns": len(mem_list),
         "memory_tail": mem_tail,
+        "combat_fingerprint": out.get("combat_fingerprint"),
+        "command_queue": out.get("command_queue"),
     }
+    summ.update(_llm_fields_from_proposal(out.get("proposal")))
+    return summ
+
+
+def _ingest_ingress_labels(
+    ingress_body: dict[str, Any],
+    effective_tid: str,
+    ingress_derived_tid: str,
+) -> None:
+    global _last_run_seed, _last_ingress_derived_thread_id
+    _last_run_seed, _ = extract_run_seed_and_thread_id(ingress_body)
+    _last_ingress_derived_thread_id = ingress_derived_tid
+    _ = effective_tid
 
 
 def retry_agent(ingress_body: dict[str, Any], queue_manual) -> dict[str, Any]:
@@ -182,25 +263,27 @@ def retry_agent(ingress_body: dict[str, Any], queue_manual) -> dict[str, Any]:
 
     If HITL left the last run waiting on ``interrupt``, resumes with **reject**
     first so the checkpointer can accept a new ``ingress_raw`` invoke (same
-    LangGraph ``thread_id``).
+    LangGraph thread as the interrupt until cleared).
     """
     global _last_summary
-    cfg = _run_config()
     try:
         g = _get_compiled_graph()
         with _agent_lock:
             if _last_summary and _last_summary.get("pending_approval") is not None:
-                out_rej = g.invoke(Command(resume="reject"), cfg)
-                summ_rej = summarize_graph_out(out_rej, cfg)
+                cfg_rej = _resolve_resume_config(_last_summary)
+                out_rej = g.invoke(Command(resume="reject"), cfg_rej)
+                summ_rej = summarize_graph_out(out_rej, cfg_rej)
                 _last_summary = summ_rej
                 record_agent_invocation(
-                    cfg=cfg,
+                    cfg=cfg_rej,
                     raw_out=out_rej,
                     summary=summ_rej,
                     step_kind="resume",
                     resume_kind="reject",
                 )
                 _trace_overlay(summ_rej)
+            cfg, _, eff_tid, ingress_tid = _resolve_ingress_config(ingress_body, prior_summary=_last_summary)
+            _ingest_ingress_labels(ingress_body, eff_tid, ingress_tid)
             out = g.invoke({"ingress_raw": ingress_body}, cfg)
             summary = summarize_graph_out(out, cfg)
             _last_summary = summary
@@ -216,12 +299,15 @@ def retry_agent(ingress_body: dict[str, Any], queue_manual) -> dict[str, Any]:
                 queue_manual(str(emitted))
         return summary
     except Exception as e:
-        summary = summarize_graph_out({"decision_trace": [f"agent_error:{e}"]}, cfg)
+        with _agent_lock:
+            prior = _last_summary
+        cfg_fallback, _, _, _ = _resolve_ingress_config(ingress_body, prior_summary=prior)
+        summary = summarize_graph_out({"decision_trace": [f"agent_error:{e}"]}, cfg_fallback)
         summary["agent_error"] = str(e)
         with _agent_lock:
             _last_summary = summary
         record_agent_invocation(
-            cfg=cfg,
+            cfg=cfg_fallback,
             raw_out={},
             summary=summary,
             step_kind="ingress",
@@ -233,10 +319,11 @@ def retry_agent(ingress_body: dict[str, Any], queue_manual) -> dict[str, Any]:
 def step_ingress(ingress_body: dict[str, Any], queue_manual) -> dict[str, Any]:
     """Run the graph for a new CommunicationMod payload (after projection)."""
     global _last_summary
-    cfg = _run_config()
     try:
         g = _get_compiled_graph()
         with _agent_lock:
+            cfg, _, eff_tid, ingress_tid = _resolve_ingress_config(ingress_body, prior_summary=_last_summary)
+            _ingest_ingress_labels(ingress_body, eff_tid, ingress_tid)
             out = g.invoke({"ingress_raw": ingress_body}, cfg)
             summary = summarize_graph_out(out, cfg)
             _last_summary = summary
@@ -252,12 +339,15 @@ def step_ingress(ingress_body: dict[str, Any], queue_manual) -> dict[str, Any]:
                 queue_manual(str(emitted))
         return summary
     except Exception as e:
-        summary = summarize_graph_out({"decision_trace": [f"agent_error:{e}"]}, cfg)
+        with _agent_lock:
+            prior = _last_summary
+        cfg_fallback, _, _, _ = _resolve_ingress_config(ingress_body, prior_summary=prior)
+        summary = summarize_graph_out({"decision_trace": [f"agent_error:{e}"]}, cfg_fallback)
         summary["agent_error"] = str(e)
         with _agent_lock:
             _last_summary = summary
         record_agent_invocation(
-            cfg=cfg,
+            cfg=cfg_fallback,
             raw_out={},
             summary=summary,
             step_kind="ingress",
@@ -285,10 +375,10 @@ def resume_agent(body: dict[str, Any], queue_manual) -> dict[str, Any]:
     else:
         raise ValueError("kind must be approve, reject, or edit")
 
-    cfg = _run_config()
     g = _get_compiled_graph()
     try:
         with _agent_lock:
+            cfg = _resolve_resume_config(_last_summary)
             out = g.invoke(Command(resume=resume), cfg)
             summary = summarize_graph_out(out, cfg)
             _last_summary = summary
@@ -305,12 +395,19 @@ def resume_agent(body: dict[str, Any], queue_manual) -> dict[str, Any]:
                 queue_manual(str(emitted))
         return summary
     except Exception as e:
-        summary = summarize_graph_out({"decision_trace": [f"resume_error:{e}"]}, cfg)
+        with _agent_lock:
+            ps = _last_summary
+        try:
+            cfg_fb = _resolve_resume_config(ps)
+        except ValueError:
+            tid = (ps or {}).get("thread_id")
+            cfg_fb = _run_config_for_thread(str(tid) if tid else MENU_THREAD_ID)
+        summary = summarize_graph_out({"decision_trace": [f"resume_error:{e}"]}, cfg_fb)
         summary["agent_error"] = str(e)
         with _agent_lock:
             _last_summary = summary
         record_agent_invocation(
-            cfg=cfg,
+            cfg=cfg_fb,
             raw_out={},
             summary=summary,
             step_kind="resume",
@@ -337,15 +434,26 @@ def get_agent_status() -> dict[str, Any]:
                 "memory_tail": [],
                 "trace_tail": [],
                 "trace_event_count": 0,
+                "thread_id": None,
+                "run_seed": _last_run_seed,
             }
         else:
             d = dict(_last_summary)
-    # Config is per-process env; reflect current values even if summary is stale.
     d["agent_mode"] = agent_mode()
-    d["thread_id"] = agent_thread_id()
     d["proposer"] = agent_proposer()
     d["llm_backend"] = agent_llm_backend()
     d["memory_max_turns"] = agent_memory_max_turns()
+    d["run_seed"] = _last_run_seed
+    eff = d.get("thread_id")
+    if d.get("pending_approval") and _last_ingress_derived_thread_id and eff != _last_ingress_derived_thread_id:
+        d["ingress_derived_thread_id"] = _last_ingress_derived_thread_id
+        pend_tid = None
+        pa = d.get("pending_approval")
+        if isinstance(pa, dict):
+            pend_tid = pa.get("thread_id")
+        if pend_tid is not None:
+            d["pending_graph_thread_id"] = str(pend_tid)
+
     if "memory_turns" not in d:
         d["memory_turns"] = 0
     if "memory_tail" not in d:

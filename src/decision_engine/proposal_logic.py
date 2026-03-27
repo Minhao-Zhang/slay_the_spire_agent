@@ -24,6 +24,12 @@ def coalesce_proposal(p: dict[str, Any] | None) -> dict[str, Any]:
     return {**idle_proposal(), **(p or {})}
 
 
+def _without_command_queue(p: dict[str, Any]) -> dict[str, Any]:
+    out = dict(p)
+    out.pop("command_queue", None)
+    return out
+
+
 def mock_propose_command(view_model: dict[str, Any] | None) -> tuple[str | None, str]:
     """Picks the first legal action (Stage 5 stand-in for LLM)."""
     if not view_model:
@@ -89,7 +95,9 @@ def finalize_approval(
     if current_state_id != for_sid:
         trace.append("stale:advance_before_approval")
         return (
-            coalesce_proposal({**p, "status": "stale", "error_reason": "state_advanced"}),
+            _without_command_queue(
+                coalesce_proposal({**p, "status": "stale", "error_reason": "state_advanced"}),
+            ),
             None,
             trace,
         )
@@ -97,7 +105,9 @@ def finalize_approval(
     if resume is None or resume == "reject":
         trace.append("rejected")
         return (
-            coalesce_proposal({**p, "status": "stale", "error_reason": "rejected"}),
+            _without_command_queue(
+                coalesce_proposal({**p, "status": "stale", "error_reason": "rejected"}),
+            ),
             None,
             trace,
         )
@@ -114,7 +124,9 @@ def finalize_approval(
     else:
         trace.append("error:bad_resume_shape")
         return (
-            coalesce_proposal({**p, "status": "error", "error_reason": "bad_resume"}),
+            _without_command_queue(
+                coalesce_proposal({**p, "status": "error", "error_reason": "bad_resume"}),
+            ),
             None,
             trace,
         )
@@ -124,13 +136,19 @@ def finalize_approval(
         if not cmd or not is_command_legal(view_model, str(cmd)):
             trace.append("error:illegal_proposed_command")
             return (
-                coalesce_proposal({**p, "status": "error", "error_reason": "illegal_proposed"}),
+                _without_command_queue(
+                    coalesce_proposal(
+                        {**p, "status": "error", "error_reason": "illegal_proposed"},
+                    ),
+                ),
                 None,
                 trace,
             )
         trace.append("executed:approved")
         return (
-            coalesce_proposal({**p, "status": "executed", "error_reason": None}),
+            _without_command_queue(
+                coalesce_proposal({**p, "status": "executed", "error_reason": None}),
+            ),
             str(cmd).strip(),
             trace,
         )
@@ -139,20 +157,28 @@ def finalize_approval(
         if not is_command_legal(view_model, cmd_out):
             trace.append("error:illegal_edit")
             return (
-                coalesce_proposal({**p, "status": "error", "error_reason": "illegal_edit"}),
+                _without_command_queue(
+                    coalesce_proposal(
+                        {**p, "status": "error", "error_reason": "illegal_edit"},
+                    ),
+                ),
                 None,
                 trace,
             )
         trace.append("executed:edited")
         return (
-            coalesce_proposal({**p, "status": "executed", "error_reason": None}),
+            _without_command_queue(
+                coalesce_proposal({**p, "status": "executed", "error_reason": None}),
+            ),
             cmd_out,
             trace,
         )
 
     trace.append("error:unsupported_resume")
     return (
-        coalesce_proposal({**p, "status": "error", "error_reason": "unsupported_resume"}),
+        _without_command_queue(
+            coalesce_proposal({**p, "status": "error", "error_reason": "unsupported_resume"}),
+        ),
         None,
         trace,
     )

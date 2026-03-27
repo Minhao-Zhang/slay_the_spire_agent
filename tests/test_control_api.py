@@ -55,7 +55,8 @@ def test_debug_ingress_skips_reprojection_when_state_id_unchanged(monkeypatch) -
     assert calls["n"] == 1
 
 
-def test_manual_command_queue_and_poll() -> None:
+def test_manual_command_queue_and_poll(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SLAY_AGENT_MODE", "manual")
     raw = json.loads((_FIXTURES / "ingress_combat.json").read_text(encoding="utf-8"))
     assert client.post("/api/debug/ingress", json=raw).status_code == 200
 

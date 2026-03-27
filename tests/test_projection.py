@@ -5,6 +5,7 @@ from pathlib import Path
 
 from src.domain.contracts.ingress import parse_ingress_envelope
 from src.domain.contracts.state_id import compute_state_id
+from src.domain.card_token import CARD_TOKEN_LEN
 from src.domain.state_projection import project_state, project_state_from_envelope
 
 _FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -33,6 +34,9 @@ def test_combat_legal_actions_include_end_and_play() -> None:
     cmds = [a.command for a in vm.actions]
     assert "END" in cmds
     assert "PLAY 1 0" in cmds
+    play_row = next(a for a in vm.actions if a.command == "PLAY 1 0")
+    assert play_row.card_uuid_token is not None
+    assert len(play_row.card_uuid_token) == CARD_TOKEN_LEN
 
 
 def test_project_envelope_with_action() -> None:

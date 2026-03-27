@@ -1,6 +1,6 @@
 {
   "in_game": false,
-  "ready_for_command": false,
-  "available_commands": [],
+  "ready_for_command": true,
+  "available_commands": ["play", "state"],
   "game_state": {}
 }

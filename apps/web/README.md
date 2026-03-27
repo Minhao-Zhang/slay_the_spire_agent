@@ -2,6 +2,8 @@
 
 Vite + React + TypeScript + Tailwind. In development, **`/api`** and **`/ws`** are proxied to the Python control API at **`127.0.0.1:8000`** (see `vite.config.ts`).
 
+**Routes:** **`/`** — debug monitor (game projection + agent HITL). **`/explorer`** — History Explorer (`?thread_id=` optional). Start the control API on port 8000 before `npm run dev:web`.
+
 From the **repository root**:
 
 ```bash

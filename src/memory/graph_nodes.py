@@ -6,6 +6,7 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
+from src.domain.run_identity import MENU_THREAD_ID
 from src.memory.runtime import get_app_memory_store
 
 
@@ -36,7 +37,8 @@ def memory_update_node(state: dict[str, Any], config: RunnableConfig) -> dict[st
         log = log[-max_n:]
 
     cls = str(header.get("class") or "unknown")
-    ns = ("strategy", cls)
+    tid = str(conf.get("thread_id") or MENU_THREAD_ID)
+    ns = ("strategy", cls, tid)
     get_app_memory_store().put(
         ns,
         "last_turn",

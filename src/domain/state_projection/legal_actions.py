@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.domain.card_token import card_uuid_token
 from src.domain.contracts.view_model import ActionCandidate, ActionStyle
 
 _COMMAND_BUTTONS: list[tuple[str, str, str, ActionStyle]] = [
@@ -63,7 +64,7 @@ def _play_actions(combat: dict[str, Any]) -> list[ActionCandidate]:
         if not card.get("is_playable") or card.get("cost", 99) > energy:
             continue
         uuid_full = card.get("uuid", "") or ""
-        card_uuid_token = uuid_full[:6] if uuid_full else ""
+        tok = card_uuid_token(str(uuid_full) if uuid_full else None)
         if card.get("has_target"):
             for mi, m in enumerate(monsters):
                 if m.get("is_gone") or m.get("half_dead"):
@@ -73,7 +74,7 @@ def _play_actions(combat: dict[str, Any]) -> list[ActionCandidate]:
                         label=f"{card['name']} → {m['name']}",
                         command=f"PLAY {i + 1} {mi}",
                         style="success",
-                        card_uuid_token=card_uuid_token or None,
+                        card_uuid_token=tok or None,
                         hand_index=i + 1,
                         monster_index=mi,
                     ),
@@ -84,7 +85,7 @@ def _play_actions(combat: dict[str, Any]) -> list[ActionCandidate]:
                     label=card["name"],
                     command=f"PLAY {i + 1}",
                     style="primary",
-                    card_uuid_token=card_uuid_token or None,
+                    card_uuid_token=tok or None,
                     hand_index=i + 1,
                 ),
             )

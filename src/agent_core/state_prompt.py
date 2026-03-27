@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any
+
+from src.domain.card_token import card_uuid_token
 
 
 def _compact_text(text: str, *, limit: int = 160) -> str:
@@ -25,10 +29,9 @@ def _card_line(card: dict[str, Any], index: int, show_token: bool = False) -> st
     if not card.get("is_playable", True):
         parts.append("unplayable")
     if show_token:
-        uuid_full = card.get("uuid", "")
-        token = uuid_full[:6] if uuid_full else ""
+        token = card_uuid_token(str(card.get("uuid") or "") or None)
         if token:
-            parts.append(f"token={token}")
+            parts.append(f"play=PLAY {token}")
     kb = card.get("kb") or {}
     if kb.get("description"):
         parts.append(f"desc={kb['description']}")
@@ -130,4 +133,19 @@ def build_tactical_state_summary(view_model: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["build_tactical_state_summary"]
+def optional_strategy_corpus_block() -> str:
+    """Append curated strategy text when ``SLAY_STRATEGY_CORPUS=1`` and file exists."""
+    v = os.environ.get("SLAY_STRATEGY_CORPUS", "0").strip().lower()
+    if v not in ("1", "true", "yes", "on"):
+        return ""
+    root = Path(__file__).resolve().parents[2]
+    path = root / "data" / "strategy" / "curated_strategy.md"
+    if not path.is_file():
+        return ""
+    text = path.read_text(encoding="utf-8").strip()
+    if len(text) > 16_000:
+        text = text[:16_000] + "\n…"
+    return f"\n\n## Strategy notes (curated)\n{text}\n"
+
+
+__all__ = ["build_tactical_state_summary", "optional_strategy_corpus_block"]

@@ -86,12 +86,24 @@ def test_history_checkpoints_endpoint(monkeypatch) -> None:
     monkeypatch.setenv("SLAY_AGENT_MODE", "manual")
     r = client.post("/api/debug/ingress", json=raw)
     assert r.status_code == 200
-    h = client.get("/api/history/checkpoints", params={"thread_id": "default"})
+    h = client.get("/api/history/checkpoints", params={"thread_id": "run-4242424242424242"})
     assert h.status_code == 200
     body = h.json()
     assert "checkpoints" in body
     assert isinstance(body["checkpoints"], list)
     assert len(body["checkpoints"]) >= 1
+
+    cp_id = body["checkpoints"][0].get("checkpoint_id")
+    assert cp_id
+    det = client.get(
+        "/api/history/checkpoint",
+        params={"thread_id": "run-4242424242424242", "checkpoint_id": str(cp_id)},
+    )
+    assert det.status_code == 200
+    detail = det.json()
+    assert "checkpoint" in detail
+    assert "values" in detail["checkpoint"]
+    assert "state_id" in detail["checkpoint"]["values"]
 
 
 def test_history_events_endpoint(monkeypatch) -> None:

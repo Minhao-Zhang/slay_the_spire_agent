@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-TRACE_SCHEMA_VERSION = 1
+TRACE_SCHEMA_VERSION = 2
 
 StepKind = Literal["ingress", "resume"]
 
@@ -47,6 +47,22 @@ def build_agent_step_event(
         "agent_error": summary.get("agent_error"),
         "resume_kind": resume_kind,
     }
+    sc = summary.get("shortcut_log_tail")
+    if isinstance(sc, list) and sc:
+        evt["shortcut_log_tail"] = sc
+    for key in ("llm_input_tokens", "llm_output_tokens", "llm_total_tokens", "llm_model"):
+        v = summary.get(key)
+        if v is not None:
+            evt[key] = v
+    subs = summary.get("sub_calls")
+    if isinstance(subs, list) and subs:
+        evt["sub_calls"] = subs
+    cf = summary.get("combat_fingerprint")
+    if isinstance(cf, str) and cf:
+        evt["combat_fingerprint"] = cf
+    cq = summary.get("command_queue")
+    if isinstance(cq, list) and cq:
+        evt["command_queue"] = cq[:32]
     if idempotency_key:
         evt["idempotency_key"] = idempotency_key
     return evt

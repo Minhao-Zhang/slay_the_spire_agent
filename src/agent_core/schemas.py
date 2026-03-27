@@ -11,4 +11,5 @@ class StructuredCommandProposal(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
 
     command: str | None = None
+    commands: list[str] | None = None
     rationale: str = Field(default="")

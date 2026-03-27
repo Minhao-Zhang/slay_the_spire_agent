@@ -7,7 +7,7 @@ This folder holds the **greenfield rewrite** plan: target architecture, legacy b
 ## Suggested reading order
 
 1. **Stance and shape:** [`ARCHITECTURE.md`](ARCHITECTURE.md) — program goals, modules, flows, quality alignment.
-2. **What exists today:** [`01-system-inventory.md`](01-system-inventory.md), [`02-feature-catalog.md`](02-feature-catalog.md).
+2. **What exists today:** [`01-system-inventory.md`](01-system-inventory.md), [`02-feature-catalog.md`](02-feature-catalog.md), [`17-legacy-archive-vs-greenfield-parity.md`](17-legacy-archive-vs-greenfield-parity.md) (short-circuits, hashing, multi-command gaps).
 3. **What must stay true:** [`03-contracts-and-data-models.md`](03-contracts-and-data-models.md), [`04-risk-register.md`](04-risk-register.md).
 4. **How we build and ship:** [`TODO.md`](TODO.md) (bootstrap + stage checklist), [`06-engineering-standards.md`](06-engineering-standards.md), [`07-quality-gates.md`](07-quality-gates.md), [`08-migration-plan.md`](08-migration-plan.md).
 5. **Runtime and agents:** [`12-runtime-decision-loop-spec.md`](12-runtime-decision-loop-spec.md), [`11-memory-strategy.md`](11-memory-strategy.md), [`13-strategic-planner-collaboration.md`](13-strategic-planner-collaboration.md).
@@ -36,5 +36,6 @@ This folder holds the **greenfield rewrite** plan: target architecture, legacy b
 | [`14-debugger-frontend-redesign-spec.md`](14-debugger-frontend-redesign-spec.md) | Debugger UX, `apps/web` target stack |
 | [`15-streaming-reasoning-and-output-spec.md`](15-streaming-reasoning-and-output-spec.md) | LLM streaming and debugger contracts |
 | [`16-sqlite-telemetry-and-history-explorer-spec.md`](16-sqlite-telemetry-and-history-explorer-spec.md) | SQLite telemetry schema and history explorer |
+| [`17-legacy-archive-vs-greenfield-parity.md`](17-legacy-archive-vs-greenfield-parity.md) | Legacy vs greenfield parity: short-circuits, hashing, tokens, queues; **§7** extended gap inventory (tools, planner, APIs, eval); **§8** implementation candidates |
 
 Numbered filenames are for stable sorting; there is no `05-*.md` file (content lives in `ARCHITECTURE.md`).

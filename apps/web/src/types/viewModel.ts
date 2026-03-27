@@ -34,7 +34,12 @@ export interface ViewModelDTO {
 }
 
 export interface PendingApprovalDTO {
-  interrupt?: { state_id?: string | null; command?: string | null };
+  interrupt?: {
+    state_id?: string | null;
+    command?: string | null;
+    /** Remaining steps after `command`, executed after approve (same bundle). */
+    command_queue?: string[] | null;
+  };
   thread_id?: string | null;
 }
 
@@ -54,13 +59,18 @@ export interface ProposalDTO {
 
 export interface AgentSnapshotDTO {
   pending_approval?: PendingApprovalDTO | null;
+  /** Post-step queue tail (e.g. after approve); may mirror interrupt.command_queue while awaiting HITL. */
+  command_queue?: string[] | null;
   emitted_command?: string | null;
   proposal?: ProposalDTO | Record<string, unknown> | null;
   failure_streak?: number;
   decision_trace?: string[];
   awaiting_interrupt?: boolean;
   agent_mode?: string;
-  thread_id?: string;
+  thread_id?: string | null;
+  run_seed?: string | null;
+  ingress_derived_thread_id?: string | null;
+  pending_graph_thread_id?: string | null;
   proposer?: string;
   llm_backend?: string;
   agent_error?: string;
@@ -95,4 +105,10 @@ export interface HistoryCheckpointDTO {
   next?: string[];
   metadata?: Record<string, unknown>;
   interrupts?: unknown[];
+  values?: Record<string, unknown>;
+}
+
+export interface HistoryCheckpointDetailResponse {
+  thread_id: string;
+  checkpoint: HistoryCheckpointDTO;
 }

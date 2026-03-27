@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 
 import { useControlPlane } from "../hooks/useControlPlane";
+import {
+  type CommandStepRow,
+  commandStepsForDisplay,
+  isCommandLegal,
+} from "../lib/playResolve";
 import { buildTacticalPrompt } from "../lib/tacticalPrompt";
 import type { ActionDTO, HeaderDTO, ViewModelDTO } from "../types/viewModel";
 
@@ -457,6 +463,17 @@ export function MonitorDashboard() {
   const [editCmd, setEditCmd] = useState("");
   const [pileInspect, setPileInspect] = useState<PileKind | null>(null);
 
+  const hitlQueuedSteps = useMemo(() => {
+    const intr = snapshot?.agent?.pending_approval?.interrupt;
+    if (!intr) return [];
+    const head = intr.command != null ? String(intr.command).trim() : "";
+    const tail = Array.isArray(intr.command_queue)
+      ? intr.command_queue.map((s) => String(s).trim()).filter(Boolean)
+      : [];
+    if (head) return [head, ...tail];
+    return tail;
+  }, [snapshot?.agent?.pending_approval?.interrupt]);
+
   const vm: ViewModelDTO | null = snapshot?.view_model ?? null;
   const stateId = snapshot?.state_id ?? null;
   const combat = vm?.combat as Record<string, unknown> | null | undefined;
@@ -571,6 +588,34 @@ export function MonitorDashboard() {
     };
   }, [proposal]);
 
+  const proposalCmdNotLegalNow = useMemo(() => {
+    const c = parsedModelBlock?.command;
+    if (!c || !actions.length) return false;
+    return !isCommandLegal(actions, c);
+  }, [parsedModelBlock?.command, actions]);
+
+  const resolvedCommandSteps = useMemo((): CommandStepRow[] => {
+    if (!vm?.actions?.length || !proposal) return [];
+    const pm = proposal.parsed_model as Record<string, unknown> | null | undefined;
+    const apiSteps = pm?.command_steps;
+    if (Array.isArray(apiSteps) && apiSteps.length > 0) {
+      return apiSteps as CommandStepRow[];
+    }
+    const cmds = pm?.commands;
+    if (Array.isArray(cmds) && cmds.length > 0) {
+      return commandStepsForDisplay(vm.actions, cmds.map(String));
+    }
+    const single = pm?.command;
+    if (single != null && String(single).trim() !== "") {
+      return commandStepsForDisplay(vm.actions, [String(single).trim()]);
+    }
+    const pc = proposal.command;
+    if (pc != null && String(pc).trim() !== "") {
+      return commandStepsForDisplay(vm.actions, [String(pc).trim()]);
+    }
+    return [];
+  }, [proposal, vm]);
+
   const parsedCopyText = useMemo(() => {
     if (!parsedModelBlock) return "";
     const b = parsedModelBlock;
@@ -585,14 +630,27 @@ export function MonitorDashboard() {
       lines.push(`rationale: ${b.rationale}`);
     }
     if (b.parsedJson) lines.push(b.parsedJson);
+    if (resolvedCommandSteps.length) {
+      lines.push(
+        "resolved_steps:",
+        ...resolvedCommandSteps.map(
+          (r) =>
+            `  ${r.model} => ${r.canonical ?? "—"} (${r.resolve_tag})`,
+        ),
+      );
+    }
     return lines.join("\n");
-  }, [parsedModelBlock]);
+  }, [parsedModelBlock, resolvedCommandSteps]);
 
   const tacticalPromptText = !vm?.actions?.length
     ? "— Load ingress —"
     : tacticalUser;
 
-  const envLine = `${snapshot?.agent?.agent_mode ?? "—"} · ${snapshot?.agent?.proposer ?? "mock"}/${snapshot?.agent?.llm_backend ?? "stub"} · ${snapshot?.agent?.thread_id ?? "—"} · ${stateId ?? "—"}`;
+  const explorerHref =
+    snapshot?.agent?.thread_id != null && snapshot.agent.thread_id !== ""
+      ? `/explorer?thread_id=${encodeURIComponent(snapshot.agent.thread_id)}`
+      : "/explorer";
+  const envLine = `${snapshot?.agent?.agent_mode ?? "—"} · ${snapshot?.agent?.proposer ?? "mock"}/${snapshot?.agent?.llm_backend ?? "stub"} · tid ${snapshot?.agent?.thread_id ?? "—"} · seed ${snapshot?.agent?.run_seed ?? "—"} · ${stateId ?? "—"}`;
   const agentErrorText = snapshot?.agent?.agent_error;
 
   return (
@@ -606,6 +664,12 @@ export function MonitorDashboard() {
               · operator
             </span>
           </span>
+          <Link
+            to={explorerHref}
+            className="rounded border border-sky-800/60 bg-sky-950/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-300 hover:bg-sky-900/50"
+          >
+            History
+          </Link>
           <div
             className={`font-console flex h-6 items-center gap-1.5 rounded border px-2 text-[10px] font-semibold uppercase tracking-wide ${
               connected
@@ -1005,25 +1069,43 @@ export function MonitorDashboard() {
                 <span className="font-console text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-400">
                   Awaiting approval
                 </span>
-                <div className="rounded border border-slate-700/90 bg-slate-950 px-2 py-1.5 font-telemetry text-xs font-semibold tracking-wide text-white">
-                  {String(
-                    snapshot.agent.pending_approval.interrupt?.command ?? "—",
+                <div className="space-y-1 rounded border border-slate-700/90 bg-slate-950 px-2 py-1.5 font-telemetry text-[11px] text-slate-200">
+                  {hitlQueuedSteps.length === 0 ? (
+                    <div className="text-xs font-semibold text-white">—</div>
+                  ) : (
+                    hitlQueuedSteps.map((line, i) => (
+                      <div
+                        key={`${i}-${line}`}
+                        className="flex gap-2 leading-snug"
+                      >
+                        <span className="w-5 shrink-0 text-right font-mono text-[10px] text-slate-500">
+                          {i + 1}.
+                        </span>
+                        <span className="min-w-0 flex-1 font-semibold tracking-wide text-white">
+                          {line}
+                        </span>
+                      </div>
+                    ))
                   )}
                 </div>
+                <p className="font-telemetry text-[9px] leading-snug text-slate-500">
+                  Approve all runs step 1 now; later steps stay in the server queue
+                  and run when legal. Reject all cancels this whole sequence.
+                </p>
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     type="button"
                     className={osdBtnApprove}
                     onClick={() => void resumeAgent("approve")}
                   >
-                    Approve
+                    Approve all
                   </button>
                   <button
                     type="button"
                     className={osdBtnReject}
                     onClick={() => void resumeAgent("reject")}
                   >
-                    Reject
+                    Reject all
                   </button>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -1125,12 +1207,51 @@ export function MonitorDashboard() {
                         </span>
                       </div>
                     ) : null}
+                    {proposalCmdNotLegalNow ? (
+                      <div className="mb-1 text-amber-400/90">
+                        Command is not in the current legal action list (stale
+                        proposal or state mismatch). Send a fresh ingress or use
+                        Retry AI.
+                      </div>
+                    ) : null}
                     {parsedModelBlock.errorReason ? (
                       <div className="mb-1 flex flex-wrap gap-x-2 text-red-300/90">
                         <span className="shrink-0 font-console text-[9px] font-medium uppercase tracking-wide text-slate-500">
                           error
                         </span>
                         <span className="min-w-0">{parsedModelBlock.errorReason}</span>
+                      </div>
+                    ) : null}
+                    {resolvedCommandSteps.length ? (
+                      <div className="mb-1.5 space-y-1 border-b border-slate-800/80 pb-1.5">
+                        <span className="font-console text-[9px] font-medium uppercase tracking-wide text-slate-500">
+                          Resolved (token → mod index)
+                        </span>
+                        <ul className="mt-1 space-y-0.5 pl-2">
+                          {resolvedCommandSteps.map((row, i) => (
+                            <li
+                              key={`${row.model}-${i}`}
+                              className="font-telemetry break-all text-[10px] leading-snug text-slate-400"
+                            >
+                              <span className="text-slate-300">{row.model}</span>
+                              {row.canonical != null && row.canonical !== row.model ? (
+                                <>
+                                  <span className="text-slate-600"> → </span>
+                                  <span className="text-emerald-300/90">
+                                    {row.canonical}
+                                  </span>
+                                </>
+                              ) : row.canonical != null ? (
+                                <span className="text-slate-600"> (mod)</span>
+                              ) : (
+                                <span className="text-amber-400/80"> → ?</span>
+                              )}
+                              <span className="ml-1.5 text-[9px] text-slate-600">
+                                {row.resolve_tag}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     ) : null}
                     {parsedModelBlock.resolveTag &&

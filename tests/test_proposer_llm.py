@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from src.domain.play_resolve import token_play_command_for_action
 from src.decision_engine.graph import build_agent_graph
 from src.decision_engine.proposer import set_llm_gateway_for_tests
 from src.llm_gateway.stub import StubLlmGateway
@@ -40,7 +41,10 @@ def test_auto_lane_llm_proposes_exact_command() -> None:
     from src.domain.state_projection import project_state
 
     vm = project_state(parse_ingress_envelope(raw)).model_dump(mode="json", by_alias=True)
-    target = str(vm["actions"][0]["command"])
+    play = next(a for a in vm["actions"] if token_play_command_for_action(a))
+    target = token_play_command_for_action(play)
+    assert target is not None
+    canonical = str(play["command"])
 
     set_llm_gateway_for_tests(
         StubLlmGateway(
@@ -56,4 +60,4 @@ def test_auto_lane_llm_proposes_exact_command() -> None:
         },
     }
     out = g.invoke({"ingress_raw": raw}, cfg)
-    assert out["emitted_command"] == target
+    assert out["emitted_command"] == canonical

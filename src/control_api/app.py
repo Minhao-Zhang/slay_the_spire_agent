@@ -243,7 +243,7 @@ def poll_instruction() -> dict[str, Any]:
     return {
         "manual_action": manual,
         "approved_action": None,
-        "agent_mode": "manual",
+        "agent_mode": agent_runtime.agent_mode(),
     }
 
 

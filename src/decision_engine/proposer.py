@@ -15,6 +15,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from src.agent_core.pipeline import propose_from_gateway
+from src.agent_core.resolve_display import command_steps_for_model_output
 from src.decision_engine.proposal_logic import mock_propose_command
 from src.llm_gateway.openai_chat import OpenAiChatGateway
 from src.llm_gateway.stub import StubLlmGateway
@@ -59,9 +60,16 @@ def propose_for_view_model(
     if proposer == "llm":
         return propose_from_gateway(view_model, get_llm_gateway())
     cmd, tag = mock_propose_command(view_model)
-    parsed = (
-        {"command": cmd, "rationale": tag, "source": "mock"}
-        if cmd
-        else None
-    )
+    parsed: dict[str, Any] | None
+    if cmd:
+        parsed = {"command": cmd, "rationale": tag, "source": "mock"}
+        if view_model:
+            parsed["command_steps"] = command_steps_for_model_output(
+                view_model,
+                [cmd],
+                rationale=tag,
+            )
+            parsed["command_canonical"] = cmd
+    else:
+        parsed = None
     return cmd, tag, None, parsed

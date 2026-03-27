@@ -22,7 +22,7 @@ After Steps 0–1, work through these in order; each stage has its own **verific
   - Optional later: richer parity with legacy modes (queued sequences).  
 - [x] **Stage 4** — LangGraph shell, checkpointer, `thread_id` (`src/decision_engine/graph.py`, pytest)  
 - [x] **Stage 5** — Decision engine modes and proposal lifecycle (mocked / no live LLM; `decision_engine/graph.py`, `proposal_logic.py`, pytest)  
-- [x] **Stage 6** — HITL via `control_api`: agent graph on ingress, `GET /api/agent/status`, `POST /api/agent/resume`; snapshot + WS include `agent`; debug UI approval panel; `SLAY_AGENT_MODE` / `SLAY_AGENT_THREAD_ID`  
+- [x] **Stage 6** — HITL via `control_api`: agent graph on ingress, `GET /api/agent/status`, `POST /api/agent/resume`; snapshot + WS include `agent`; debug UI approval panel; `SLAY_AGENT_MODE` (per-run `thread_id` from CommunicationMod seed)  
 - [x] **Stage 7** — LLM gateway (`src/llm_gateway/`) + agent core (`src/agent_core/`); `SLAY_PROPOSER=mock|llm`, `SLAY_LLM_BACKEND=stub|openai`; graph uses `propose_for_view_model`  
 - [x] **Stage 8** — Game adapter (`src/game_adapter/`) + `domain.legal_command`; validated enqueue in `control_api`; `main.py` validates poll + idle before emit  
 - [x] **Stage 9** — Memory layer (`src/memory/`: bounded `memory_log` in graph, `InMemoryMemoryStore` namespaces; `SLAY_MEMORY_MAX_TURNS`)  

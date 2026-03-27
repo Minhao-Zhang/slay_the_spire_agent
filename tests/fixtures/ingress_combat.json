@@ -10,6 +10,7 @@
     "max_hp": 80,
     "screen_type": "NONE",
     "screen_state": {},
+    "seed": 4242424242424242,
     "relics": [],
     "potions": [],
     "deck": [],

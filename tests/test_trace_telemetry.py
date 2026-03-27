@@ -5,12 +5,76 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from src.control_api.agent_runtime import summarize_graph_out
 from src.control_api.app import app
 from src.trace_telemetry.schema import TRACE_SCHEMA_VERSION, build_agent_step_event
 from src.trace_telemetry.store import InMemoryTraceStore
 
 client = TestClient(app)
 _FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+
+def test_trace_event_includes_sub_calls_from_proposal_parsed_model() -> None:
+    cfg = {"configurable": {"thread_id": "t2", "agent_mode": "propose"}}
+    out = {
+        "proposal": {
+            "status": "idle",
+            "parsed_model": {
+                "sub_calls": [
+                    {"tool": "inspect_draw_pile", "arguments": {"question": "q"}},
+                ],
+            },
+        },
+        "decision_trace": [],
+        "failure_streak": 0,
+    }
+    summ = summarize_graph_out(out, cfg)
+    e = build_agent_step_event(
+        thread_id="t2",
+        step_seq=2,
+        step_kind="ingress",
+        ts_logical=0.0,
+        state_id="s",
+        summary=summ,
+        resume_kind=None,
+        idempotency_key=None,
+    )
+    subs = e.get("sub_calls")
+    assert isinstance(subs, list) and len(subs) == 1
+    assert subs[0]["tool"] == "inspect_draw_pile"
+
+
+def test_trace_event_includes_llm_from_proposal_parsed_model() -> None:
+    cfg = {"configurable": {"thread_id": "t1", "agent_mode": "propose"}}
+    out = {
+        "proposal": {
+            "status": "idle",
+            "parsed_model": {
+                "command": "SKIP",
+                "llm_model": "gpt-test",
+                "llm_input_tokens": 10,
+                "llm_output_tokens": 3,
+                "llm_total_tokens": 13,
+            },
+        },
+        "decision_trace": [],
+        "failure_streak": 0,
+    }
+    summ = summarize_graph_out(out, cfg)
+    e = build_agent_step_event(
+        thread_id="t1",
+        step_seq=1,
+        step_kind="ingress",
+        ts_logical=0.0,
+        state_id="s",
+        summary=summ,
+        resume_kind=None,
+        idempotency_key=None,
+    )
+    assert e["llm_model"] == "gpt-test"
+    assert e["llm_input_tokens"] == 10
+    assert e["llm_output_tokens"] == 3
+    assert e["llm_total_tokens"] == 13
 
 
 def test_trace_event_schema_version() -> None:

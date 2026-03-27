@@ -3,13 +3,18 @@
  * tactical prompt the LLM receives (KB-enriched state + legal actions).
  */
 
-import type { ViewModelDTO } from "../types/viewModel";
+import type { ActionDTO, ViewModelDTO } from "../types/viewModel";
 
 function compactText(text: string, limit = 160): string {
   const cleaned = (text || "").split(/\s+/).join(" ").trim();
   if (!cleaned) return "";
   if (cleaned.length <= limit) return cleaned;
   return `${cleaned.slice(0, limit - 3).trimEnd()}...`;
+}
+
+function cardUuidTokenPrefix(uuid: unknown): string {
+  const compact = String(uuid ?? "").replace(/-/g, "");
+  return compact.length >= 8 ? compact.slice(0, 8).toLowerCase() : "";
 }
 
 function cardLine(card: Record<string, unknown>, index: number, showToken: boolean): string {
@@ -19,9 +24,8 @@ function cardLine(card: Record<string, unknown>, index: number, showToken: boole
   if (card.has_target) parts.push("targeted");
   if (card.is_playable === false) parts.push("unplayable");
   if (showToken) {
-    const u = String(card.uuid ?? "");
-    const token = u.length >= 6 ? u.slice(0, 6) : "";
-    if (token) parts.push(`token=${token}`);
+    const token = cardUuidTokenPrefix(card.uuid);
+    if (token) parts.push(`play=PLAY ${token}`);
   }
   const kb = (card.kb as Record<string, unknown> | undefined) ?? {};
   const desc = kb.description;
@@ -123,19 +127,29 @@ function tacticalStateSummary(vm: ViewModelDTO): string {
   return lines.join("\n");
 }
 
+function tokenPlayCommandForAction(a: ActionDTO): string | null {
+  const tok = a.card_uuid_token;
+  if (!tok) return null;
+  const cmd = String(a.command ?? "");
+  if (!cmd.toUpperCase().startsWith("PLAY ")) return null;
+  const t = String(tok).trim().toLowerCase();
+  if (a.monster_index != null) return `PLAY ${t} ${Number(a.monster_index)}`;
+  return `PLAY ${t}`;
+}
+
 function legalActionsSummary(vm: ViewModelDTO | null): string {
   if (!vm?.actions?.length) return "";
   return vm.actions
-    .map((a) =>
-      JSON.stringify({
-        label: a.label ?? a.command ?? "?",
-        command: a.command ?? "",
-      }),
-    )
+    .map((a) => {
+      const label = a.label ?? a.command ?? "?";
+      const tokenPlay = tokenPlayCommandForAction(a);
+      const command = tokenPlay ?? (a.command ?? "");
+      return JSON.stringify({ label, command });
+    })
     .join("\n");
 }
 
-const TACTICAL_SYSTEM = `You are a Slay the Spire tactical agent. Reply with a single JSON object only, no markdown, with keys "command" (string, must be exactly one of the listed command strings, or null) and "rationale" (short string).`;
+const TACTICAL_SYSTEM = `You are a Slay the Spire tactical agent. Reply with a single JSON object only, no markdown, with keys "command" (string or null), optional "commands" (array during combat), and "rationale" (short string). Card plays must be PLAY <token> only (use each legal row's "command"); never numeric PLAY n / PLAY n m.`;
 
 export function buildTacticalPrompt(vm: ViewModelDTO | null): {
   system: string;
@@ -145,7 +159,7 @@ export function buildTacticalPrompt(vm: ViewModelDTO | null): {
   const stateBlock = vm ? tacticalStateSummary(vm) : "";
   const user =
     `Current state (KB-enriched descriptions in hand / monsters / relics / potions / powers):\n${stateBlock}\n\n` +
-    `Legal actions (use the exact "command" string):\n${rows}\n\n` +
-    `Respond with: {"command": "...", "rationale": "..."}`;
+    `Legal actions ("command" is what you output; card rows are PLAY <token> only):\n${rows}\n\n` +
+    `Respond with: {"command": "...", "rationale": "..."} or {"commands": ["..."], "rationale": "..."}.`;
   return { system: TACTICAL_SYSTEM, user };
 }

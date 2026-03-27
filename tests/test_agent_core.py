@@ -5,7 +5,7 @@ import json
 import pytest
 
 from src.agent_core.parse import parse_proposal_json
-from src.agent_core.resolve import resolve_to_legal_command
+from src.agent_core.resolve import normalized_command_list, resolve_to_legal_command
 from src.agent_core.schemas import StructuredCommandProposal
 
 
@@ -45,3 +45,20 @@ def test_resolve_fallback_when_illegal() -> None:
 def test_resolve_no_actions() -> None:
     cmd, tag = resolve_to_legal_command({}, StructuredCommandProposal(command="END"))
     assert cmd is None
+
+
+def test_resolve_no_fallback() -> None:
+    vm = {"actions": [{"command": "END", "label": "End"}]}
+    prop = StructuredCommandProposal(command="NOPE", rationale="")
+    cmd, tag = resolve_to_legal_command(vm, prop, allow_fallback=False)
+    assert cmd is None
+    assert "no_legal_match" in tag
+
+
+def test_normalized_command_list_prefers_commands_array() -> None:
+    p = StructuredCommandProposal(
+        command="SKIP",
+        commands=["END", "WAIT"],
+        rationale="",
+    )
+    assert normalized_command_list(p) == ["END", "WAIT"]
