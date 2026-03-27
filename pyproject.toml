@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "slay-the-spire-agent"
 version = "0.1.0"
-description = "Slay the Spire LLM agent (greenfield rewrite)"
+description = "Slay the Spire LLM agent (legacy stack in src/; greenfield archived under archive/greenfield_src)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -19,20 +19,10 @@ dependencies = [
     "uvicorn[standard]",
     "jinja2",
     "openai",
-    "langchain-core",
-    "langchain-openai",
+    "httpx",
     "langgraph",
-    "langgraph-checkpoint-sqlite>=2.0.0",
+    "pydantic>=2",
 ]
-
-[dependency-groups]
-dev = [
-    "pytest>=8",
-]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["."]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]

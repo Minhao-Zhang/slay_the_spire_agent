@@ -1,6 +1,6 @@
 /**
- * Mirrors `src/agent_core/pipeline.py` + `state_prompt.py`: same user/system
- * tactical prompt the LLM receives (KB-enriched state + legal actions).
+ * Approximate tactical summary for the monitor (KB-enriched view model). The live
+ * legacy agent uses `src/agent/prompt_builder.py` — this preview may differ.
  */
 
 import type { ActionDTO, ViewModelDTO } from "../types/viewModel";
@@ -14,7 +14,7 @@ function compactText(text: string, limit = 160): string {
 
 function cardUuidTokenPrefix(uuid: unknown): string {
   const compact = String(uuid ?? "").replace(/-/g, "");
-  return compact.length >= 8 ? compact.slice(0, 8).toLowerCase() : "";
+  return compact.length >= 6 ? compact.slice(0, 6).toLowerCase() : "";
 }
 
 function cardLine(card: Record<string, unknown>, index: number, showToken: boolean): string {

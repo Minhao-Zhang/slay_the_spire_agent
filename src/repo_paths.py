@@ -1,10 +1,11 @@
-"""Repository root for loading packaged data (e.g. ``data/processed``)."""
-
-from __future__ import annotations
+"""Repository root and Python package root (directory containing this file)."""
 
 from pathlib import Path
 
-# This file: <repo>/src/repo_paths.py → repo root is parent of ``src``.
-REPO_ROOT = Path(__file__).resolve().parent.parent
+# This file: <repo>/src/repo_paths.py
+PACKAGE_ROOT = Path(__file__).resolve().parent
+# Backward-compatible alias (prompts live under PACKAGE_ROOT / "agent" / "prompts")
+LEGACY_SRC_ROOT = PACKAGE_ROOT
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
-__all__ = ["REPO_ROOT"]
+__all__ = ["REPO_ROOT", "LEGACY_SRC_ROOT", "PACKAGE_ROOT"]

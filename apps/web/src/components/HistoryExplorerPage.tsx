@@ -69,6 +69,11 @@ export function HistoryExplorerPage() {
           Refresh threads
         </button>
       </header>
+      <div className="border-b border-amber-900/40 bg-amber-950/40 px-4 py-2 text-xs text-amber-100">
+        Legacy backend: thread and checkpoint APIs are stubs. Use the Jinja
+        dashboard at <span className="font-mono">/api/runs</span> on port 8000 for
+        log-based replay when needed.
+      </div>
       {error ? (
         <div className="bg-rose-950 px-4 py-2 text-sm text-rose-200">{error}</div>
       ) : null}

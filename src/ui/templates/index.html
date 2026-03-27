@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spire Agent &mdash; Debug Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+    --bg-deep:#f6f8fa; --bg-panel:#ffffff; --bg-card:#f0f2f5;
+    --accent-primary:#0969da; --accent-success:#1a7f37; --accent-warning:#9a6700;
+    --accent-danger:#cf222e; --accent-purple:#8250df;
+    --text-primary:#1f2328; --text-secondary:#656d76; --text-muted:#8c959f;
+    --border:#d0d7de; --border-subtle:#eaeef2;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.06); --shadow-md:0 2px 8px rgba(0,0,0,.08);
+    --transition:all .15s ease; --radius:6px; --radius-sm:4px;
+}
+*{box-sizing:border-box}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg-deep)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--text-muted)}
+body{font-family:'IBM Plex Sans',system-ui,sans-serif;background:var(--bg-deep);color:var(--text-primary);margin:0;padding:10px;line-height:1.5;font-size:15px}
+.dashboard{display:flex;flex-direction:column;gap:10px;max-width:1920px;margin:0 auto}
+
+/* Section titles */
+.section-title{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.section-title::after{content:'';flex:1;height:1px;background:var(--border-subtle)}
+
+/* Top bar */
+.top-bar{display:flex;justify-content:space-between;align-items:center;background:var(--bg-panel);padding:8px 14px;border-radius:var(--radius);border:1px solid var(--border)}
+.top-bar-left{display:flex;align-items:center;gap:16px}
+.top-bar-title{font-weight:700;font-size:1rem;color:var(--text-primary);font-family:'JetBrains Mono',monospace}
+.top-bar-title span{color:var(--text-muted);font-weight:500}
+#connection-status{font-size:.7rem;font-weight:600;display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:20px;font-family:'JetBrains Mono',monospace}
+#connection-status .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.stats-group{display:flex;gap:24px;flex-wrap:wrap;border-left:1px solid var(--border);padding-left:20px;margin-left:8px}
+.stat-item{display:flex;flex-direction:column;align-items:flex-start;min-width:56px}
+.stat-label{font-size:.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:2px}
+.stat-value{font-weight:700;font-size:1rem;color:var(--text-primary);font-family:'JetBrains Mono',monospace}
+
+/* Replay strip */
+.replay-strip{background:var(--bg-panel);padding:6px 14px;border-radius:var(--radius);border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.replay-strip .section-title{margin-bottom:0}
+.replay-controls{display:flex;align-items:center;gap:8px}
+.replay-controls button{padding:6px 10px;font-size:.8rem}
+.replay-jump{display:flex;align-items:center;gap:4px;background:var(--bg-card);padding:4px 8px;border-radius:var(--radius-sm);border:1px solid var(--border)}
+.replay-jump input{width:44px;border:none;background:transparent;font-family:'JetBrains Mono',monospace;font-weight:600;font-size:.8rem;color:var(--text-primary);text-align:right;outline:none}
+.replay-jump span{font-family:'JetBrains Mono',monospace;color:var(--text-muted);font-size:.8rem}
+
+/* Inventory bar */
+.inventory-bar{display:flex;align-items:center;gap:20px;background:var(--bg-panel);padding:6px 14px;border-radius:var(--radius);border:1px solid var(--border)}
+.inventory-section{display:flex;align-items:center;gap:8px;flex:0 1 auto}
+.inventory-section .stat-label{margin-bottom:0;margin-right:4px}
+.item-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:0;align-items:center}
+.relic-badge,.potion-badge{background:var(--bg-card);padding:4px 10px;border-radius:var(--radius-sm);font-size:.72rem;color:var(--text-secondary);border:1px solid var(--border);font-weight:600;cursor:default;position:relative}
+.relic-badge:hover,.potion-badge:hover{border-color:var(--accent-primary);color:var(--text-primary)}
+.potion-empty{color:var(--text-muted);font-style:italic;border-style:dashed}
+
+/* Tooltip (shared) */
+.has-tooltip{position:relative}
+.tooltip{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:var(--text-primary);color:#fff;padding:6px 10px;border-radius:var(--radius-sm);font-size:.68rem;white-space:normal;width:max-content;max-width:280px;z-index:100;line-height:1.4;pointer-events:none;box-shadow:var(--shadow-md)}
+.has-tooltip:hover .tooltip{display:block}
+.tooltip-label{font-weight:700;margin-bottom:2px;color:var(--accent-primary)}
+
+/* Game area panels — size to content; avoid empty stretch when piles collapsed / few enemies */
+.game-area{display:flex;gap:12px;align-items:flex-start}
+.panel{flex:1;background:var(--bg-panel);padding:14px;border-radius:var(--radius);border:1px solid var(--border)}
+.deck-panel{flex:2;display:flex;flex-direction:column}
+.panel h2,.panel h3{font-size:.85rem;font-weight:600;color:var(--text-primary);margin:0 0 8px 0}
+
+/* Cards */
+.card-container{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:8px}
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;display:flex;flex-direction:column;transition:var(--transition);position:relative;min-height:88px;overflow:hidden;cursor:pointer}
+.card:hover{border-color:var(--accent-primary);box-shadow:0 0 0 1px var(--accent-primary)}
+.card-cost-circle{position:absolute;top:6px;right:6px;width:20px;height:20px;background:var(--accent-primary);color:#fff;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.7rem;font-family:'JetBrains Mono',monospace}
+.card-name{font-weight:700;font-size:.8rem;color:var(--text-primary);padding-right:24px}
+.card-type{font-size:.58rem;color:var(--text-muted);text-transform:uppercase;font-weight:600}
+.card-desc{font-size:.66rem;color:var(--text-secondary);margin-top:4px;border-top:1px solid var(--border-subtle);padding-top:4px;line-height:1.35}
+.card-meta{font-size:.58rem;color:var(--text-muted);margin-top:auto;padding-top:3px}
+
+/* Piles */
+details{background:var(--bg-card);margin-bottom:6px;border-radius:var(--radius-sm);border:1px solid var(--border)}
+summary{padding:6px 10px;cursor:pointer;font-weight:600;font-size:.8rem;display:flex;justify-content:space-between;align-items:center}
+summary:hover{background:var(--bg-panel)}
+.pile-content{padding:8px;overflow-y:auto}
+.deck-panel .card-piles-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.deck-panel .card-piles-grid>details{margin-bottom:0;display:flex;flex-direction:column;min-height:0}
+.deck-panel .card-piles-grid>details>summary{flex-shrink:0}
+.deck-panel .card-piles-grid>details>.pile-content{flex:1;min-height:0;overflow-y:auto;max-height:min(45vh,360px)}
+.pile-count{background:var(--bg-panel);padding:2px 6px;border-radius:var(--radius-sm);font-size:.68rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace}
+
+/* Monsters */
+.monster{margin-bottom:10px;padding:10px;border:1px solid var(--border);background:var(--bg-card);border-radius:var(--radius-sm)}
+.monster-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+.monster-name{color:var(--accent-danger);font-size:.9rem;font-weight:700}
+.hp-bar-bg{width:100%;height:6px;background:var(--border-subtle);border-radius:3px;margin:6px 0;overflow:hidden}
+.hp-bar-fill{height:100%;background:var(--accent-danger);transition:width .2s ease;border-radius:3px}
+.monster-intent{font-weight:600;margin-top:4px;padding:4px 8px;border-radius:var(--radius-sm);background:rgba(248,81,73,.1);border-left:3px solid var(--accent-danger);font-size:.75rem;color:var(--text-secondary)}
+.monster-powers{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.monster-kb{margin-top:6px;font-size:.68rem;color:var(--text-secondary);border-top:1px solid var(--border-subtle);padding-top:6px;line-height:1.4}
+.monster-kb-label{font-size:.58rem;color:var(--text-muted);text-transform:uppercase;font-weight:600;margin-bottom:3px}
+.monster-kb-row{margin-bottom:2px}
+.monster-kb-row strong{color:var(--text-primary);font-weight:600}
+
+/* Powers */
+.power-badge{display:inline-flex;align-items:center;background:rgba(163,113,247,.15);color:var(--accent-purple);padding:2px 6px;border-radius:var(--radius-sm);font-size:.68rem;font-weight:600;margin:0 4px 4px 0;border:1px solid rgba(163,113,247,.3);position:relative}
+.power-badge .tooltip{bottom:calc(100% + 4px)}
+
+/* Buttons */
+button{padding:6px 12px;border-radius:var(--radius-sm);font-family:inherit;font-weight:600;cursor:pointer;transition:var(--transition);border:1px solid var(--border);font-size:.78rem;background:var(--bg-card);color:var(--text-primary)}
+button:hover:not(:disabled){border-color:var(--text-muted)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.btn-primary{background:var(--accent-primary);color:#fff;border-color:var(--accent-primary)}
+.btn-primary:hover:not(:disabled){filter:brightness(1.05)}
+.btn-secondary:hover:not(:disabled){border-color:var(--accent-primary);color:var(--accent-primary)}
+.btn-danger{background:#fff1f0;color:var(--accent-danger);border-color:var(--accent-danger)}
+.btn-danger:hover:not(:disabled){background:#ffebe9}
+.btn-success{background:var(--accent-success);color:#fff;border-color:var(--accent-success)}
+.btn-success:hover:not(:disabled){filter:brightness(1.05)}
+
+/* Map */
+#map-viz-container{position:relative;width:100%;height:100%;min-height:320px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow-y:auto;margin-top:10px;padding:16px}
+.map-line{stroke:var(--border);stroke-width:1;stroke-dasharray:2}
+.map-line.highlight{stroke:var(--accent-primary);stroke-width:2;stroke-dasharray:none}
+.map-node{position:absolute;width:28px;height:28px;margin-left:-14px;margin-top:-14px;border-radius:50%;background:var(--bg-panel);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-weight:700;font-size:.75rem;z-index:2}
+.map-node.current{background:var(--accent-warning);border-color:#fff;color:#fff}
+.map-node.available{border-color:var(--accent-primary);color:var(--accent-primary);cursor:pointer}
+.map-node.available:hover{background:var(--accent-primary);color:#fff;transform:scale(1.08)}
+.map-node.boss{width:52px;height:52px;margin-left:-26px;margin-top:-26px;font-size:1.2rem;background:#fff1f0;border-color:var(--accent-danger);color:var(--accent-danger)}
+
+/* Full-width screen panel */
+#fullscreen-screen{font-size:.85rem;color:var(--text-secondary)}
+#fs-title{font-size:1rem;font-weight:700;border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:10px;color:var(--text-primary)}
+.event-option{background:var(--bg-card);padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border);transition:var(--transition);cursor:pointer;margin-bottom:8px}
+.event-option:hover:not(.disabled){border-color:var(--accent-primary);background:var(--bg-panel)}
+.event-option.disabled{opacity:.5;cursor:not-allowed}
+
+/* Footer */
+.footer-panel{background:var(--bg-panel);padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border)}
+.footer-panel .section-title{margin-bottom:6px}
+#valid-operations-container{min-height:40px}
+#manual-action-input{flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:'JetBrains Mono',monospace;font-size:.85rem;background:var(--bg-panel);color:var(--text-primary);outline:none}
+#manual-action-input:focus{border-color:var(--accent-primary)}
+
+/* Debug section */
+.debug-section{background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.debug-section>summary{padding:8px 14px;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;background:transparent;border:none}
+.debug-section>summary::-webkit-details-marker{display:none}
+.debug-section>summary::before{content:'\25B6';font-size:.6rem;transition:transform .15s ease}
+.debug-section[open]>summary::before{transform:rotate(90deg)}
+.debug-section .debug-content{padding:12px 14px;border-top:1px solid var(--border);font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--text-muted)}
+
+/* AI panel */
+.ai-panel{display:flex;flex-direction:column;gap:8px;flex:1.4;min-width:320px}
+.ai-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ai-status{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)}
+.ai-mode-select{padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-panel);color:var(--text-primary);font-family:'JetBrains Mono',monospace;font-size:.75rem}
+.ai-trace-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;display:flex;flex-direction:column;gap:8px;min-height:220px}
+.ai-trace-meta{display:flex;gap:10px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:.68rem;color:var(--text-muted)}
+.ai-trace-label{font-size:.7rem;color:var(--text-muted);text-transform:uppercase;font-weight:700;letter-spacing:.05em}
+.ai-trace-pre{margin:0;background:var(--bg-panel);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:8px;white-space:pre-wrap;max-height:140px;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--text-secondary);line-height:1.45}
+.ai-inline-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.ai-edit-input{flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:'JetBrains Mono',monospace;font-size:.78rem;background:var(--bg-panel);color:var(--text-primary)}
+.ai-link{font-size:.72rem;color:var(--accent-primary);text-decoration:none;font-weight:600}
+.ai-link:hover{text-decoration:underline}
+
+/* --- Comprehensive Log Panel --- */
+.log-panel{display:flex;flex-direction:column;flex:1.2;min-width:220px}
+.log-toolbar{display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap}
+.log-filter-btn{padding:3px 10px;font-size:.68rem;border-radius:10px;cursor:pointer;font-weight:600;border:1px solid var(--border);background:var(--bg-card);color:var(--text-muted);transition:var(--transition)}
+.log-filter-btn.active{background:var(--text-primary);color:#fff;border-color:var(--text-primary)}
+.log-filter-btn[data-cat="state"].active{background:var(--accent-primary);border-color:var(--accent-primary)}
+.log-filter-btn[data-cat="action"].active{background:var(--accent-success);border-color:var(--accent-success)}
+.log-filter-btn[data-cat="system"].active{background:var(--accent-warning);border-color:var(--accent-warning)}
+.log-filter-btn[data-cat="error"].active{background:var(--accent-danger);border-color:var(--accent-danger)}
+.log-filter-btn[data-cat="replay"].active{background:var(--accent-purple);border-color:var(--accent-purple)}
+.log-count-badge{font-size:.62rem;font-family:'JetBrains Mono',monospace;color:var(--text-muted);margin-left:auto}
+.log-clear-btn{font-size:.62rem;padding:2px 6px;cursor:pointer;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-card);color:var(--text-muted)}
+.log-clear-btn:hover{border-color:var(--accent-danger);color:var(--accent-danger)}
+.log-box{height:220px;overflow-y:auto;background:var(--bg-card);padding:8px 10px;border-radius:var(--radius-sm);font-family:'JetBrains Mono',monospace;font-size:.7rem;border:1px solid var(--border)}
+.log-entry{margin-bottom:2px;padding-bottom:2px;border-bottom:1px solid var(--border-subtle);color:var(--text-secondary);display:flex;gap:6px;align-items:baseline}
+.log-time{color:var(--text-muted);font-size:.6rem;flex-shrink:0}
+.log-cat{font-size:.58rem;font-weight:700;text-transform:uppercase;padding:1px 4px;border-radius:2px;flex-shrink:0}
+.log-cat-state{background:rgba(9,105,218,.12);color:var(--accent-primary)}
+.log-cat-action{background:rgba(26,127,55,.12);color:var(--accent-success)}
+.log-cat-system{background:rgba(154,103,0,.12);color:var(--accent-warning)}
+.log-cat-error{background:rgba(207,34,46,.12);color:var(--accent-danger)}
+.log-cat-replay{background:rgba(130,80,223,.12);color:var(--accent-purple)}
+.log-cat-info{background:var(--bg-card);color:var(--text-muted)}
+.log-msg{word-break:break-word}
+.log-entry.level-warn .log-msg{color:var(--accent-warning)}
+.log-entry.level-error .log-msg{color:var(--accent-danger);font-weight:600}
+.log-entry[hidden]{display:none}
+
+/* --- Layout classes to replace inline styles --- */
+.replay-strip-left{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.footer-inner{display:grid;grid-template-columns:2fr 1.4fr 1.2fr;gap:16px}
+.valid-ops-box{margin:8px 0;border:1px solid var(--border);padding:10px;border-radius:var(--radius-sm);background:var(--bg-card)}
+.player-powers-inner{display:flex;align-items:center;gap:12px}
+</style>
+</head>
+<body>
+<div class="dashboard">
+    <!-- Top status strip -->
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <div class="top-bar-title">Spire Agent <span>&middot; Debug</span></div>
+            <div id="connection-status"><span class="dot"></span> Connecting...</div>
+            <a class="ai-link" href="/ai" target="_blank" rel="noreferrer">AI Agent Debugger</a>
+        </div>
+        <div class="stats-group">
+            <div class="stat-item"><span class="stat-label">Class</span><span class="stat-value" id="player-class">-</span></div>
+            <div class="stat-item"><span class="stat-label">Floor</span><span class="stat-value" id="player-floor">-</span></div>
+            <div class="stat-item"><span class="stat-label">HP</span><span class="stat-value" id="player-hp">- / -</span></div>
+            <div class="stat-item"><span class="stat-label">Gold</span><span class="stat-value" id="player-gold">-</span></div>
+            <div class="stat-item"><span class="stat-label">Energy</span><span class="stat-value" id="player-energy">-</span></div>
+            <div class="stat-item"><span class="stat-label">Turn</span><span class="stat-value" id="combat-turn">-</span></div>
+        </div>
+    </div>
+
+    <!-- Replay -->
+    <div class="replay-strip">
+        <div class="replay-strip-left">
+            <span class="section-title" style="margin-bottom:0">Replay</span>
+            <select id="run-selector" class="btn-secondary" style="padding:6px 10px;font-size:.78rem;min-width:180px"><option value="">Select run...</option></select>
+            <button class="btn-primary" style="padding:6px 12px;font-size:.78rem" onclick="loadSelectedRun()">Load</button>
+            <span id="replay-status" style="font-size:.72rem;font-weight:600;color:var(--text-muted)"></span>
+        </div>
+        <div class="replay-controls">
+            <button id="btn-prev-10" class="btn-secondary" onclick="replayStep(-10)" title="Back 10" disabled>&minus;10</button>
+            <button id="btn-prev" class="btn-secondary" onclick="replayStep(-1)">&larr;</button>
+            <div class="replay-jump">
+                <input type="number" id="jump-input" value="1" min="1" step="1"
+                       onchange="jumpToState(this.value)" onkeypress="if(event.key==='Enter')jumpToState(this.value)">
+                <span>/</span><span id="replay-total">0</span>
+            </div>
+            <button id="btn-next" class="btn-secondary" onclick="replayStep(1)">&rarr;</button>
+            <button id="btn-next-10" class="btn-secondary" onclick="replayStep(10)" title="Forward 10" disabled>+10</button>
+        </div>
+    </div>
+
+    <!-- Debug -->
+    <details class="debug-section" id="debug-section">
+        <summary>Debug &amp; signals</summary>
+        <div class="debug-content" id="debug-content">No additional data yet.</div>
+    </details>
+
+    <!-- Powers bar (combat only) -->
+    <div id="player-powers-bar" class="panel" style="display:none;padding:8px 14px;border-left:3px solid var(--accent-purple)">
+        <div class="player-powers-inner">
+            <span class="stat-label" style="min-width:90px;color:var(--accent-purple)">Powers</span>
+            <div id="player-powers" class="item-list"></div>
+        </div>
+    </div>
+
+    <!-- Inventory -->
+    <div class="inventory-bar">
+        <div class="inventory-section">
+            <span class="stat-label">Relics</span>
+            <div id="relics-list" class="item-list"><span class="potion-empty">Awaiting state...</span></div>
+        </div>
+        <div class="inventory-section">
+            <span class="stat-label">Potions</span>
+            <div id="potions-list" class="item-list"><span class="potion-empty">Awaiting state...</span></div>
+        </div>
+    </div>
+
+    <!-- Full-width screen panel (shown for all non-combat screens: MAP, EVENT, SHOP, etc.) -->
+    <div id="fullscreen-screen" class="panel" style="display:none">
+        <h2 id="fs-title" style="margin:0 0 8px 0"></h2>
+        <div id="fs-body"></div>
+    </div>
+
+    <!-- Main game area -->
+    <div class="game-area">
+        <div class="panel deck-panel" id="deck-panel" style="display:flex;flex-direction:column">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+                <h2 style="margin:0">Player hand</h2>
+                <span class="pile-count" id="hand-count">0</span>
+            </div>
+            <div class="card-container" id="hand-list">
+                <div style="color:var(--text-muted);font-style:italic;font-size:.82rem">Awaiting combat...</div>
+            </div>
+            <div style="margin-top:16px;display:flex;flex-direction:column">
+                <h3 class="section-title">Card piles</h3>
+                <div class="card-piles-grid">
+                    <details><summary>Draw Pile <span class="pile-count" id="draw-count">0</span></summary><div class="pile-content card-container" id="draw-list"></div></details>
+                    <details><summary>Discard Pile <span class="pile-count" id="discard-count">0</span></summary><div class="pile-content card-container" id="discard-list"></div></details>
+                    <details><summary>Exhaust Pile <span class="pile-count" id="exhaust-count">0</span></summary><div class="pile-content card-container" id="exhaust-list"></div></details>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel right-panel" style="flex:.7;display:flex;flex-direction:column;min-width:0">
+            <div id="monsters-panel" style="overflow:auto">
+                <h2 style="margin-bottom:8px">Enemies</h2>
+                <div id="monster-list"><div style="color:var(--text-muted);font-style:italic;font-size:.82rem">Field is clear...</div></div>
+            </div>
+            <!-- context-wrapper kept as hidden placeholder for layout compatibility -->
+            <div id="context-wrapper" style="display:none"></div>
+        </div>
+    </div>
+
+    <!-- Footer: Actions & Logs -->
+    <div class="footer-panel">
+        <div class="footer-inner">
+            <div>
+                <h2 class="section-title">Manual Actions</h2>
+                <div id="valid-operations-container" class="item-list valid-ops-box">
+                    <div style="color:var(--text-muted);font-style:italic;font-size:.78rem">Waiting for action availability...</div>
+                </div>
+                <div style="display:flex;gap:8px">
+                    <input type="text" id="manual-action-input" placeholder="e.g. PLAY 1 0, END">
+                    <button class="btn-primary" onclick="submitManualAction()">Send</button>
+                </div>
+            </div>
+            <div class="ai-panel">
+                <h2 class="section-title">AI Control</h2>
+                <div class="ai-toolbar">
+                    <span class="ai-status" id="ai-status">Idle</span>
+                    <select id="ai-mode-select" class="ai-mode-select" onchange="updateAiMode(this.value)">
+                        <option value="manual">manual</option>
+                        <option value="propose">propose</option>
+                        <option value="auto">auto</option>
+                    </select>
+                    <span id="ai-validation" class="ai-status">No proposal</span>
+                </div>
+                <div class="ai-trace-box">
+                    <div class="ai-trace-meta">
+                        <span id="ai-state-id">state: -</span>
+                        <span id="ai-decision-id">decision: -</span>
+                    </div>
+                    <div>
+                        <div class="ai-trace-label">Response</div>
+                        <pre id="ai-response" class="ai-trace-pre">Awaiting AI proposal...</pre>
+                    </div>
+                    <div class="ai-inline-row">
+                        <span class="ai-trace-label">Parsed Decision</span>
+                        <code id="ai-final-action">-</code>
+                    </div>
+                    <div class="ai-inline-row">
+                        <input type="text" id="ai-edit-action-input" class="ai-edit-input" placeholder="Edit approved action before send">
+                        <button class="btn-success" onclick="approveAiAction()">Approve</button>
+                        <button class="btn-danger" onclick="rejectAiAction()">Reject</button>
+                    </div>
+                </div>
+            </div>
+            <div class="log-panel">
+                <h2 class="section-title">Session log</h2>
+                <div class="log-toolbar">
+                    <button class="log-filter-btn active" data-cat="all" onclick="toggleLogFilter('all')">All</button>
+                    <button class="log-filter-btn active" data-cat="state" onclick="toggleLogFilter('state')">State</button>
+                    <button class="log-filter-btn active" data-cat="action" onclick="toggleLogFilter('action')">Action</button>
+                    <button class="log-filter-btn active" data-cat="system" onclick="toggleLogFilter('system')">System</button>
+                    <button class="log-filter-btn active" data-cat="error" onclick="toggleLogFilter('error')">Error</button>
+                    <button class="log-filter-btn active" data-cat="replay" onclick="toggleLogFilter('replay')">Replay</button>
+                    <span class="log-count-badge" id="log-count">0</span>
+                    <button class="log-clear-btn" onclick="clearLogs()">Clear</button>
+                </div>
+                <div class="log-box" id="log-box"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+/* ================================================================
+   Spire Agent Dashboard — Thin Renderer
+   All game logic is handled by the Python state_processor.
+   This script only renders the pre-computed view model.
+   ================================================================ */
+
+// --- Logging subsystem ---
+const logBox = document.getElementById('log-box');
+const logCountEl = document.getElementById('log-count');
+let logCount = 0;
+let logAutoScroll = true;
+const logFilters = { state: true, action: true, system: true, error: true, replay: true, info: true };
+
+logBox.addEventListener('scroll', () => {
+    const atBottom = logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight < 30;
+    logAutoScroll = atBottom;
+});
+
+function log(message, category = 'info', level = 'info') {
+    const entry = document.createElement('div');
+    entry.className = 'log-entry level-' + level;
+    entry.dataset.cat = category;
+    const t = new Date().toLocaleTimeString();
+    entry.innerHTML =
+        '<span class="log-time">[' + t + ']</span>' +
+        '<span class="log-cat log-cat-' + category + '">' + category + '</span>' +
+        '<span class="log-msg">' + esc(message) + '</span>';
+    if (!logFilters[category]) entry.hidden = true;
+    logBox.appendChild(entry);
+    logCount++;
+    logCountEl.textContent = logCount;
+    if (logAutoScroll) logBox.scrollTop = logBox.scrollHeight;
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function toggleLogFilter(cat) {
+    if (cat === 'all') {
+        const allBtn = document.querySelector('.log-filter-btn[data-cat="all"]');
+        const isActive = allBtn.classList.contains('active');
+        document.querySelectorAll('.log-filter-btn').forEach(b => {
+            if (isActive) b.classList.remove('active'); else b.classList.add('active');
+        });
+        for (const k in logFilters) logFilters[k] = !isActive;
+    } else {
+        const btn = document.querySelector('.log-filter-btn[data-cat="' + cat + '"]');
+        btn.classList.toggle('active');
+        logFilters[cat] = btn.classList.contains('active');
+        const allActive = Object.values(logFilters).every(v => v);
+        const allBtn = document.querySelector('.log-filter-btn[data-cat="all"]');
+        if (allActive) allBtn.classList.add('active'); else allBtn.classList.remove('active');
+    }
+    logBox.querySelectorAll('.log-entry').forEach(e => {
+        e.hidden = !logFilters[e.dataset.cat];
+    });
+}
+
+function clearLogs() {
+    logBox.innerHTML = '';
+    logCount = 0;
+    logCountEl.textContent = '0';
+    log('Log cleared', 'system');
+}
+
+// --- WebSocket ---
+const ws = new WebSocket('ws://' + location.host + '/ws');
+const statusSpan = document.getElementById('connection-status');
+let latestAgentTrace = null;
+
+function renderAiRuntimeStatus(payload) {
+    if (!payload) return;
+    document.getElementById('ai-status').textContent = payload.status || 'unknown';
+    const styleSuffix = payload.api_style ? ' via ' + payload.api_style : '';
+    document.getElementById('ai-validation').textContent =
+        (payload.message || 'No AI status available') + styleSuffix;
+}
+
+ws.onopen = () => {
+    statusSpan.style.color = 'var(--accent-success)';
+    statusSpan.innerHTML = '<span class="dot"></span> Connected';
+    log('WebSocket connected', 'system');
+};
+ws.onclose = () => {
+    statusSpan.style.color = 'var(--accent-danger)';
+    statusSpan.innerHTML = '<span class="dot"></span> Disconnected';
+    log('WebSocket disconnected', 'system', 'warn');
+};
+ws.onerror = (e) => { log('WebSocket error: ' + e.type, 'error', 'error'); };
+
+ws.onmessage = (event) => {
+    try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'state') {
+            if (!isReplayMode) {
+                renderViewModel(data.payload.vm);
+                log('State update received (floor ' + (data.payload.vm.header?.floor || '?') + ')', 'state');
+            }
+        } else if (data.type === 'action') {
+            const actionText = typeof data.payload === 'string' ? data.payload : data.payload.action;
+            log('Action executed: ' + actionText, 'action');
+        } else if (data.type === 'log') {
+            log(data.payload, 'system');
+        } else if (data.type === 'agent_trace') {
+            latestAgentTrace = data.payload;
+            renderAgentTrace(data.payload);
+        } else if (data.type === 'ai_status') {
+            renderAiRuntimeStatus(data.payload);
+        } else if (data.type === 'agent_mode') {
+            document.getElementById('ai-mode-select').value = data.payload.mode;
+        }
+    } catch (e) {
+        log('Failed to parse WS message: ' + e.message, 'error', 'error');
+    }
+};
+
+async function fetchAiState() {
+    try {
+        const r = await fetch('/api/ai/state');
+        const d = await r.json();
+        document.getElementById('ai-mode-select').value = d.mode || 'manual';
+        renderAiRuntimeStatus({
+            status: d.ai_status,
+            message: d.ai_status_message,
+            api_style: d.ai_api_style
+        });
+        if (d.latest_trace) {
+            latestAgentTrace = d.latest_trace;
+            renderAgentTrace(d.latest_trace);
+        }
+    } catch (e) {
+        log('Failed to fetch AI state: ' + e.message, 'error', 'error');
+    }
+}
+fetchAiState();
+
+// --- Replay ---
+let replayStates = [];
+let currentReplayIndex = 0;
+let isReplayMode = false;
+
+async function fetchAvailableRuns() {
+    try {
+        const r = await fetch('/api/runs');
+        const d = await r.json();
+        const s = document.getElementById('run-selector');
+        if (d.runs && d.runs.length > 0) {
+            d.runs.forEach(run => { const o = document.createElement('option'); o.value = run; o.textContent = run; s.appendChild(o); });
+            log('Loaded ' + d.runs.length + ' available run(s)', 'system');
+        }
+    } catch (e) { log('Failed to fetch runs: ' + e.message, 'error', 'error'); }
+}
+fetchAvailableRuns();
+
+async function loadSelectedRun() {
+    const run = document.getElementById('run-selector').value;
+    if (!run) return;
+    const status = document.getElementById('replay-status');
+    status.textContent = 'Loading...';
+    log('Loading replay run: ' + run, 'replay');
+    try {
+        const r = await fetch('/api/runs/' + run);
+        const d = await r.json();
+        if (d.states && d.states.length > 0) {
+            replayStates = d.states;
+            currentReplayIndex = 0;
+            isReplayMode = true;
+            status.textContent = 'Active: ' + run;
+            status.style.color = 'var(--accent-success)';
+            log('Replay loaded: ' + d.states.length + ' states', 'replay');
+            renderReplayState();
+        }
+    } catch (e) {
+        status.textContent = 'Load Failed';
+        status.style.color = 'var(--accent-danger)';
+        log('Replay load failed: ' + e.message, 'error', 'error');
+    }
+}
+
+function replayStep(delta) {
+    if (!isReplayMode) return;
+    currentReplayIndex = Math.max(0, Math.min(replayStates.length - 1, currentReplayIndex + delta));
+    renderReplayState();
+}
+
+function renderReplayState() {
+    const total = replayStates.length;
+    const current = currentReplayIndex + 1;
+    document.getElementById('replay-total').textContent = total;
+    document.getElementById('jump-input').value = current;
+    document.getElementById('jump-input').max = total;
+    document.getElementById('btn-prev').disabled = currentReplayIndex <= 0;
+    document.getElementById('btn-prev-10').disabled = currentReplayIndex <= 0;
+    document.getElementById('btn-next').disabled = currentReplayIndex >= total - 1;
+    document.getElementById('btn-next-10').disabled = currentReplayIndex >= total - 1;
+    const vm = replayStates[currentReplayIndex];
+    renderViewModel(vm);
+    const action = vm.last_action;
+    log('Replay step ' + current + '/' + total + (action ? ' | action: ' + action : ''), 'replay');
+}
+
+function jumpToState(val) {
+    if (!isReplayMode || !replayStates.length) return;
+    let idx = parseInt(val) - 1;
+    if (isNaN(idx)) return;
+    currentReplayIndex = Math.max(0, Math.min(replayStates.length - 1, idx));
+    renderReplayState();
+}
+
+// --- Manual actions ---
+async function submitManualAction() {
+    const input = document.getElementById('manual-action-input');
+    const action = input.value.trim();
+    if (!action) return;
+    await submitActionToServer(action, 'Manual');
+    input.value = '';
+}
+
+async function submitActionToServer(actionText, logPrefix) {
+    try {
+        const r = await fetch('/submit_action', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: actionText })
+        });
+        if (r.ok) log('[' + logPrefix + ']: ' + actionText, 'action');
+        else log('Submit failed (' + r.status + '): ' + actionText, 'error', 'error');
+    } catch (e) { log('Submit error: ' + e.message, 'error', 'error'); }
+}
+
+window.submitManualActionBtn = function(a) { submitActionToServer(a, 'Button'); };
+document.getElementById('manual-action-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') submitManualAction(); });
+
+async function updateAiMode(mode) {
+    try {
+        const r = await fetch('/api/ai/mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode })
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        log('AI mode set to ' + mode, 'system');
+    } catch (e) {
+        log('Failed to update AI mode: ' + e.message, 'error', 'error');
+    }
+}
+
+async function approveAiAction() {
+    const edited = document.getElementById('ai-edit-action-input').value.trim();
+    try {
+        const r = await fetch('/api/ai/approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: edited })
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        document.getElementById('ai-edit-action-input').value = '';
+        log('AI action approved' + (edited ? ' with manual edit' : ''), 'action');
+    } catch (e) {
+        log('AI approve failed: ' + e.message, 'error', 'error');
+    }
+}
+
+async function rejectAiAction() {
+    try {
+        const r = await fetch('/api/ai/reject', { method: 'POST' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        log('AI action rejected', 'action');
+    } catch (e) {
+        log('AI reject failed: ' + e.message, 'error', 'error');
+    }
+}
+
+function renderAgentTrace(trace) {
+    if (!trace) return;
+    document.getElementById('ai-status').textContent = trace.status || 'idle';
+    document.getElementById('ai-validation').textContent =
+        trace.validation && trace.validation.valid
+            ? 'Valid action'
+            : ((trace.validation && trace.validation.error) || 'No validated action');
+    document.getElementById('ai-state-id').textContent = 'state: ' + (trace.state_id || '-');
+    document.getElementById('ai-decision-id').textContent = 'decision: ' + (trace.decision_id || '-');
+    document.getElementById('ai-response').textContent =
+        trace.response_text || 'No response yet.';
+    document.getElementById('ai-final-action').textContent = trace.final_decision || ((trace.parsed_proposal || {}).chosen_command || '-');
+}
+
+// --- Card HTML builder ---
+function cardHTML(card, index) {
+    const up = card.upgrades > 0 ? '+' : '';
+    const desc = card.kb ? card.kb.description : '';
+    return '<div class="card">' +
+        '<div class="card-cost-circle">' + card.cost + '</div>' +
+        '<div class="card-name">' + esc(card.name) + up + '</div>' +
+        '<div class="card-type">' + esc(card.type || '') + '</div>' +
+        (desc ? '<div class="card-desc">' + esc(desc) + '</div>' : '') +
+        '<div class="card-meta">Idx: ' + index + (card.is_playable ? '' : ' &middot; Unplayable') + '</div>' +
+        '</div>';
+}
+
+// --- Pile renderer ---
+function renderPile(cards, containerId, countId) {
+    const c = document.getElementById(containerId);
+    const ct = document.getElementById(countId);
+    if (!cards) return;
+    ct.textContent = cards.length;
+    c.innerHTML = cards.length === 0
+        ? '<div style="padding:10px;font-size:.8rem;color:#888">Empty</div>'
+        : cards.map((card, i) => cardHTML(card, i + 1)).join('');
+}
+
+// --- Relic badge with tooltip ---
+function relicBadgeHTML(relic) {
+    const kb = relic.kb;
+    if (kb && kb.description) {
+        return '<span class="relic-badge has-tooltip">' + esc(relic.name) +
+            '<span class="tooltip"><div class="tooltip-label">' + esc(relic.name) + '</div>' + esc(kb.description) + '</span></span>';
+    }
+    return '<span class="relic-badge">' + esc(relic.name) + '</span>';
+}
+
+// --- Potion badge with tooltip ---
+function potionBadgeHTML(pot) {
+    const isEmpty = pot.id === 'Potion Slot';
+    const cls = 'potion-badge' + (isEmpty ? ' potion-empty' : '') + (pot.kb ? ' has-tooltip' : '');
+    let html = '<span class="' + cls + '">' + esc(pot.name);
+    if (pot.kb && pot.kb.effect) {
+        html += '<span class="tooltip"><div class="tooltip-label">' + esc(pot.name) + '</div>' + esc(pot.kb.effect) + '</span>';
+    }
+    return html + '</span>';
+}
+
+// --- Power badge with tooltip ---
+function powerBadgeHTML(power) {
+    const label = esc(power.name) + ' (' + power.amount + ')';
+    if (power.kb && power.kb.effect) {
+        return '<span class="power-badge has-tooltip">' + label +
+            '<span class="tooltip"><div class="tooltip-label">' + esc(power.name) +
+            ' [' + esc(power.kb.type || '') + ']</div>' + esc(power.kb.effect) + '</span></span>';
+    }
+    return '<span class="power-badge">' + label + '</span>';
+}
+
+// --- Monster renderer ---
+function monsterHTML(m) {
+    const hpPct = m.max_hp > 0 ? (m.current_hp / m.max_hp) * 100 : 0;
+    let html = '<div class="monster">' +
+        '<div class="monster-header"><span class="monster-name">' + esc(m.name) + '</span>' +
+        '<span style="font-family:\'JetBrains Mono\';font-size:.8rem;color:var(--text-secondary)">' +
+        esc(m.hp_display || (m.current_hp + '/' + m.max_hp)) + ' HP</span></div>' +
+        '<div class="hp-bar-bg"><div class="hp-bar-fill" style="width:' + hpPct + '%"></div></div>' +
+        '<div class="monster-intent">' + esc(m.intent_display || m.intent || '?') + '</div>';
+
+    if (m.powers && m.powers.length > 0) {
+        html += '<div class="monster-powers">' + m.powers.map(p => powerBadgeHTML(p)).join('') + '</div>';
+    }
+
+    if (m.kb) {
+        html += '<div class="monster-kb">';
+        if (m.kb.hp_range) html += '<div class="monster-kb-row"><strong>HP:</strong> ' + esc(m.kb.hp_range) + '</div>';
+        if (m.kb.moves && m.kb.moves.length) html += '<div class="monster-kb-row"><strong>Moves:</strong> ' + m.kb.moves.map(x => esc(x)).join(', ') + '</div>';
+        if (m.kb.notes) html += '<div class="monster-kb-row"><strong>Notes:</strong> ' + esc(m.kb.notes) + '</div>';
+        if (m.kb.ai) html += '<div class="monster-kb-row"><strong>AI:</strong> ' + esc(m.kb.ai) + '</div>';
+        html += '</div>';
+    }
+
+    return html + '</div>';
+}
+
+// --- Map renderer (SVG layout stays client-side) ---
+function renderFullMap(mapData) {
+    const layer = document.getElementById('map-nodes-layer');
+    const svg = document.getElementById('map-svg');
+    const container = document.getElementById('map-viz-container');
+    layer.innerHTML = ''; svg.innerHTML = '';
+    if (!mapData || !mapData.nodes || mapData.nodes.length === 0) return;
+
+    const nodes = mapData.nodes;
+    const current = mapData.current_node;
+    const next = mapData.next_nodes || [];
+    const boss = mapData.boss_available;
+
+    let maxCol = 6;
+    let maxY = 0;
+    nodes.forEach(n => { if (n.y > maxY) maxY = n.y; });
+    const rowH = 70;
+    const colW = container.clientWidth / (maxCol + 1);
+    const totalH = (maxY + 2) * rowH;
+    svg.setAttribute('height', totalH);
+    layer.style.height = totalH + 'px';
+
+    const getPos = (x, y) => ({ x: (x + 0.5) * colW, y: totalH - (y + 1) * rowH });
+
+    nodes.forEach(n => {
+        const p = getPos(n.x, n.y);
+        if (n.children) n.children.forEach(c => {
+            const ep = getPos(c.x, c.y);
+            const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            l.setAttribute('x1', p.x); l.setAttribute('y1', p.y); l.setAttribute('x2', ep.x); l.setAttribute('y2', ep.y);
+            const isNext = current && n.x === current.x && n.y === current.y && next.some(nx => nx.x === c.x && nx.y === c.y);
+            l.setAttribute('class', isNext ? 'map-line highlight' : 'map-line');
+            svg.appendChild(l);
+        });
+    });
+
+    nodes.forEach(n => {
+        const p = getPos(n.x, n.y);
+        const d = document.createElement('div');
+        d.className = 'map-node';
+        if (current && n.x === current.x && n.y === current.y) d.classList.add('current');
+        const nIdx = next.findIndex(nx => nx.x === n.x && nx.y === n.y);
+        if (nIdx !== -1) { d.classList.add('available'); d.onclick = () => submitManualActionBtn('choose ' + nIdx); }
+        d.style.left = p.x + 'px'; d.style.top = p.y + 'px'; d.textContent = n.symbol;
+        layer.appendChild(d);
+    });
+
+    const bp = getPos(3, maxY + 1);
+    const b = document.createElement('div');
+    b.className = 'map-node boss';
+    if (boss) { b.classList.add('available'); b.onclick = () => submitManualActionBtn('choose boss'); }
+    b.style.left = bp.x + 'px'; b.style.top = bp.y + 'px'; b.textContent = '\u2620';
+    layer.appendChild(b);
+}
+
+// --- Main render function: consumes view model from state_processor ---
+let lastVMJson = '';
+
+function renderViewModel(vm) {
+    const vmJson = JSON.stringify(vm);
+    if (vmJson === lastVMJson) return;
+    lastVMJson = vmJson;
+
+    if (!vm) return;
+    const h = vm.header || {};
+
+    // -- header --
+    document.getElementById('player-class').textContent = h['class'] || '-';
+    document.getElementById('player-floor').textContent = h.floor ?? '-';
+    document.getElementById('player-gold').textContent = h.gold ?? '-';
+    document.getElementById('player-hp').textContent = h.hp_display || '-';
+    document.getElementById('player-energy').textContent = h.energy ?? '-';
+    document.getElementById('combat-turn').textContent = h.turn ?? '-';
+
+    // -- actions --
+    const ops = document.getElementById('valid-operations-container');
+    if (vm.actions && vm.actions.length > 0) {
+        ops.innerHTML = vm.actions.map(a => {
+            const cls = 'btn-' + (a.style || 'secondary');
+            return '<button class="' + cls + '" onclick="submitManualActionBtn(\'' + esc(a.command).replace(/'/g, "\\'") + '\')">' + esc(a.label) + '</button>';
+        }).join(' ');
+    } else {
+        ops.innerHTML = '<span style="color:#888;font-size:.8rem">No commands available</span>';
+    }
+
+    if (!vm.in_game) {
+        document.getElementById('player-powers-bar').style.display = 'none';
+        return;
+    }
+
+    // -- inventory --
+    const inv = vm.inventory || {};
+    document.getElementById('relics-list').innerHTML =
+        (inv.relics && inv.relics.length) ? inv.relics.map(r => relicBadgeHTML(r)).join('') : 'None';
+    document.getElementById('potions-list').innerHTML =
+        (inv.potions && inv.potions.length) ? inv.potions.map(p => potionBadgeHTML(p)).join('') : 'None';
+
+    // -- combat --
+    const pb = document.getElementById('player-powers-bar');
+    const combat = vm.combat;
+    if (combat) {
+        pb.style.display = 'block';
+        document.getElementById('player-powers').innerHTML =
+            (combat.player_powers && combat.player_powers.length)
+                ? combat.player_powers.map(p => powerBadgeHTML(p)).join('') : 'None';
+        renderPile(combat.hand, 'hand-list', 'hand-count');
+        renderPile(combat.draw_pile, 'draw-list', 'draw-count');
+        renderPile(combat.discard_pile, 'discard-list', 'discard-count');
+        renderPile(combat.exhaust_pile, 'exhaust-list', 'exhaust-count');
+
+        const visibleMonsters = (combat.monsters || []).filter(m => !m.is_gone);
+        document.getElementById('monster-list').innerHTML =
+            visibleMonsters.length ? visibleMonsters.map(m => monsterHTML(m)).join('') :
+            '<div style="color:var(--text-muted);font-style:italic;font-size:.82rem">Field is clear...</div>';
+    } else {
+        pb.style.display = 'none';
+    }
+
+    // -- screen / context --
+    const dck = document.getElementById('deck-panel');
+    const mst = document.getElementById('monsters-panel');
+    const fsPanel = document.getElementById('fullscreen-screen');
+    const fsTitle = document.getElementById('fs-title');
+    const fsBody = document.getElementById('fs-body');
+    const gameArea = document.querySelector('.game-area');
+
+    const screen = vm.screen;
+
+    if (screen) {
+        // Any screen: hide game-area, show full-width panel
+        gameArea.style.display = 'none';
+        fsPanel.style.display = 'block';
+        fsTitle.textContent = screen.title || screen.type;
+        fsBody.innerHTML = '';
+
+        const c = screen.content || {};
+
+        if (screen.type === 'MAP') {
+            fsBody.innerHTML =
+                '<div id="map-pos" style="font-family:\'JetBrains Mono\';font-size:.75rem;color:var(--accent-primary);margin-bottom:8px">' +
+                esc(c.current_pos_label || 'Selecting first node') + '</div>' +
+                '<div id="map-viz-container" style="min-height:500px">' +
+                '<svg id="map-svg" style="position:absolute;top:0;left:0;width:100%;pointer-events:none;z-index:1"></svg>' +
+                '<div id="map-nodes-layer"></div></div>' +
+                (c.boss_available ? '<div style="margin-top:12px"><button class="btn-danger" style="width:100%" onclick="submitManualActionBtn(\'choose boss\')">Challenge Boss</button></div>' : '');
+            if (vm.map) renderFullMap(vm.map);
+
+        } else if (screen.type === 'EVENT') {
+            let html = '<div style="font-size:.9rem;color:var(--text-secondary);margin-bottom:12px">' + esc(c.body_text || '') + '</div>';
+            if (c.event_kb) {
+                html += '<div style="margin-bottom:12px;font-size:.72rem;color:var(--accent-purple);font-style:italic">KB: ' +
+                    esc(c.event_kb.name || '') + (c.event_kb.is_shrine ? ' (Shrine)' : '') + '</div>';
+            }
+            html += '<h3 class="section-title">Options</h3>';
+            html += (c.options || []).map(o =>
+                '<div class="event-option ' + (o.disabled ? 'disabled' : '') + '" onclick="' +
+                (o.disabled ? '' : "submitManualActionBtn('choose " + o.choice_index + "')") + '">' +
+                '<div>' + esc(o.label) + '</div>' +
+                '<div style="font-size:.85rem;color:#666">' + esc(o.text || '') + '</div></div>'
+            ).join('');
+            fsBody.innerHTML = html;
+
+        } else if (screen.type === 'COMBAT_REWARD') {
+            fsBody.innerHTML = '<div style="display:grid;gap:8px;max-width:600px">' +
+                (c.rewards || []).map(r =>
+                    '<div class="event-option" onclick="submitManualActionBtn(\'choose ' + r.choice_index + '\')">' +
+                    esc(r.label) +
+                    (r.relic_kb ? '<div style="font-size:.72rem;color:var(--text-muted);margin-top:2px">' + esc(r.relic_kb.description || '') + '</div>' : '') +
+                    '</div>'
+                ).join('') + '</div>';
+
+        } else if (screen.type === 'CARD_REWARD') {
+            fsBody.innerHTML =
+                '<div class="card-container" style="justify-content:center;gap:20px;padding:20px 0">' +
+                (c.cards || []).map((card, i) =>
+                    '<div style="cursor:pointer" onclick="submitManualActionBtn(\'choose ' + i + '\')">' + cardHTML(card, i) + '</div>'
+                ).join('') + '</div>';
+
+        } else if (screen.type === 'REST') {
+            fsBody.innerHTML = '<div style="display:grid;gap:8px;max-width:600px;margin:0 auto">' +
+                (c.rest_options || []).map(o =>
+                    '<div class="event-option" onclick="submitManualActionBtn(\'choose ' + o.choice_name + '\')">' +
+                    '<div style="font-weight:700">' + esc(o.label) + '</div>' +
+                    '<div style="font-size:.8rem;opacity:.8">' + esc(o.description || '') + '</div></div>'
+                ).join('') + '</div>';
+
+        } else if (screen.type === 'GRID' || screen.type === 'HAND_SELECT') {
+            const reasonHtml = (screen.type === 'HAND_SELECT' && c.screen_reason)
+                ? '<div style="margin-bottom:8px;font-size:.9rem;color:var(--text-secondary)">' + esc(c.screen_reason) + '</div>'
+                : '';
+            fsBody.innerHTML =
+                reasonHtml +
+                '<div style="margin-bottom:10px;font-weight:700;color:var(--accent-primary)">Pick ' + (c.num_cards || 1) + ' card(s)</div>' +
+                '<div class="card-container" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:15px">' +
+                (c.cards || []).map((card, i) =>
+                    '<div style="cursor:pointer" onclick="submitManualActionBtn(\'choose ' + i + '\')">' + cardHTML(card, i) + '</div>'
+                ).join('') + '</div>';
+
+        } else if (screen.type === 'SHOP_ROOM') {
+            fsBody.innerHTML = '<div style="display:grid;gap:8px;max-width:400px;margin:0 auto">' +
+                (c.choices || []).map(ch =>
+                    '<div class="event-option" onclick="submitManualActionBtn(\'choose ' + ch + '\')">' +
+                    '<div style="font-weight:700;font-size:1.1rem">' + esc(ch.charAt(0).toUpperCase() + ch.slice(1)) + '</div></div>'
+                ).join('') + '</div>';
+
+        } else if (screen.type === 'SHOP_SCREEN') {
+            let html = '<div style="margin-bottom:15px;font-weight:700">Gold: ' + (c.gold ?? '?') + '</div><div style="display:grid;gap:20px">';
+            html += '<div><h3 style="font-size:.8rem;text-transform:uppercase">Cards</h3>' +
+                '<div class="card-container" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">' +
+                (c.shop_cards || []).map((card, i) =>
+                    '<div style="cursor:pointer" onclick="submitManualActionBtn(\'choose ' + esc(card.name) + '\')">' +
+                    cardHTML(card, i) +
+                    '<div style="text-align:center;font-weight:700;color:var(--accent-primary);margin-top:5px">' + (card.price ?? '?') + ' Gold</div></div>'
+                ).join('') + '</div></div>';
+            html += '<div><h3 style="font-size:.8rem;text-transform:uppercase">Relics</h3>' +
+                '<div style="display:flex;flex-wrap:wrap;gap:10px">' +
+                (c.shop_relics || []).map(r =>
+                    '<div class="event-option" style="flex:1;min-width:120px" onclick="submitManualActionBtn(\'choose ' + esc(r.name) + '\')">' +
+                    '<div style="font-weight:700">' + esc(r.name) + '</div>' +
+                    (r.kb ? '<div style="font-size:.68rem;color:var(--text-muted)">' + esc(r.kb.description || '') + '</div>' : '') +
+                    '<div style="color:var(--accent-primary)">' + (r.price ?? '?') + ' Gold</div></div>'
+                ).join('') + '</div></div>';
+            html += '<div><h3 style="font-size:.8rem;text-transform:uppercase">Potions</h3>' +
+                '<div style="display:flex;flex-wrap:wrap;gap:10px">' +
+                (c.shop_potions || []).map(p =>
+                    '<div class="event-option" style="flex:1;min-width:120px" onclick="submitManualActionBtn(\'choose ' + esc(p.name) + '\')">' +
+                    '<div style="font-weight:700">' + esc(p.name) + '</div>' +
+                    '<div style="color:var(--accent-primary)">' + (p.price ?? '?') + ' Gold</div></div>'
+                ).join('') + '</div></div>';
+            if (c.purge_available) {
+                html += '<div><button class="btn-danger" style="width:100%;max-width:300px" onclick="submitManualActionBtn(\'choose purge\')">Remove Card (' + (c.purge_cost ?? '?') + ' Gold)</button></div>';
+            }
+            html += '</div>';
+            fsBody.innerHTML = html;
+
+        } else if (screen.type === 'CHEST') {
+            fsBody.innerHTML =
+                '<div style="max-width:400px;margin:0 auto"><div style="margin-bottom:12px;color:var(--text-secondary)">' + esc(c.chest_type || 'Chest') + '</div>' +
+                '<button class="btn-primary" style="width:100%" onclick="submitManualActionBtn(\'choose open\')">Open Chest</button></div>';
+
+        } else if (screen.type === 'BOSS_REWARD') {
+            fsBody.innerHTML =
+                '<div style="display:grid;gap:8px;max-width:600px;margin:0 auto">' +
+                (c.relics || []).map((r, i) =>
+                    '<div class="event-option" onclick="submitManualActionBtn(\'choose ' + esc(r.name) + '\')">' +
+                    '<div style="font-weight:700">' + esc(r.name) + '</div>' +
+                    (r.kb ? '<div style="font-size:.72rem;color:var(--text-muted)">' + esc(r.kb.description || '') + '</div>' : '') +
+                    '</div>'
+                ).join('') + '</div>';
+
+        } else if (screen.type === 'GAME_OVER') {
+            fsBody.innerHTML =
+                '<div style="text-align:center;max-width:400px;margin:0 auto">' +
+                '<div style="font-size:1.5rem;font-weight:700;margin-bottom:12px">' + (c.victory ? 'Victory!' : 'Defeated') + '</div>' +
+                '<div style="color:var(--text-secondary)">Score: ' + (c.score ?? 0) + '</div></div>';
+
+        } else {
+            let html = '<div style="display:grid;gap:8px;max-width:600px;margin:0 auto">';
+            if (c.choices && c.choices.length > 0) {
+                html += c.choices.map((ch, i) =>
+                    '<div class="event-option" onclick="submitManualActionBtn(\'choose ' + i + '\')">' + esc(ch) + '</div>'
+                ).join('');
+            } else {
+                html += '<div style="color:var(--text-muted);font-style:italic">No choices available</div>';
+            }
+            html += '</div>';
+            fsBody.innerHTML = html;
+        }
+    } else {
+        // Combat or no screen: show normal game-area layout
+        fsPanel.style.display = 'none';
+        gameArea.style.display = 'flex';
+        dck.style.display = 'block';
+        mst.style.display = 'block';
+    }
+}
+
+log('Dashboard initialized', 'system');
+</script>
+</body>
+</html>

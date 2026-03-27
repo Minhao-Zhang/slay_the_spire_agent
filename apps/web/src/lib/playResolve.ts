@@ -1,10 +1,11 @@
 /**
- * Mirrors `src/domain/play_resolve.py` + display enrichment for the operator UI.
+ * Token PLAY resolution for the operator UI (aligned with legacy `state_processor`:
+ * `card_uuid_token` = first 6 hex chars of card UUID).
  */
 
 import type { ActionDTO } from "../types/viewModel";
 
-export const CARD_TOKEN_LEN = 8;
+export const CARD_TOKEN_LEN = 6;
 
 export function isNumericPlay(command: string): boolean {
   const parts = command.trim().toUpperCase().split(/\s+/);

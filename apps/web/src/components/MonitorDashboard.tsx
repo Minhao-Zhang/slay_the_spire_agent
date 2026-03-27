@@ -650,7 +650,7 @@ export function MonitorDashboard() {
     snapshot?.agent?.thread_id != null && snapshot.agent.thread_id !== ""
       ? `/explorer?thread_id=${encodeURIComponent(snapshot.agent.thread_id)}`
       : "/explorer";
-  const envLine = `${snapshot?.agent?.agent_mode ?? "—"} · ${snapshot?.agent?.proposer ?? "mock"}/${snapshot?.agent?.llm_backend ?? "stub"} · tid ${snapshot?.agent?.thread_id ?? "—"} · seed ${snapshot?.agent?.run_seed ?? "—"} · ${stateId ?? "—"}`;
+  const envLine = `${snapshot?.agent?.agent_mode ?? "—"} · ${snapshot?.agent?.proposer ?? "legacy"}/${snapshot?.agent?.llm_backend ?? "off"} · tid ${snapshot?.agent?.thread_id ?? "n/a"} · seed ${snapshot?.agent?.run_seed ?? "n/a"} · ${stateId ?? "—"}`;
   const agentErrorText = snapshot?.agent?.agent_error;
 
   return (
@@ -666,6 +666,7 @@ export function MonitorDashboard() {
           </span>
           <Link
             to={explorerHref}
+            title="History explorer (no LangGraph threads in legacy mode; page opens for future log-backed views)"
             className="rounded border border-sky-800/60 bg-sky-950/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-300 hover:bg-sky-900/50"
           >
             History
@@ -897,9 +898,9 @@ export function MonitorDashboard() {
                     Copy
                   </button>
                   <span className="max-w-[11rem] truncate font-console text-[10px] font-normal normal-case tracking-normal text-slate-500 md:max-w-md">
-                    {snapshot?.agent?.proposer === "llm"
-                      ? "Matches agent_core payload."
-                      : "Mock — reference only."}
+                    {snapshot?.agent?.proposer === "legacy"
+                      ? "Debug summary — legacy prompt_builder may differ."
+                      : "Proposer status from server."}
                   </span>
                 </div>
               </div>
@@ -964,7 +965,7 @@ export function MonitorDashboard() {
                 snapshot?.ingress == null ||
                 typeof snapshot.ingress !== "object"
               }
-              title="Re-run the agent on the current ingress (new LLM call). If awaiting approval, rejects the pending proposal first."
+              title="Legacy: clears a pending approval if any; a new AI proposal requires the next game update (CommunicationMod), not a server graph replay."
               className={osdBtnRetry}
               onClick={() => void retryAgent()}
             >
@@ -1089,8 +1090,9 @@ export function MonitorDashboard() {
                   )}
                 </div>
                 <p className="font-telemetry text-[9px] leading-snug text-slate-500">
-                  Approve all runs step 1 now; later steps stay in the server queue
-                  and run when legal. Reject all cancels this whole sequence.
+                  Approve runs the first command and leaves further steps to the game
+                  process queue when the model proposed a sequence. Reject cancels
+                  this proposal.
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   <button
@@ -1163,9 +1165,10 @@ export function MonitorDashboard() {
                   value={llmRaw}
                   className="font-telemetry custom-scroll min-h-0 flex-1 resize-none border-0 bg-transparent p-2 text-[10px] leading-relaxed text-slate-400 outline-none"
                   placeholder={
-                    snapshot?.agent?.proposer === "mock"
-                      ? "Mock proposer — no raw LLM text. Switch to llm to see gateway output here."
-                      : "Raw model response will appear after the agent proposes."
+                    snapshot?.agent?.llm_backend === "off" ||
+                    snapshot?.agent?.llm_backend === ""
+                      ? "AI disabled or no API — enable LLM in legacy config for raw output here."
+                      : "Raw model output from legacy trace when available."
                   }
                   spellCheck={false}
                 />
