@@ -20,13 +20,20 @@ export interface HeaderDTO {
   turn?: string;
 }
 
+/** Non-combat UI: ``state_processor._build_screen`` → ``{ type, title, content }``. */
+export interface GameScreenDTO {
+  type?: string;
+  title?: string;
+  content?: Record<string, unknown>;
+}
+
 export interface ViewModelDTO {
   schema_version?: number;
   in_game: boolean;
   header?: HeaderDTO | null;
   actions: ActionDTO[];
   combat?: Record<string, unknown> | null;
-  screen?: Record<string, unknown> | null;
+  screen?: GameScreenDTO | null;
   inventory?: Record<string, unknown> | null;
   map?: Record<string, unknown> | null;
   sidebar?: Record<string, unknown> | null;

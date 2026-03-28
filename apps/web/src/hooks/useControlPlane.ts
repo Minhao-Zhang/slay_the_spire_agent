@@ -40,7 +40,12 @@ export function useControlPlane() {
   const replayActiveRef = useRef(false);
 
   const pushLog = useCallback((kind: string, msg: string) => {
-    const t = new Date().toLocaleTimeString();
+    const t = new Date().toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
     setLogLines((prev) => {
       const base = prev.slice(-200);
       if (
@@ -259,6 +264,24 @@ export function useControlPlane() {
     [fetchSnapshot, pushLog],
   );
 
+  const setAgentMode = useCallback(
+    async (mode: "manual" | "propose" | "auto") => {
+      const r = await fetch("/api/ai/mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        pushLog("ERROR", JSON.stringify(err));
+        return;
+      }
+      pushLog("SYSTEM", `Agent mode → ${mode}`);
+      void fetchSnapshot();
+    },
+    [fetchSnapshot, pushLog],
+  );
+
   const retryAgent = useCallback(async () => {
     const r = await fetch("/api/agent/retry", {
       method: "POST",
@@ -332,6 +355,7 @@ export function useControlPlane() {
     fetchSnapshot,
     postIngress,
     queueManualCommand,
+    setAgentMode,
     resumeAgent,
     retryAgent,
     pushLog,

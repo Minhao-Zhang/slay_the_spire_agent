@@ -11,10 +11,12 @@ import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 
 import { useControlPlane } from "../hooks/useControlPlane";
+import { GameScreenPanel } from "./gameScreen/GameScreenPanel";
 import {
   labeledTooltip,
   monsterTooltip,
 } from "../lib/entityKb";
+import { cardNameClass } from "../lib/cardTypeStyle";
 import { buildTacticalPrompt } from "../lib/tacticalPrompt";
 import type {
   ActionDTO,
@@ -301,6 +303,7 @@ function EnemyCard({ m }: { m: Record<string, unknown> }) {
   return (
     <HoverTip
       tip={tip}
+      side="bottom"
       className="flex flex-col overflow-hidden rounded border border-slate-700 bg-slate-800/30"
     >
         <div className="flex items-center justify-between border-b border-slate-700/50 bg-slate-800/50 px-3 py-1.5">
@@ -328,7 +331,7 @@ function EnemyCard({ m }: { m: Record<string, unknown> }) {
                   `${String(p.name ?? "?")}${p.stacks != null ? ` (${String(p.stacks)})` : ""}`,
                   p,
                 )}
-                side="top"
+                side="bottom"
                 className="inline-flex"
               >
                 <span className="inline-flex cursor-help rounded border border-purple-700/50 bg-purple-900/40 px-1.5 py-0.5 text-xs text-purple-300">
@@ -341,14 +344,6 @@ function EnemyCard({ m }: { m: Record<string, unknown> }) {
         </div>
     </HoverTip>
   );
-}
-
-function cardNameClass(type: unknown): string {
-  const t = String(type ?? "").toUpperCase();
-  if (t === "ATTACK") return "font-bold text-red-400";
-  if (t === "SKILL") return "font-bold text-blue-400";
-  if (t === "POWER") return "font-bold text-purple-400";
-  return "font-bold text-slate-300";
 }
 
 function CardTable({ cards }: { cards: Record<string, unknown>[] }) {
@@ -365,11 +360,8 @@ function CardTable({ cards }: { cards: Record<string, unknown>[] }) {
           <th className="w-8 border-b border-slate-800 py-2 px-3 text-center font-semibold">
             $
           </th>
-          <th className="w-32 border-b border-slate-800 py-2 px-3 font-semibold">
+          <th className="w-36 border-b border-slate-800 py-2 px-3 font-semibold">
             Name
-          </th>
-          <th className="w-24 border-b border-slate-800 py-2 px-3 font-semibold">
-            Type
           </th>
           <th className="w-full border-b border-slate-800 py-2 px-3 font-semibold">
             Text
@@ -386,11 +378,15 @@ function CardTable({ cards }: { cards: Record<string, unknown>[] }) {
                   {String(c.cost ?? "—")}
                 </span>
               </td>
-              <td className={`py-2 px-3 ${cardNameClass(c.type)}`}>
+              <td
+                className={`py-2 px-3 ${cardNameClass(c.type)}`}
+                title={
+                  String(c.type ?? "").trim()
+                    ? `Type: ${String(c.type)}`
+                    : undefined
+                }
+              >
                 {String(c.name ?? "?")}
-              </td>
-              <td className="py-2 px-3 text-sm text-slate-500">
-                {String(c.type ?? "—")}
               </td>
               <td className="max-w-md py-2 px-3 break-words text-slate-300">
                 {cardTableText(c)}
@@ -468,12 +464,67 @@ type LlmRailStatus =
       pulse?: boolean;
     };
 
+const AGENT_MODES_UI = ["manual", "propose", "auto"] as const;
+
+function normalizeAgentMode(
+  raw: string | undefined,
+): (typeof AGENT_MODES_UI)[number] {
+  const s = String(raw ?? "manual").toLowerCase();
+  return AGENT_MODES_UI.includes(s as (typeof AGENT_MODES_UI)[number])
+    ? (s as (typeof AGENT_MODES_UI)[number])
+    : "manual";
+}
+
+function AgentModeBar({
+  modeRaw,
+  onSelect,
+  disabled,
+}: {
+  modeRaw: string | undefined;
+  onSelect: (m: "manual" | "propose" | "auto") => void;
+  disabled?: boolean;
+}) {
+  const current = normalizeAgentMode(modeRaw);
+  return (
+    <div
+      className="flex w-full shrink-0 overflow-hidden rounded border border-slate-600/90 font-console text-[11px] font-semibold uppercase tracking-[0.12em]"
+      role="group"
+      aria-label="Agent mode"
+    >
+      {AGENT_MODES_UI.map((m) => (
+        <button
+          key={m}
+          type="button"
+          disabled={disabled}
+          title={
+            m === "manual"
+              ? "Operator only — AI does not run."
+              : m === "propose"
+                ? "AI proposes; approve before execution."
+                : "AI runs without approval when allowed."
+          }
+          className={
+            "min-w-0 flex-1 border-r border-slate-700/80 px-1 py-1.5 last:border-r-0 transition " +
+            (current === m
+              ? "bg-sky-900/85 text-sky-100"
+              : "bg-slate-950/90 text-slate-500 hover:bg-slate-800/90 hover:text-slate-300")
+          }
+          onClick={() => onSelect(m)}
+        >
+          {m}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function MonitorDashboard() {
   const {
     snapshot,
     connected,
     logLines,
     queueManualCommand,
+    setAgentMode,
     resumeAgent,
     retryAgent,
     pushLog,
@@ -510,6 +561,7 @@ export function MonitorDashboard() {
   const [pileInspect, setPileInspect] = useState<PileKind | null>(null);
 
   const vm: ViewModelDTO | null = snapshot?.view_model ?? null;
+  const showScreenPanel = Boolean(vm?.screen);
   const stateId = snapshot?.state_id ?? null;
 
   const agentForRail = useMemo((): AgentSnapshotDTO | undefined => {
@@ -931,7 +983,13 @@ export function MonitorDashboard() {
     snapshot?.agent?.thread_id != null && snapshot.agent.thread_id !== ""
       ? `/explorer?thread_id=${encodeURIComponent(snapshot.agent.thread_id)}`
       : "/explorer";
-  const envLine = `${agentForRail?.agent_mode ?? "—"} · ${agentForRail?.proposer ?? "legacy"}/${agentForRail?.llm_backend ?? "off"} · tid ${agentForRail?.thread_id ?? "n/a"} · seed ${agentForRail?.run_seed ?? "n/a"} · ${stateId ?? "—"}`;
+  const aiRailTitle =
+    "LLM / replay backend for this row. Legacy dashboard snapshot does not populate thread_id; state is the current frame id. Run seed comes from game_state.seed on the current ingress frame.";
+  const runSeedDisplay =
+    snapshot?.agent?.run_seed != null &&
+    String(snapshot.agent.run_seed).trim() !== ""
+      ? String(snapshot.agent.run_seed)
+      : "n/a";
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-gradient-to-b from-slate-900 via-[#0a0d11] to-[#06080a] text-sm text-slate-300 select-none">
@@ -972,74 +1030,85 @@ export function MonitorDashboard() {
           </div>
 
           <div
-            className="flex flex-wrap items-center gap-1.5 border-l border-slate-600/70 pl-4"
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 border-l border-slate-600/70 pl-4"
             title="Choosing a run loads its first frame automatically. Prev/Next POST each JSON to /api/debug/ingress. While a run is selected, WebSocket snapshots are ignored so replay is not overwritten. Clear the run to resume live updates."
           >
-            <span className={osdStatCaption}>Replay</span>
-            <select
-              value={replayPickerRun}
-              onChange={(e) => {
-                const v = e.target.value;
-                setReplayPickerRun(v);
-                if (v) void loadReplayRun(v);
-                else clearReplaySelection();
-              }}
-              disabled={replayBusy}
-              className="font-console h-7 max-w-[14rem] rounded border border-slate-700 bg-slate-950/80 px-2 text-xs font-medium text-slate-200 outline-none"
-              aria-label="Log run directory under logs/"
+            <div
+              className="flex min-w-0 items-center gap-1.5"
+              title="Run seed from agent snapshot (reproducibility). Shows n/a when the backend does not set it."
             >
-              <option value="">Select run…</option>
-              {replayRuns.map((run) => (
-                <option key={run} value={run}>
-                  {run}
-                </option>
-              ))}
-            </select>
-            {replayFiles.length > 0 ? (
-              <>
-                <button
-                  type="button"
-                  disabled={replayBusy || replayIndex <= 0}
-                  className={osdBtnGhost}
-                  onClick={() => replaySeek(-10)}
-                  title="Back 10 frames"
-                >
-                  −10
-                </button>
-                <button
-                  type="button"
-                  disabled={replayBusy || replayIndex <= 0}
-                  className={osdBtnGhost}
-                  onClick={() => replaySeek(-1)}
-                >
-                  Prev
-                </button>
-                <span className="font-telemetry min-w-[4.5rem] text-center text-xs tabular-nums text-slate-400">
-                  {replayIndex + 1}/{replayFiles.length}
-                </span>
-                <button
-                  type="button"
-                  disabled={
-                    replayBusy || replayIndex >= replayFiles.length - 1
-                  }
-                  className={osdBtnGhost}
-                  onClick={() => replaySeek(1)}
-                >
-                  Next
-                </button>
-                <button
-                  type="button"
-                  disabled={
-                    replayBusy || replayIndex >= replayFiles.length - 1
-                  }
-                  className={osdBtnGhost}
-                  onClick={() => replaySeek(10)}
-                  title="Forward 10 frames"
-                >
-                  +10
-                </button>
-              </>
-            ) : null}
+              <span className={osdStatCaption}>Seed</span>
+              <span className="font-telemetry max-w-[12rem] truncate text-xs tabular-nums text-slate-400">
+                {runSeedDisplay}
+              </span>
+            </div>
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <span className={osdStatCaption}>Replay</span>
+              <select
+                value={replayPickerRun}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setReplayPickerRun(v);
+                  if (v) void loadReplayRun(v);
+                  else clearReplaySelection();
+                }}
+                disabled={replayBusy}
+                className="font-console h-7 max-w-[14rem] rounded border border-slate-700 bg-slate-950/80 px-2 text-xs font-medium text-slate-200 outline-none"
+                aria-label="Log run directory under logs/"
+              >
+                <option value="">Select run…</option>
+                {replayRuns.map((run) => (
+                  <option key={run} value={run}>
+                    {run}
+                  </option>
+                ))}
+              </select>
+              {replayFiles.length > 0 ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={replayBusy || replayIndex <= 0}
+                    className={osdBtnGhost}
+                    onClick={() => replaySeek(-10)}
+                    title="Back 10 frames"
+                  >
+                    −10
+                  </button>
+                  <button
+                    type="button"
+                    disabled={replayBusy || replayIndex <= 0}
+                    className={osdBtnGhost}
+                    onClick={() => replaySeek(-1)}
+                  >
+                    Prev
+                  </button>
+                  <span className="font-telemetry min-w-[4.5rem] text-center text-xs tabular-nums text-slate-400">
+                    {replayIndex + 1}/{replayFiles.length}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={
+                      replayBusy || replayIndex >= replayFiles.length - 1
+                    }
+                    className={osdBtnGhost}
+                    onClick={() => replaySeek(1)}
+                  >
+                    Next
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      replayBusy || replayIndex >= replayFiles.length - 1
+                    }
+                    className={osdBtnGhost}
+                    onClick={() => replaySeek(10)}
+                    title="Forward 10 frames"
+                  >
+                    +10
+                  </button>
+                </>
+              ) : null}
+            </div>
           </div>
         </div>
       </header>
@@ -1178,71 +1247,80 @@ export function MonitorDashboard() {
 
         {/* Col 2–3 — main */}
         <main className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-slate-700">
-          {/* Top: enemies | hand */}
-          <div className="flex min-h-0 flex-1 border-b border-slate-700">
-            <div className="flex min-h-0 min-w-0 flex-[0.68] flex-col border-r border-slate-700">
-              <div className={`sticky top-0 z-10 ${osdPanelStrip}`}>
-                Enemies · {monsters.length}
+          {/* Top: non-combat screen (from vm.screen) OR enemies | hand */}
+          {showScreenPanel && vm ? (
+            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden border-b border-slate-700">
+              <GameScreenPanel
+                vm={vm}
+                onChoose={(cmd) => void queueManualCommand(cmd)}
+              />
+            </div>
+          ) : (
+            <div className="flex min-h-0 flex-1 border-b border-slate-700">
+              <div className="flex min-h-0 min-w-0 flex-[0.68] flex-col border-r border-slate-700">
+                <div className={`sticky top-0 z-10 ${osdPanelStrip}`}>
+                  Enemies · {monsters.length}
+                </div>
+                <div className="custom-scroll flex-1 space-y-3 overflow-y-auto p-3">
+                  {monsters.length === 0 ? (
+                    <div className="space-y-2 px-2 py-6 text-center text-sm text-slate-500">
+                      <p className="font-medium text-slate-400">No enemies</p>
+                      {nonCombatBoardHint ? (
+                        <p className="text-xs leading-relaxed text-slate-600">
+                          {nonCombatBoardHint}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-slate-600">
+                          In combat but no living foes, or snapshot incomplete.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    monsters.map((m, i) => <EnemyCard key={i} m={m} />)
+                  )}
+                </div>
               </div>
-              <div className="custom-scroll flex-1 space-y-3 overflow-y-auto p-3">
-                {monsters.length === 0 ? (
-                  <div className="space-y-2 px-2 py-6 text-center text-sm text-slate-500">
-                    <p className="font-medium text-slate-400">No enemies</p>
-                    {nonCombatBoardHint ? (
-                      <p className="text-xs leading-relaxed text-slate-600">
-                        {nonCombatBoardHint}
+
+              <div className="flex min-h-0 min-w-0 flex-[1.32] flex-col bg-slate-900">
+                <div
+                  className={`sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 ${osdPanelStrip}`}
+                >
+                  <span className="min-w-0 shrink-0 truncate">
+                    Hand · {hand.length}
+                  </span>
+                  <PileTelemetryBar
+                    draw={draw}
+                    discard={disc}
+                    exhaust={exhaust}
+                    onInspect={setPileInspect}
+                  />
+                </div>
+                <div className="custom-scroll min-h-0 flex-1 overflow-y-auto">
+                  {hand.length === 0 ? (
+                    <div className="space-y-2 px-3 py-8 text-center text-sm text-slate-500">
+                      <p className="font-medium text-slate-400">
+                        No cards in hand
                       </p>
-                    ) : (
-                      <p className="text-xs text-slate-600">
-                        In combat but no living foes, or snapshot incomplete.
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  monsters.map((m, i) => <EnemyCard key={i} m={m} />)
-                )}
+                      {nonCombatBoardHint ? (
+                        <p className="text-xs leading-relaxed text-slate-600">
+                          {nonCombatBoardHint}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-slate-600">
+                          Empty hand this turn, or combat not loaded.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <CardTable cards={hand} />
+                  )}
+                </div>
               </div>
             </div>
+          )}
 
-            <div className="flex min-h-0 min-w-0 flex-[1.32] flex-col bg-slate-900">
-              <div
-                className={`sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 ${osdPanelStrip}`}
-              >
-                <span className="min-w-0 shrink-0 truncate">
-                  Hand · {hand.length}
-                </span>
-                <PileTelemetryBar
-                  draw={draw}
-                  discard={disc}
-                  exhaust={exhaust}
-                  onInspect={setPileInspect}
-                />
-              </div>
-              <div className="custom-scroll min-h-0 flex-1 overflow-y-auto">
-                {hand.length === 0 ? (
-                  <div className="space-y-2 px-3 py-8 text-center text-sm text-slate-500">
-                    <p className="font-medium text-slate-400">
-                      No cards in hand
-                    </p>
-                    {nonCombatBoardHint ? (
-                      <p className="text-xs leading-relaxed text-slate-600">
-                        {nonCombatBoardHint}
-                      </p>
-                    ) : (
-                      <p className="text-xs text-slate-600">
-                        Empty hand this turn, or combat not loaded.
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <CardTable cards={hand} />
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Valid actions — full width under enemies + hand */}
-          <div className="flex h-[6.25rem] max-h-[28vh] shrink-0 flex-col border-b border-slate-700 bg-slate-900/50">
+          {/* Valid actions — full width under enemies + hand (z-index keeps it above scrolling map) */}
+          <div className="relative z-10 flex h-[6.25rem] max-h-[28vh] shrink-0 flex-col border-b border-t border-slate-700/90 bg-slate-900/95 shadow-[0_-6px_20px_rgba(0,0,0,0.35)]">
             <div
               className={`shrink-0 border-b border-slate-700/85 bg-slate-800/80 px-2 py-1 ${osdSectionLabel}`}
             >
@@ -1274,22 +1352,15 @@ export function MonitorDashboard() {
             <div className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-slate-700 bg-slate-950">
               <div className={osdPanelStrip}>
                 <span className="min-w-0 shrink truncate">LLM user prompt</span>
-                <div className="flex min-w-0 shrink-0 items-center gap-2">
-                  <button
-                    type="button"
-                    className={osdBtnGhost}
-                    onClick={() =>
-                      void copyClipboard(tacticalPromptText, "LLM user prompt")
-                    }
-                  >
-                    Copy
-                  </button>
-                  <span className="max-w-[11rem] truncate font-console text-xs font-normal normal-case tracking-normal text-slate-500 md:max-w-md">
-                    {agentForRail?.proposer === "legacy"
-                      ? "Debug summary — legacy prompt_builder may differ."
-                      : "Proposer status from server."}
-                  </span>
-                </div>
+                <button
+                  type="button"
+                  className={osdBtnGhost}
+                  onClick={() =>
+                    void copyClipboard(tacticalPromptText, "LLM user prompt")
+                  }
+                >
+                  Copy
+                </button>
               </div>
               <pre className="font-telemetry custom-scroll flex-1 overflow-auto p-2 text-sm leading-relaxed whitespace-pre text-slate-400">
                 {!vm?.actions?.length
@@ -1358,10 +1429,23 @@ export function MonitorDashboard() {
           </div>
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 custom-scroll">
             <div
-              className="font-telemetry shrink-0 cursor-default truncate rounded border border-slate-700/80 bg-slate-950/80 px-2 py-1.5 text-sm leading-snug text-slate-500"
-              title={envLine}
+              className="shrink-0 rounded border border-slate-700/80 bg-slate-950/80 px-2 py-2"
+              title={aiRailTitle}
             >
-              {envLine}
+              <AgentModeBar
+                modeRaw={agentForRail?.agent_mode}
+                disabled={snapshot == null}
+                onSelect={(m) => void setAgentMode(m)}
+              />
+              <div className="mt-2 truncate font-mono text-[10px] leading-tight text-slate-500">
+                <span className="text-slate-600">llm</span>{" "}
+                {agentForRail?.llm_backend ?? "—"}{" "}
+                <span className="text-slate-700">·</span>{" "}
+                <span className="text-slate-600">state</span>{" "}
+                <span className="font-telemetry text-slate-400">
+                  {stateId ?? "—"}
+                </span>
+              </div>
             </div>
 
             {llmRunStatus.kind === "error" ? (

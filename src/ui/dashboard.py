@@ -124,6 +124,48 @@ def _state_id_seed_from_ingress(data: dict[str, Any] | None) -> str:
     return ""
 
 
+def _run_seed_from_ingress(data: dict[str, Any] | None) -> str | None:
+    """Run seed from CommunicationMod ``game_state.seed`` (same field as logged frames)."""
+    if not isinstance(data, dict):
+        return None
+    inner = _inner_game_payload(data)
+    gs = inner.get("game_state")
+    if not isinstance(gs, dict):
+        return None
+    raw = gs.get("seed")
+    if raw is None or isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        try:
+            s = str(int(raw))
+        except (ValueError, OverflowError):
+            s = str(raw).strip()
+        return s or None
+    s = str(raw).strip()
+    return s or None
+
+
+def _stringify_game_seed_for_json_wire(data: dict[str, Any]) -> None:
+    """Mutate envelope so ``game_state.seed`` is a JSON string (JS safe; ints > 2^53)."""
+    inner = _inner_game_payload(data)
+    gs = inner.get("game_state")
+    if not isinstance(gs, dict):
+        return
+    raw = gs.get("seed")
+    if raw is None or isinstance(raw, bool) or isinstance(raw, str):
+        return
+    if isinstance(raw, int):
+        gs["seed"] = str(raw)
+        return
+    if isinstance(raw, float):
+        try:
+            gs["seed"] = str(int(raw))
+        except (ValueError, OverflowError):
+            s = str(raw).strip()
+            if s:
+                gs["seed"] = s
+
+
 def _trace_as_dict(trace: Any) -> dict[str, Any] | None:
     if trace is None:
         return None
@@ -319,6 +361,8 @@ def _build_agent_snapshot() -> dict[str, Any]:
     if isinstance(interrupt, dict):
         queue = interrupt.get("command_queue")
 
+    run_seed = _run_seed_from_ingress(_last_ingress_body)
+
     return {
         "pending_approval": pending,
         "command_queue": queue,
@@ -329,7 +373,7 @@ def _build_agent_snapshot() -> dict[str, Any]:
         "awaiting_interrupt": bool(pending),
         "agent_mode": ai_runtime.get("mode"),
         "thread_id": None,
-        "run_seed": None,
+        "run_seed": run_seed,
         "ingress_derived_thread_id": None,
         "pending_graph_thread_id": None,
         "proposer": "legacy",
@@ -371,10 +415,15 @@ def _build_react_snapshot_payload() -> dict[str, Any]:
         # Game stopped or no feed: do not show a frozen board as if live.
         state_id = ""
 
+    ingress_wire: dict[str, Any] | None = None
+    if live and _last_ingress_body is not None:
+        ingress_wire = deepcopy(_last_ingress_body)
+        _stringify_game_seed_for_json_wire(ingress_wire)
+
     return {
         "view_model": vm,
         "state_id": state_id or None,
-        "ingress": _last_ingress_body if live else None,
+        "ingress": ingress_wire,
         "ingress_ready_for_command": _ingress_ready_for_command(_last_ingress_body)
         if live
         else None,
@@ -609,7 +658,10 @@ async def get_run_frame_json(run_name: str, file_name: str) -> dict[str, Any]:
     if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="Frame not found")
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        body = json.load(f)
+    if isinstance(body, dict):
+        _stringify_game_seed_for_json_wire(body)
+    return body
 
 
 @app.get("/api/runs/{run_name}/frames/{file_name}/ai_sidecar")
