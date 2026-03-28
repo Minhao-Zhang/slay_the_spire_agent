@@ -1,5 +1,7 @@
+import asyncio
 import json
 import os
+import time
 from copy import deepcopy
 from typing import Any
 
@@ -9,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from src.agent.config import get_agent_config, load_system_prompt
+from src.agent.policy import parse_agent_output
 from src.agent.tracing import build_state_id
 from src.repo_paths import REPO_ROOT
 from src.ui.state_processor import process_state
@@ -33,10 +36,37 @@ ai_runtime: dict[str, Any] = {
     "ai_status": "unknown",
     "ai_api_style": "",
     "ai_status_message": "",
+    "proposal_in_flight": False,
+    "proposal_for_state_id": "",
 }
 
 # Last envelope or raw ingress (CommunicationMod JSON) for React monitor / debug paste.
 _last_ingress_body: dict[str, Any] | None = None
+# Monotonic clock when `_last_ingress_body` was last set (game or debug paste).
+_last_ingress_monotonic: float | None = None
+
+
+def _touch_ingress_received() -> None:
+    global _last_ingress_monotonic
+    _last_ingress_monotonic = time.monotonic()
+
+
+def _ingress_max_age_seconds() -> float:
+    raw = os.environ.get("DASHBOARD_INGRESS_MAX_AGE_SECONDS", "90")
+    try:
+        v = float(raw)
+    except ValueError:
+        v = 90.0
+    return max(10.0, v)
+
+
+def _ingress_is_live() -> bool:
+    """True while CommunicationMod (or debug paste) has sent data recently."""
+    if _last_ingress_body is None:
+        return False
+    if _last_ingress_monotonic is None:
+        return True
+    return (time.monotonic() - _last_ingress_monotonic) <= _ingress_max_age_seconds()
 
 
 class ConnectionManager:
@@ -79,6 +109,21 @@ def _react_snapshot_state_id(
     return ""
 
 
+def _state_id_seed_from_ingress(data: dict[str, Any] | None) -> str:
+    """Prefer persisted ``state_id`` from log files; else live ``meta.state_id``."""
+    if not isinstance(data, dict):
+        return ""
+    sid = str(data.get("state_id") or "").strip()
+    if sid:
+        return sid
+    meta = data.get("meta")
+    if isinstance(meta, dict):
+        sid = str(meta.get("state_id") or "").strip()
+        if sid:
+            return sid
+    return ""
+
+
 def _trace_as_dict(trace: Any) -> dict[str, Any] | None:
     if trace is None:
         return None
@@ -89,9 +134,37 @@ def _trace_as_dict(trace: Any) -> dict[str, Any] | None:
     return None
 
 
+def _first_playable_command_from_final(fd: Any) -> str | None:
+    if fd is None:
+        return None
+    cmds = getattr(fd, "chosen_commands", None)
+    if cmds:
+        first = str(cmds[0]).strip()
+        return first or None
+    ch = getattr(fd, "chosen_command", "") or ""
+    return str(ch).strip() or None
+
+
 def _trace_to_proposal(trace: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Shape AgentTrace into the React ``proposal`` object.
+
+    Always surface a **best-effort parsed action** for the monitor: validated
+    command, interim ``<final_decision>`` from the stream, ``[tool] …`` intent,
+    or ``[tool used] …`` while the model continues after a tool round.
+    """
     if not trace:
         return None
+    if trace.get("status") == "stale" or trace.get("approval_status") == "stale":
+        return {
+            "llm_raw": None,
+            "parsed_model": None,
+            "command": None,
+            "rationale": None,
+            "status": "stale",
+            "error_reason": None,
+            "resolve_tag": "legacy:stale",
+            "for_state_id": trace.get("state_id"),
+        }
     val = trace.get("validation")
     err = None
     if isinstance(val, dict):
@@ -99,23 +172,111 @@ def _trace_to_proposal(trace: dict[str, Any] | None) -> dict[str, Any] | None:
     if not err:
         err_raw = trace.get("error")
         err = err_raw if err_raw else None
-    raw = (trace.get("raw_output") or "").strip()
-    if not raw:
+
+    raw_stream = (trace.get("raw_output") or trace.get("response_text") or "").strip()
+    if not raw_stream:
         rt = (trace.get("reasoning_text") or "").strip()
         rs = (trace.get("response_text") or "").strip()
         chunks = [x for x in (rt, rs) if x]
-        raw = "\n\n".join(chunks)
+        raw_stream = "\n\n".join(chunks).strip()
+
+    llm_raw = raw_stream or None
+    rationale = (trace.get("reasoning_text") or None) or None
+
+    st = str(trace.get("status") or "")
+    final_cmd = trace.get("final_decision")
+    parsed_prop = trace.get("parsed_proposal")
+
+    live = parse_agent_output(raw_stream) if raw_stream else None
+
+    command: str | None = final_cmd if final_cmd else None
+    parsed_model: Any = parsed_prop
+    resolve_tag = "legacy:trace"
+
+    if st == "awaiting_approval" and command:
+        resolve_tag = "legacy:awaiting_approval"
+    elif st == "invalid":
+        resolve_tag = "legacy:invalid"
+        if not command and isinstance(parsed_prop, dict):
+            cmds = parsed_prop.get("chosen_commands") or []
+            if cmds:
+                command = str(cmds[0]).strip()
+            elif parsed_prop.get("chosen_command"):
+                command = str(parsed_prop["chosen_command"]).strip()
+        if not command and live and live.final_decision:
+            command = _first_playable_command_from_final(live.final_decision)
+            if parsed_model is None:
+                parsed_model = live.final_decision.model_dump(mode="json")
+    elif st == "error":
+        resolve_tag = "legacy:error"
+
+    # In-flight: no validated canonical command on the trace yet
+    if not command and live:
+        if live.final_decision:
+            command = _first_playable_command_from_final(live.final_decision)
+            if parsed_model is None:
+                parsed_model = live.final_decision.model_dump(mode="json")
+            if st in {"running", "building_prompt"}:
+                resolve_tag = "legacy:interim_parse"
+        elif live.tool_request:
+            command = f"[tool] {live.tool_request.tool_name}"
+            parsed_model = {
+                "tool_request": live.tool_request.model_dump(mode="json"),
+                "interim": True,
+            }
+            if st in {"running", "building_prompt"}:
+                resolve_tag = "legacy:tool_request"
+
+    # Model continued after native/API tool execution (trace append markers)
+    if not command and trace.get("tool_names"):
+        names = trace.get("tool_names")
+        if isinstance(names, list) and names:
+            last = str(names[-1])
+            command = f"[tool used] {last}"
+            parsed_model = {
+                "last_tool": last,
+                "interim": True,
+                "note": "Waiting for model after tool; check model output below.",
+            }
+            if st in {"running", "building_prompt"}:
+                resolve_tag = "legacy:post_tool"
+
+    if st == "building_prompt" and not command:
+        command = "(preparing prompt)"
+        parsed_model = parsed_model or {"interim": True}
+        resolve_tag = "legacy:building_prompt"
+
+    if isinstance(parsed_prop, dict) and parsed_prop:
+        parsed_model = parsed_prop
+    if final_cmd:
+        command = str(final_cmd)
+
     return {
-        "llm_raw": raw or None,
-        "parsed_model": trace.get("parsed_proposal"),
-        "command": trace.get("final_decision"),
-        "rationale": (trace.get("reasoning_text") or None)
-        or None,
+        "llm_raw": llm_raw,
+        "parsed_model": parsed_model,
+        "command": command,
+        "rationale": rationale,
         "status": str(trace.get("status") or trace.get("approval_status") or ""),
         "error_reason": str(err) if err else None,
-        "resolve_tag": "legacy:trace",
+        "resolve_tag": resolve_tag,
         "for_state_id": trace.get("state_id"),
     }
+
+
+def _normalize_persisted_ai_log_to_trace(persisted: dict[str, Any]) -> dict[str, Any]:
+    """Map ``PersistedAiLog`` JSON (``*.ai.json``) to a trace-like dict for
+    :func:`_trace_to_proposal` / :func:`_pending_approval_from_trace`."""
+    out = dict(persisted)
+    am = persisted.get("assistant_message")
+    if am is not None and str(am).strip():
+        out.setdefault("response_text", str(am))
+    um = persisted.get("user_message")
+    if um is not None and str(um).strip():
+        out.setdefault("user_prompt", str(um))
+    ve = persisted.get("validation_error")
+    if ve is not None and str(ve).strip():
+        out.setdefault("validation", {"error": str(ve)})
+    return out
 
 
 def _pending_approval_from_trace(
@@ -174,26 +335,53 @@ def _build_agent_snapshot() -> dict[str, Any]:
         "proposer": "legacy",
         "llm_backend": llm_backend,
         "agent_error": agent_err,
+        "ai_enabled": bool(ai_runtime.get("ai_enabled")),
+        "ai_system_status": str(ai_runtime.get("ai_status") or ""),
+        "ai_system_message": str(ai_runtime.get("ai_status_message") or ""),
+        "proposal_in_flight": bool(ai_runtime.get("proposal_in_flight")),
+        "proposal_for_state_id": ai_runtime.get("proposal_for_state_id") or None,
     }
 
 
+def _ingress_ready_for_command(data: dict[str, Any] | None) -> bool | None:
+    inner = _inner_game_payload(data or {})
+    if not inner or "ready_for_command" not in inner:
+        return None
+    return bool(inner.get("ready_for_command"))
+
+
 def _build_react_snapshot_payload() -> dict[str, Any]:
+    live = _ingress_is_live()
     vm: dict[str, Any] | None = None
     err_msg: str | None = None
-    state_id = str(ai_runtime.get("latest_state_id") or "")
-    if _last_ingress_body is not None:
+    seed = _state_id_seed_from_ingress(_last_ingress_body) if live else ""
+    state_id = seed or str(ai_runtime.get("latest_state_id") or "")
+    age_s: float | None = None
+    if _last_ingress_monotonic is not None:
+        age_s = max(0.0, time.monotonic() - _last_ingress_monotonic)
+
+    if live and _last_ingress_body is not None:
         try:
             vm = process_state(_last_ingress_body)
         except Exception as e:
             vm = None
             err_msg = str(e)
         state_id = _react_snapshot_state_id(_last_ingress_body, state_id)
+    else:
+        # Game stopped or no feed: do not show a frozen board as if live.
+        state_id = ""
+
     return {
         "view_model": vm,
         "state_id": state_id or None,
-        "ingress": _last_ingress_body,
+        "ingress": _last_ingress_body if live else None,
+        "ingress_ready_for_command": _ingress_ready_for_command(_last_ingress_body)
+        if live
+        else None,
         "error": err_msg,
         "agent": _build_agent_snapshot(),
+        "live_ingress": live,
+        "ingress_age_seconds": round(age_s, 1) if age_s is not None else None,
     }
 
 
@@ -202,6 +390,22 @@ async def _broadcast_react_snapshot() -> None:
     await manager.broadcast(
         json.dumps({"type": "snapshot", "payload": payload}, default=str),
     )
+
+
+@app.on_event("startup")
+async def _startup_ingress_stale_refresher() -> None:
+    """Re-broadcast snapshots so WebSocket clients clear stale UI after the game stops."""
+
+    async def _loop() -> None:
+        await asyncio.sleep(2)
+        while True:
+            await asyncio.sleep(12)
+            try:
+                await _broadcast_react_snapshot()
+            except Exception:
+                pass
+
+    asyncio.create_task(_loop())
 
 
 async def broadcast_event(event_type: str, payload):
@@ -233,20 +437,41 @@ def _replace_trace(trace: dict):
     return True
 
 
-def _mark_trace_stale():
+def _mark_trace_stale(incoming_state_id: str = "") -> dict | None:
+    """When the game advances to a new ``state_id``, supersede traces that are
+    still tied to the previous state (in-flight, failed validation, etc.).
+
+    Without this, ``invalid`` / ``error`` traces stay ``latest_trace`` while
+    ``latest_state_id`` updates—so the monitor shows a new room's legal actions
+    with the last model failure from the prior room.
+    """
     trace = ai_runtime.get("latest_trace")
     if not trace:
         return None
     if trace.get("approval_status") in {"approved", "edited"}:
         return None
-    if trace.get("status") in {"awaiting_approval", "running", "building_prompt"}:
-        stale = deepcopy(trace)
-        stale["update_seq"] = int(stale.get("update_seq", 0)) + 1
-        stale["status"] = "stale"
-        stale["approval_status"] = "stale"
-        _replace_trace(stale)
-        return stale
-    return None
+    incoming = str(incoming_state_id or "").strip()
+    trace_sid = str(trace.get("state_id") or "").strip()
+    state_mismatch = bool(incoming and trace_sid and trace_sid != incoming)
+    in_flight = trace.get("status") in {
+        "awaiting_approval",
+        "running",
+        "building_prompt",
+    }
+    dead_end = trace.get("status") in {
+        "invalid",
+        "error",
+        "rejected",
+        "stale",
+    }
+    if not (in_flight or (state_mismatch and dead_end)):
+        return None
+    stale = deepcopy(trace)
+    stale["update_seq"] = int(stale.get("update_seq", 0)) + 1
+    stale["status"] = "stale"
+    stale["approval_status"] = "stale"
+    _replace_trace(stale)
+    return stale
 
 
 def _canonical_legal_command(vm: dict[str, Any], cmd: str) -> str:
@@ -316,7 +541,7 @@ async def update_state(request: Request):
         meta = data.get("meta", {})
         state_id = meta.get("state_id", "")
         if state_id and state_id != ai_runtime["latest_state_id"]:
-            stale_trace = _mark_trace_stale()
+            stale_trace = _mark_trace_stale(state_id)
             ai_runtime["latest_state_id"] = state_id
             ai_runtime["approved_action"] = None
             if stale_trace:
@@ -324,6 +549,7 @@ async def update_state(request: Request):
 
         vm = process_state(data)
         _last_ingress_body = data
+        _touch_ingress_received()
         await broadcast_event("state", {"vm": vm, "state_id": state_id})
         await _broadcast_react_snapshot()
         return {"status": "success"}
@@ -343,6 +569,83 @@ async def get_runs():
         return {"runs": runs}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+def _safe_run_dir(run_name: str) -> str | None:
+    if not run_name or "/" in run_name or "\\" in run_name or ".." in run_name:
+        return None
+    base = os.path.abspath(LOGS_DIR)
+    full = os.path.abspath(os.path.join(base, run_name))
+    if not full.startswith(base + os.sep):
+        return None
+    return full if os.path.isdir(full) else None
+
+
+@app.get("/api/runs/{run_name}/frames")
+async def get_run_frame_list(run_name: str) -> dict[str, Any]:
+    """Sorted state JSON filenames (excludes ``*.ai.json``) for React replay."""
+    run_dir = _safe_run_dir(run_name)
+    if run_dir is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    files = sorted(
+        f
+        for f in os.listdir(run_dir)
+        if f.endswith(".json") and not f.endswith(".ai.json")
+    )
+    return {"run": run_name, "files": files, "count": len(files)}
+
+
+@app.get("/api/runs/{run_name}/frames/{file_name}")
+async def get_run_frame_json(run_name: str, file_name: str) -> dict[str, Any]:
+    """Raw log envelope: ``state``, ``state_id``, ``meta``, ``action``, …"""
+    if file_name != os.path.basename(file_name) or ".." in file_name:
+        raise HTTPException(status_code=400, detail="Invalid file name")
+    if not file_name.endswith(".json") or file_name.endswith(".ai.json"):
+        raise HTTPException(status_code=400, detail="Invalid file name")
+    run_dir = _safe_run_dir(run_name)
+    if run_dir is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    path = os.path.join(run_dir, file_name)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Frame not found")
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+@app.get("/api/runs/{run_name}/frames/{file_name}/ai_sidecar")
+async def get_run_frame_ai_sidecar(run_name: str, file_name: str) -> dict[str, Any]:
+    """``NNNN.ai.json`` next to state ``NNNN.json``: proposal shape for React replay."""
+    if file_name != os.path.basename(file_name) or ".." in file_name:
+        raise HTTPException(status_code=400, detail="Invalid file name")
+    if not file_name.endswith(".json") or file_name.endswith(".ai.json"):
+        raise HTTPException(status_code=400, detail="Invalid file name")
+    run_dir = _safe_run_dir(run_name)
+    if run_dir is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    frame_path = os.path.join(run_dir, file_name)
+    if not os.path.isfile(frame_path):
+        raise HTTPException(status_code=404, detail="Frame not found")
+    stem, _ext = os.path.splitext(file_name)
+    sidecar_path = os.path.join(run_dir, f"{stem}.ai.json")
+    if not os.path.isfile(sidecar_path):
+        return {
+            "ok": False,
+            "reason": "missing",
+            "run": run_name,
+            "frame": file_name,
+        }
+    with open(sidecar_path, encoding="utf-8") as f:
+        raw = json.load(f)
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=500, detail="Invalid ai sidecar")
+    norm = _normalize_persisted_ai_log_to_trace(raw)
+    return {
+        "ok": True,
+        "run": run_name,
+        "frame": file_name,
+        "proposal": _trace_to_proposal(norm),
+        "pending_approval": _pending_approval_from_trace(norm),
+    }
 
 
 @app.get("/api/runs/{run_name}")
@@ -552,6 +855,21 @@ async def update_ai_status(cmd: AiStatusUpdate):
     return {"status": "success", **stored}
 
 
+@app.post("/api/ai/proposal_state")
+async def post_proposal_state(request: Request):
+    """Set by ``main.py`` when an LLM proposal starts or clears (foreground game loop)."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    ai_runtime["proposal_in_flight"] = bool(body.get("in_flight"))
+    ai_runtime["proposal_for_state_id"] = str(body.get("state_id") or "")
+    await _broadcast_react_snapshot()
+    return {"status": "success"}
+
+
 # ---------------------------------------------------------------------------
 # React monitor compatibility (greenfield-shaped control plane)
 # ---------------------------------------------------------------------------
@@ -573,6 +891,7 @@ async def post_debug_ingress(request: Request) -> dict[str, Any]:
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="body must be a JSON object")
     _last_ingress_body = body
+    _touch_ingress_received()
     await _broadcast_react_snapshot()
     return _build_react_snapshot_payload()
 
@@ -624,17 +943,18 @@ async def post_agent_resume(body: ResumeBody) -> dict[str, Any]:
 
 @app.post("/api/agent/retry")
 async def post_agent_retry() -> dict[str, Any]:
+    """Clear ``latest_trace`` so the monitor does not keep showing a stuck proposal.
+
+    If a trace exists, record a rejection in history (same as /api/ai/reject), then
+    always drop ``latest_trace`` and ``approved_action`` so any status (invalid,
+    error, rejected, disabled, etc.) is cleared. The game process must still run
+    the model again on the next CommunicationMod ingress; this route does not
+    invoke the LLM.
     """
-    Legacy: cannot re-invoke LLM from the server alone. Reject a pending proposal
-    if any so the operator can get a fresh one on the next game tick / state.
-    """
-    trace = ai_runtime.get("latest_trace")
-    if trace and trace.get("status") in {
-        "awaiting_approval",
-        "running",
-        "building_prompt",
-    }:
+    if ai_runtime.get("latest_trace"):
         await reject_ai_action()
+    ai_runtime["latest_trace"] = None
+    ai_runtime["approved_action"] = None
     await _broadcast_react_snapshot()
     return _build_react_snapshot_payload()
 

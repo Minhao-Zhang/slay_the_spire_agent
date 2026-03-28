@@ -4,6 +4,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 
 from src.agent.tracing import combat_encounter_fingerprint
+from src.agent.vm_shapes import normalize_legal_actions
 
 
 def estimate_message_tokens(message: dict[str, str]) -> int:
@@ -15,7 +16,7 @@ def estimate_message_tokens(message: dict[str, str]) -> int:
 
 def format_executed_action(action: str, legal_actions: list[dict[str, str]] | None) -> str:
     normalized = action.strip()
-    for candidate in legal_actions or []:
+    for candidate in normalize_legal_actions(legal_actions or []):
         command = str(candidate.get("command", "")).strip()
         if command != normalized:
             continue
@@ -94,10 +95,15 @@ class TurnConversation:
         self.action_history.append(action)
 
     def update_strategy_memory(self, vm: dict) -> None:
-        inventory = vm.get("inventory") or {}
+        inv = vm.get("inventory")
+        inventory = inv if isinstance(inv, dict) else {}
         deck = inventory.get("deck") or []
+        if not isinstance(deck, list):
+            deck = []
         type_counts: dict[str, int] = {}
         for card in deck:
+            if not isinstance(card, dict):
+                continue
             card_type = ((card.get("kb") or {}).get("type") or card.get("type") or "").upper()
             if not card_type:
                 continue
@@ -109,7 +115,8 @@ class TurnConversation:
                 f"Deck leans toward {dominant_type}; keep picks/upgrades coherent with this axis."
             )
 
-        header = vm.get("header") or {}
+        hdr = vm.get("header")
+        header = hdr if isinstance(hdr, dict) else {}
         floor = header.get("floor")
         hp_display = str(header.get("hp_display", ""))
         hp_ratio = 1.0
@@ -120,21 +127,28 @@ class TurnConversation:
             except ValueError:
                 hp_ratio = 1.0
 
-        screen = vm.get("screen") or {}
+        scr = vm.get("screen")
+        screen = scr if isinstance(scr, dict) else {}
         if screen.get("type") == "MAP":
             if hp_ratio < 0.45:
                 self.strategy_memory["pathing_goal"] = "Prefer safer pathing with rest sites and avoid risky elite chains."
             else:
                 self.strategy_memory["pathing_goal"] = "Take high-value pathing when deck can handle elites."
 
-        map_state = vm.get("map") or {}
+        m = vm.get("map")
+        map_state = m if isinstance(m, dict) else {}
         boss_name = map_state.get("boss_name")
         if boss_name:
             self.strategy_memory["boss_prep"] = f"Prepare for upcoming boss: {boss_name}."
 
-        combat = vm.get("combat") or {}
+        cbt = vm.get("combat")
+        combat = cbt if isinstance(cbt, dict) else {}
         powers = combat.get("player_powers") or []
-        if any(str(p.get("name", "")).lower() == "no draw" for p in powers):
+        if any(
+            str(p.get("name", "")).lower() == "no draw"
+            for p in powers
+            if isinstance(p, dict)
+        ):
             self.strategy_memory["constraints"] = "Current turn has draw constraint (No Draw); avoid draw-dependent lines."
 
     def strategy_memory_lines(self) -> list[str]:

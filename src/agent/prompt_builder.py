@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from src.agent.vm_shapes import as_dict, normalize_legal_actions
 from src.repo_paths import REPO_ROOT
 
 # Lazy-loaded map of buff/power name -> description (from buff_descriptions.json + powers)
@@ -139,14 +140,18 @@ def _card_line(card: dict[str, Any], index: int, show_token: bool = False) -> st
 
 
 def _power_line(power: dict[str, Any]) -> str:
-    """Format a single power with name, amount, and effect description for the prompt."""
+    """Format a single power with name, amount, KB type (buff/debuff), and effect for the prompt."""
     name = power.get("name", "?")
     amount = power.get("amount", "?")
     kb = power.get("kb") or {}
     effect = kb.get("effect", "")
+    ptype = str(kb.get("type") or "").strip()
+    parts: list[str] = [f"{name}({amount})"]
+    if ptype:
+        parts.append(f"type={ptype}")
     if effect:
-        return f"{name}({amount}) | effect={_compact_text(effect, limit=120)}"
-    return f"{name}({amount})"
+        parts.append(f"effect={_compact_text(effect, limit=120)}")
+    return " | ".join(parts)
 
 
 def _monster_line(monster: dict[str, Any], index: int) -> str:
@@ -191,7 +196,8 @@ def _relic_line(relic: dict[str, Any]) -> str:
                 extra = f" | lament_elite_charges_remaining={n}"
         except (TypeError, ValueError):
             pass
-    base = f"{relic.get('name', '?')} | desc={desc}" if desc else relic.get("name", "?")
+    name = relic.get("name", "?")
+    base = f"{name} | desc={desc}" if desc else name
     return base + extra if extra else base
 
 
@@ -440,8 +446,13 @@ def _screen_content_lines(vm: dict[str, Any]) -> list[str]:
             label = opt.get("label", f"Option {i}")
             text = _compact_text(opt.get("text", ""), limit=160)
             disabled = opt.get("disabled", False)
-            kb_choice = kb_choices[i] if i < len(kb_choices) else {}
-            outcome = _compact_text(kb_choice.get("outcome", ""), limit=120) if kb_choice else ""
+            kb_choice = kb_choices[i] if i < len(kb_choices) else None
+            if isinstance(kb_choice, str):
+                outcome = _compact_text(kb_choice, limit=120)
+            elif isinstance(kb_choice, dict):
+                outcome = _compact_text(kb_choice.get("outcome", ""), limit=120)
+            else:
+                outcome = ""
             line = f"{i}. {label}"
             if text:
                 line += f" — {text}"
@@ -560,11 +571,11 @@ def build_prompt_sections(
     combat_plan_guide: str | None = None,
     prompt_profile: str = "default",
 ) -> list[tuple[str, str]]:
-    header = vm.get("header") or {}
-    inventory = vm.get("inventory") or {}
-    combat = vm.get("combat") or {}
-    screen = vm.get("screen") or {}
-    legal_actions = vm.get("actions") or []
+    header = as_dict(vm.get("header"))
+    inventory = as_dict(vm.get("inventory"))
+    combat = as_dict(vm.get("combat"))
+    screen = as_dict(vm.get("screen"))
+    legal_actions = normalize_legal_actions(vm.get("actions") or [])
 
     player_lines = [
         f"class={header.get('class', '?')}",
@@ -577,22 +588,37 @@ def build_prompt_sections(
     if combat:
         player_lines.append(f"player_block={combat.get('player_block', 0)}")
 
-    relic_lines = [_relic_line(r) for r in inventory.get("relics", [])]
+    relic_lines = [_relic_line(r) for r in inventory.get("relics", []) if isinstance(r, dict)]
     potion_lines = []
     for idx, potion in enumerate(inventory.get("potions", []), start=1):
+        if not isinstance(potion, dict):
+            continue
         effect = ((potion.get("kb") or {}).get("effect")) or ""
         line = f"{idx}. {potion.get('name', '?')}"
         if effect:
             line += f" | effect={effect}"
         potion_lines.append(line)
 
-    hand_lines = [_card_line(card, idx, show_token=True) for idx, card in enumerate(combat.get("hand", []), start=1)]
+    hand_lines = [
+        _card_line(card, idx, show_token=True)
+        for idx, card in enumerate(
+            [c for c in combat.get("hand", []) if isinstance(c, dict)],
+            start=1,
+        )
+    ]
     monster_lines = [
         _monster_line(monster, idx)
-        for idx, monster in enumerate(combat.get("monsters", []), start=1)
+        for idx, monster in enumerate(
+            [m for m in combat.get("monsters", []) if isinstance(m, dict)],
+            start=1,
+        )
         if not monster.get("is_gone")
     ]
-    power_lines = [_power_line(power) for power in combat.get("player_powers", [])]
+    power_lines = [
+        _power_line(power)
+        for power in combat.get("player_powers", [])
+        if isinstance(power, dict)
+    ]
 
     screen_lines = [f"type={screen.get('type', 'NONE')}"]
     if screen.get("title"):

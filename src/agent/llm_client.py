@@ -412,6 +412,10 @@ class LLMClient:
             total_tokens=getattr(usage_data, "total_tokens", None) if usage_data else None,
         )
 
+        output_text = getattr(response, "output_text", "") or ""
+        if on_delta and output_text and not raw_chunks:
+            on_delta(output_text)
+
         tool_events: list[dict[str, Any]] = []
         for item in getattr(response, "output", []) or []:
             if _output_item_type(item) != "function_call":
@@ -436,7 +440,6 @@ class LLMClient:
                 }
             )
 
-        output_text = getattr(response, "output_text", "") or ""
         try:
             reasoning_summary_text = _extract_reasoning_summary(response)
         except Exception:  # noqa: BLE001

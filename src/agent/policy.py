@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from src.agent.schemas import FinalDecision, ParsedAgentTurn, ToolRequest, ValidationResult
 from src.agent.tool_registry import canonical_tool_name
+from src.agent.vm_shapes import normalize_legal_actions
 
 
 TAG_RE = {
@@ -150,6 +151,8 @@ def resolve_token_play(
     Returns the canonical command string if found, else None.
     Works with: PLAY <token> or PLAY <token> <target_index>
     """
+    legal_actions = normalize_legal_actions(legal_actions)
+
     m = _PLAY_TOKEN_RE.match(command.strip())
     if not m:
         return None
@@ -178,6 +181,7 @@ def validate_final_decision(
     final_decision: FinalDecision | None,
     legal_actions: list[dict[str, Any]],
 ) -> ValidationResult:
+    legal_actions = normalize_legal_actions(legal_actions)
     if not final_decision:
         return ValidationResult(valid=False, error="No final decision block returned.")
 
@@ -189,7 +193,7 @@ def validate_final_decision(
     if not commands:
         return ValidationResult(valid=False, error="chosen_commands is empty.")
 
-    chosen = commands[0].strip()
+    chosen = str(commands[0]).strip()
     by_command = {_norm(str(action.get("command", ""))): action for action in legal_actions}
     by_label = {_norm(str(action.get("label", ""))): action for action in legal_actions}
 
@@ -218,7 +222,7 @@ def validate_final_decision(
         )
 
     # 3) Label-based intent resolution when model cannot emit exact command.
-    chosen_label = final_decision.chosen_label.strip()
+    chosen_label = str(final_decision.chosen_label or "").strip()
     if _norm(chosen_label) in by_label:
         action = by_label[_norm(chosen_label)]
         return ValidationResult(

@@ -35,7 +35,7 @@ class AgentConfig(BaseModel):
     connect_timeout_seconds: float = Field(default=5.0, gt=0)
     probe_timeout_seconds: float = Field(default=6.0, gt=0)
     max_retries: int = Field(default=0, ge=0, le=2)
-    proposal_timeout_seconds: float = Field(default=20.0, gt=0)
+    proposal_timeout_seconds: float = Field(default=120.0, gt=0)
     proposal_failure_streak_limit: int = Field(default=3, ge=1, le=20)
     history_compact_token_threshold: int = Field(default=100_000, ge=0)
     history_keep_recent: int = Field(default=6, ge=0)
@@ -66,6 +66,19 @@ class AgentConfig(BaseModel):
 @lru_cache(maxsize=1)
 def get_agent_config() -> AgentConfig:
     load_dotenv()
+    max_tool_roundtrips = int(os.getenv("LLM_MAX_TOOL_ROUNDTRIPS", "3"))
+    reasoning_request_timeout_seconds = float(
+        os.getenv("LLM_TIMEOUT_SECONDS_REASONING", os.getenv("LLM_TIMEOUT_SECONDS", "60"))
+    )
+    proposal_timeout_env = os.getenv("LLM_PROPOSAL_TIMEOUT_SECONDS")
+    if proposal_timeout_env is not None and str(proposal_timeout_env).strip() != "":
+        proposal_timeout_seconds = float(proposal_timeout_env)
+    else:
+        # One proposal run can include multiple LLM HTTP calls (e.g. native tools: call + continuation).
+        proposal_timeout_seconds = max(
+            120.0,
+            reasoning_request_timeout_seconds * float(max_tool_roundtrips + 1),
+        )
     return AgentConfig(
         base_url=os.getenv("LLM_BASE_URL", "https://api.openai.com/v1"),
         api_key=os.getenv("LLM_API_KEY", ""),
@@ -75,18 +88,16 @@ def get_agent_config() -> AgentConfig:
         fast_reasoning_effort=os.getenv("LLM_FAST_REASONING_EFFORT", "none").strip().lower(),
         system_prompt_path=os.getenv("LLM_SYSTEM_PROMPT_PATH", str(DEFAULT_PROMPT_PATH)),
         default_mode=os.getenv("AGENT_MODE", "propose"),
-        max_tool_roundtrips=int(os.getenv("LLM_MAX_TOOL_ROUNDTRIPS", "3")),
+        max_tool_roundtrips=max_tool_roundtrips,
         request_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "20")),
-        reasoning_request_timeout_seconds=float(
-            os.getenv("LLM_TIMEOUT_SECONDS_REASONING", os.getenv("LLM_TIMEOUT_SECONDS", "60"))
-        ),
+        reasoning_request_timeout_seconds=reasoning_request_timeout_seconds,
         fast_request_timeout_seconds=float(
             os.getenv("LLM_TIMEOUT_SECONDS_FAST", os.getenv("LLM_TIMEOUT_SECONDS", "20"))
         ),
         connect_timeout_seconds=float(os.getenv("LLM_CONNECT_TIMEOUT_SECONDS", "5")),
         probe_timeout_seconds=float(os.getenv("LLM_PROBE_TIMEOUT_SECONDS", "6")),
         max_retries=int(os.getenv("LLM_MAX_RETRIES", "0")),
-        proposal_timeout_seconds=float(os.getenv("LLM_PROPOSAL_TIMEOUT_SECONDS", "20")),
+        proposal_timeout_seconds=proposal_timeout_seconds,
         proposal_failure_streak_limit=int(os.getenv("LLM_PROPOSAL_FAILURE_STREAK_LIMIT", "3")),
         history_compact_token_threshold=int(
             os.getenv("LLM_HISTORY_COMPACT_TOKEN_THRESHOLD", "100000")

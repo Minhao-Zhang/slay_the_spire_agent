@@ -9,6 +9,7 @@ from typing_extensions import TypedDict
 from src.agent.config import get_agent_config, load_system_prompt
 from src.agent.llm_client import LLMClient
 from src.agent.policy import parse_agent_output, validate_final_decision
+from src.agent.vm_shapes import as_dict, normalize_legal_actions
 from src.agent.prompt_builder import COMBAT_PLAN_SYSTEM, build_combat_planning_prompt, build_user_prompt
 from src.agent.schemas import AgentMode, AgentTrace, ParsedAgentTurn, TraceLlmCall, TraceTokenUsage
 from src.agent.session_state import TurnConversation, format_executed_action
@@ -172,7 +173,7 @@ class SpireDecisionAgent:
         fp = combat_encounter_fingerprint(vm)
         if not fp:
             return
-        turn_n = self._header_combat_turn(vm.get("header") or {})
+        turn_n = self._header_combat_turn(as_dict(vm.get("header")))
         should_generate = False
         if turn_n is None:
             should_generate = not bool(self.session.combat_plan_guide)
@@ -266,9 +267,9 @@ class SpireDecisionAgent:
 
     def _plan_turn(self, state: GraphState) -> GraphState:
         vm = state["vm"]
-        legal_actions = vm.get("actions") or []
-        header = vm.get("header") or {}
-        screen = vm.get("screen") or {}
+        legal_actions = normalize_legal_actions(vm.get("actions") or [])
+        header = as_dict(vm.get("header"))
+        screen = as_dict(vm.get("screen"))
         combat = vm.get("combat") or {}
 
         priorities: list[str] = []
@@ -387,12 +388,16 @@ class SpireDecisionAgent:
         if tool_calls:
             tool_outputs: list[dict[str, Any]] = []
             for tool_call in tool_calls:
+                if not isinstance(tool_call, dict):
+                    continue
+                raw_args = tool_call.get("parsed_arguments", {})
+                parsed_args = raw_args if isinstance(raw_args, dict) else {}
                 tool_result = execute_tool(
                     tool_call["name"],
                     state["vm"],
-                    tool_call.get("parsed_arguments", {}),
+                    parsed_args,
                 )
-                question = tool_call.get("parsed_arguments", {}).get("question", "").strip()
+                question = str(parsed_args.get("question", "") or "").strip()
                 content = tool_result if not question else f"{question}\n\n{tool_result}"
                 tool_outputs.append(
                     {

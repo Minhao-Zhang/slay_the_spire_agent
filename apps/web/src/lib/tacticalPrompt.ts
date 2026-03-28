@@ -3,6 +3,11 @@
  * legacy agent uses `src/agent/prompt_builder.py` — this preview may differ.
  */
 
+import {
+  potionLlmLine,
+  powerLlmLine,
+  relicLlmLine,
+} from "./entityKb";
 import type { ActionDTO, ViewModelDTO } from "../types/viewModel";
 
 function compactText(text: string, limit = 160): string {
@@ -34,16 +39,6 @@ function cardLine(card: Record<string, unknown>, index: number, showToken: boole
   return parts.join(" | ");
 }
 
-function powerLine(power: Record<string, unknown>): string {
-  const name = String(power.name ?? "?");
-  const amount = String(power.amount ?? "?");
-  const kb = (power.kb as Record<string, unknown> | undefined) ?? {};
-  const effect = kb.effect;
-  if (typeof effect === "string" && effect)
-    return `${name}(${amount}) | effect=${compactText(effect, 120)}`;
-  return `${name}(${amount})`;
-}
-
 function monsterLine(monster: Record<string, unknown>, index: number): string {
   const parts = [
     `${index}. ${String(monster.name ?? "?")}`,
@@ -53,7 +48,7 @@ function monsterLine(monster: Record<string, unknown>, index: number): string {
   ];
   const powers = (monster.powers as Record<string, unknown>[] | undefined) ?? [];
   if (powers.length)
-    parts.push(`powers=${powers.map((p) => powerLine(p)).join("; ")}`);
+    parts.push(`powers=${powers.map((p) => powerLlmLine(p)).join("; ")}`);
   const kb = (monster.kb as Record<string, unknown> | undefined) ?? {};
   const moves = kb.moves;
   if (Array.isArray(moves) && moves.length)
@@ -61,23 +56,6 @@ function monsterLine(monster: Record<string, unknown>, index: number): string {
   if (kb.notes) parts.push(`notes=${compactText(String(kb.notes))}`);
   if (kb.ai) parts.push(`ai=${compactText(String(kb.ai))}`);
   return parts.join(" | ");
-}
-
-function relicLine(relic: Record<string, unknown>): string {
-  const kb = (relic.kb as Record<string, unknown> | undefined) ?? {};
-  const desc = kb.description;
-  if (typeof desc === "string" && desc)
-    return `${String(relic.name ?? "?")} | desc=${desc}`;
-  return String(relic.name ?? "?");
-}
-
-function potionLine(idx: number, potion: Record<string, unknown>): string {
-  const kb = (potion.kb as Record<string, unknown> | undefined) ?? {};
-  const effect = kb.effect;
-  const name = String(potion.name ?? "?");
-  if (typeof effect === "string" && effect)
-    return `${idx}. ${name} | effect=${compactText(effect, 120)}`;
-  return `${idx}. ${name}`;
 }
 
 function tacticalStateSummary(vm: ViewModelDTO): string {
@@ -91,12 +69,12 @@ function tacticalStateSummary(vm: ViewModelDTO): string {
   const relics = inv.relics as Record<string, unknown>[] | undefined;
   if (relics?.length) {
     lines.push("relics:");
-    for (const r of relics) lines.push(`  - ${relicLine(r)}`);
+    for (const r of relics) lines.push(`  - ${relicLlmLine(r)}`);
   }
   const potions = inv.potions as Record<string, unknown>[] | undefined;
   if (potions?.length) {
     lines.push("potions:");
-    potions.forEach((p, i) => lines.push(`  - ${potionLine(i + 1, p)}`));
+    potions.forEach((p, i) => lines.push(`  - ${potionLlmLine(i + 1, p)}`));
   }
 
   const com = vm.combat as Record<string, unknown> | null | undefined;
@@ -105,7 +83,7 @@ function tacticalStateSummary(vm: ViewModelDTO): string {
     const pws = com.player_powers as Record<string, unknown>[] | undefined;
     if (pws?.length) {
       lines.push("player_powers:");
-      for (const pw of pws) lines.push(`  - ${powerLine(pw)}`);
+      for (const pw of pws) lines.push(`  - ${powerLlmLine(pw)}`);
     }
     const hand = com.hand as Record<string, unknown>[] | undefined;
     if (hand?.length) {
@@ -149,7 +127,7 @@ function legalActionsSummary(vm: ViewModelDTO | null): string {
     .join("\n");
 }
 
-const TACTICAL_SYSTEM = `You are a Slay the Spire tactical agent. Reply with a single JSON object only, no markdown, with keys "command" (string or null), optional "commands" (array during combat), and "rationale" (short string). Card plays must be PLAY <token> only (use each legal row's "command"); never numeric PLAY n / PLAY n m.`;
+const TACTICAL_SYSTEM = `You are a Slay the Spire tactical agent. Reply with a single JSON object only, no markdown, with keys "command" (string or null) and optional "commands" (array during combat). Card plays must be PLAY <token> only (use each legal row's "command"); never numeric PLAY n / PLAY n m.`;
 
 export function buildTacticalPrompt(vm: ViewModelDTO | null): {
   system: string;
@@ -160,6 +138,6 @@ export function buildTacticalPrompt(vm: ViewModelDTO | null): {
   const user =
     `Current state (KB-enriched descriptions in hand / monsters / relics / potions / powers):\n${stateBlock}\n\n` +
     `Legal actions ("command" is what you output; card rows are PLAY <token> only):\n${rows}\n\n` +
-    `Respond with: {"command": "...", "rationale": "..."} or {"commands": ["..."], "rationale": "..."}.`;
+    `Respond with: {"command": "..."} or {"commands": ["..."]}.`;
   return { system: TACTICAL_SYSTEM, user };
 }

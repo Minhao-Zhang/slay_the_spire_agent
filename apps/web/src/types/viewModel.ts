@@ -74,14 +74,27 @@ export interface AgentSnapshotDTO {
   proposer?: string;
   llm_backend?: string;
   agent_error?: string;
+  /** Mirrors ``ai_runtime`` / ``POST /api/ai/status`` from the game process. */
+  ai_enabled?: boolean;
+  ai_system_status?: string;
+  ai_system_message?: string;
+  /** True while ``main.py`` has a running ``agent.propose`` future (before final trace lands). */
+  proposal_in_flight?: boolean;
+  proposal_for_state_id?: string | null;
 }
 
 export interface DebugSnapshotPayload {
   view_model: ViewModelDTO | null;
   state_id: string | null;
   ingress: unknown;
+  /** From latest CommunicationMod envelope: ``state.ready_for_command``. */
+  ingress_ready_for_command?: boolean | null;
   error: string | null;
   agent?: AgentSnapshotDTO | null;
+  /** False when no feed or last ``/update_state`` older than ``DASHBOARD_INGRESS_MAX_AGE_SECONDS``. */
+  live_ingress?: boolean;
+  /** Seconds since last ingress touch (game line or debug paste); omit if unknown. */
+  ingress_age_seconds?: number | null;
 }
 
 export interface WsMessage {

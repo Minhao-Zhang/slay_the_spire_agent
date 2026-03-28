@@ -46,7 +46,7 @@ def notify_dashboard(endpoint: str, data: dict):
 
     def send():
         try:
-            requests.post(f"{DASHBOARD_URL}{endpoint}", json=data, timeout=0.5)
+            requests.post(f"{DASHBOARD_URL}{endpoint}", json=data, timeout=2.0)
         except requests.exceptions.RequestException:
             pass
 
@@ -74,6 +74,31 @@ def choose_idle_command(state: dict) -> str | None:
     return None
 
 
+def _vm_event_has_no_listed_choices(vm: dict) -> bool:
+    """True on EVENT screens before ``screen_state.options`` has populated.
+
+    CommunicationMod can emit a frame with empty ``options`` (and no ``choice_list`` on
+    game_state) while the event UI is still loading. :func:`process_state` then builds
+    only potion helper actions. The single-action LLM short-circuit must not treat
+    ``POTION DISCARD`` as the sole meaningful choice in that window.
+    """
+    screen = vm.get("screen") or {}
+    if screen.get("type") != "EVENT":
+        return False
+    opts = (screen.get("content") or {}).get("options")
+    return not (isinstance(opts, list) and len(opts) > 0)
+
+
+def _should_skip_single_action_shortcut(vm: dict, actions_list: list) -> bool:
+    """Skip shortcut when the only row is a potion command on a not-ready EVENT."""
+    if len(actions_list) != 1:
+        return False
+    cmd = str(actions_list[0].get("command", "") or "").strip().upper()
+    if not cmd.startswith("POTION "):
+        return False
+    return _vm_event_has_no_listed_choices(vm)
+
+
 def choose_combat_reward_gold_command(vm: dict) -> str | None:
     """Auto-pick guaranteed-value gold rewards on combat reward screens."""
     screen = vm.get("screen") or {}
@@ -91,6 +116,30 @@ def choose_combat_reward_gold_command(vm: dict) -> str | None:
         command = f"choose {idx}"
         if any((a.get("command") or "").strip() == command for a in actions):
             return command
+    return None
+
+
+def combat_reward_proceed_when_empty(vm: dict) -> str | None:
+    """When COMBAT_REWARD has no reward rows, only PROCEED is meaningful (potions are optional).
+
+    Same idea as auto-gold: advance without the LLM. Runs even when AI is disabled, unlike
+    ``single_action_short_circuit`` (which requires ``agent.ai_enabled``).
+    """
+    screen = vm.get("screen") or {}
+    if screen.get("type") != "COMBAT_REWARD":
+        return None
+    content = screen.get("content") or {}
+    rewards = content.get("rewards")
+    if rewards is None:
+        rewards = []
+    if len(rewards) != 0:
+        return None
+    for a in vm.get("actions") or []:
+        if not isinstance(a, dict):
+            continue
+        raw = str(a.get("command", "") or "").strip()
+        if raw.upper() == "PROCEED":
+            return raw
     return None
 
 
@@ -138,6 +187,7 @@ def main():
         "future": None,
         "state_id": "",
         "started_at": 0.0,
+        "last_trace": None,
     }
     proposal_failures: dict[str, int] = {"streak": 0}
     # Queued sequence: remaining token-based commands from an approved multi-command sequence
@@ -172,6 +222,11 @@ def main():
         proposal_state["future"] = None
         proposal_state["state_id"] = ""
         proposal_state["started_at"] = 0.0
+        proposal_state["last_trace"] = None
+        notify_dashboard(
+            "/api/ai/proposal_state",
+            {"in_flight": False, "state_id": ""},
+        )
         if reason:
             notify_dashboard("/log", {"message": reason})
 
@@ -206,6 +261,7 @@ def main():
                 return
             if int(proposal_state["token"]) != token:
                 return
+            proposal_state["last_trace"] = item
             notify_dashboard("/agent_trace", item.model_dump(mode="json"))
 
         future = proposal_executor.submit(
@@ -218,9 +274,14 @@ def main():
         proposal_state["future"] = future
         proposal_state["state_id"] = state_id
         proposal_state["started_at"] = time.monotonic()
+        notify_dashboard(
+            "/api/ai/proposal_state",
+            {"in_flight": True, "state_id": state_id},
+        )
         notify_dashboard("/log", {"message": f"AI proposal started for state {state_id}."})
 
     def refresh_proposal_state():
+        nonlocal last_proposed_state_id
         future = proposal_state.get("future")
         if future is None:
             return
@@ -229,9 +290,23 @@ def main():
         elapsed = time.monotonic() - float(proposal_state.get("started_at", 0.0))
         if elapsed >= timeout_seconds:
             timed_out_state_id = str(proposal_state.get("state_id") or "")
+            live_trace = proposal_state.get("last_trace")
             clear_active_proposal(
                 f"AI proposal for state {timed_out_state_id} timed out after {timeout_seconds:.0f}s."
             )
+            if live_trace is not None:
+                try:
+                    reasoning_s = float(agent.config.reasoning_request_timeout_seconds or 60.0)
+                    err = (
+                        f"Proposal timed out after {timeout_seconds:.0f}s (limit LLM_PROPOSAL_TIMEOUT_SECONDS). "
+                        f"After tools the agent runs another model call; allow at least ~{reasoning_s:.0f}s per round."
+                    )
+                    failed = live_trace.model_copy(
+                        update={"status": "error", "error": err, "update_seq": live_trace.update_seq + 1}
+                    )
+                    notify_dashboard("/agent_trace", failed.model_dump(mode="json"))
+                except Exception:  # noqa: BLE001
+                    pass
             handle_proposal_failure(
                 summary=f"AI proposal timed out for state {timed_out_state_id}",
                 status="timed_out",
@@ -240,6 +315,7 @@ def main():
                     "dashboard updates, and logging can continue."
                 ),
             )
+            last_proposed_state_id = None
             return
 
         if not future.done():
@@ -255,6 +331,7 @@ def main():
                 status="error",
                 disable_message=f"LLM worker crashed repeatedly; AI disabled for this run. Last error: {exc}",
             )
+            last_proposed_state_id = None
             return
 
         note_proposal_success()
@@ -262,6 +339,13 @@ def main():
         state_log_path = state_log_paths.get(completed_state_id)
         if state_log_path:
             write_ai_log(state_log_path, trace)
+
+        # If the model failed validation for this state, allow another propose() on the next
+        # ingress line with the same state_id. Otherwise last_proposed_state_id stays set and
+        # main falls through to idle ``wait 10`` despite ready_for_command (stall).
+        st = str(trace.status or "")
+        if st in {"invalid", "error", "disabled"}:
+            last_proposed_state_id = None
 
     def write_state_log(
         state: dict,
@@ -471,6 +555,19 @@ def main():
                 last_log_signature = None
                 duplicate_run_length = 0
                 continue
+            auto_cr_proceed = combat_reward_proceed_when_empty(vm)
+            if auto_cr_proceed:
+                notify_dashboard(
+                    "/log",
+                    {"message": f"Combat reward cleared (no rows); auto-advancing with {auto_cr_proceed!r}."},
+                )
+                execute_action(auto_cr_proceed, "auto-reward")
+                last_ai_execution = {"trace": None, "state_id": None, "action": None, "source": None}
+                last_proposed_state_id = None
+                last_state_snapshot = None
+                last_log_signature = None
+                duplicate_run_length = 0
+                continue
 
         instruction = poll_instruction() if ready_for_command else {}
         manual_action = instruction.get("manual_action")
@@ -543,6 +640,7 @@ def main():
 
         # Single-option short-circuit: when exactly one legal action exists, we skip the LLM.
         # Example: confirm after hand select (choose card to discard) — only CONFIRM is legal.
+        # Another: EVENT with one [Leave] plus optional POTION DISCARD rows — still one real choice.
         # actions_list is vm["actions"] from process_state() / _build_actions() in state_processor.
         # If short-circuit: create trace with that command (no LLM); auto mode executes it,
         # propose mode leaves trace awaiting_approval for the user.
@@ -555,6 +653,11 @@ def main():
             and proposal_state.get("future") is None
         )
         actions_list = vm.get("actions") or []
+        non_potion_actions = [
+            a
+            for a in actions_list
+            if isinstance(a, dict) and not str(a.get("command", "") or "").startswith("POTION ")
+        ]
         action_commands = {a.get("command", "") for a in actions_list}
         # Exclude always-available system actions (potions, etc.) when checking action set composition.
         non_system_commands = {
@@ -571,10 +674,15 @@ def main():
         single_action_short_circuit = (
             should_start_proposal
             and not auto_confirm_short_circuit
-            and len(actions_list) == 1
+            and len(non_potion_actions) == 1
+            and not _should_skip_single_action_shortcut(vm, actions_list)
         )
         if auto_confirm_short_circuit or single_action_short_circuit:
-            auto_cmd = "CONFIRM" if auto_confirm_short_circuit else actions_list[0].get("command", "")
+            auto_cmd = (
+                "CONFIRM"
+                if auto_confirm_short_circuit
+                else str(non_potion_actions[0].get("command", "") or "")
+            )
             note = "(Auto-confirm after selection; no LLM call.)" if auto_confirm_short_circuit else "(Single legal action; no LLM call.)"
             trace = create_trace(vm, state_id, agent_mode, "", "")
             trace.status = "awaiting_approval"

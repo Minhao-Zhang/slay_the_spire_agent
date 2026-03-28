@@ -117,7 +117,6 @@ def _enrich_card(card: dict) -> dict:
     if kb:
         out["kb"] = {
             "description": kb.get("description", ""),
-            "rarity": kb.get("rarity", ""),
             "character": kb.get("character", ""),
             "type": kb.get("type", card.get("type", "")),
         }
@@ -132,8 +131,6 @@ def _enrich_relic(relic: dict) -> dict:
     if kb:
         out["kb"] = {
             "description": kb.get("description", ""),
-            "rarity": kb.get("rarity", ""),
-            "flavor_text": kb.get("flavor_text", ""),
         }
     else:
         out["kb"] = None
@@ -288,7 +285,6 @@ def _build_screen(screen_type: str, s: dict, game: dict, combat: Optional[dict])
                 relic_kb = get_relic_info(rname)
                 r["relic_kb"] = {
                     "description": relic_kb.get("description", ""),
-                    "rarity": relic_kb.get("rarity", ""),
                 } if relic_kb else None
             elif rtype == "CARD":
                 label = "Card Reward (Draft)"

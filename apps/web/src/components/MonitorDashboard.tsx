@@ -1,87 +1,29 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 
 import { useControlPlane } from "../hooks/useControlPlane";
 import {
-  type CommandStepRow,
-  commandStepsForDisplay,
-  isCommandLegal,
-} from "../lib/playResolve";
+  labeledTooltip,
+  monsterTooltip,
+} from "../lib/entityKb";
 import { buildTacticalPrompt } from "../lib/tacticalPrompt";
-import type { ActionDTO, HeaderDTO, ViewModelDTO } from "../types/viewModel";
-
-/** Best-effort description text from ingress / KB fields (aligned with projection enrich). */
-function entityTooltip(obj: Record<string, unknown> | null | undefined): string {
-  if (!obj) return "";
-  const direct =
-    obj.description ??
-    obj.text ??
-    obj.flavor ??
-    obj.body_text ??
-    obj.help;
-  if (typeof direct === "string" && direct.trim()) return direct.trim();
-
-  const kb = obj.kb;
-  if (kb && typeof kb === "object" && !Array.isArray(kb)) {
-    const k = kb as Record<string, unknown>;
-    const cardRelicDesc =
-      typeof k.description === "string" && k.description.trim()
-        ? k.description.trim()
-        : "";
-    const effect =
-      typeof k.effect === "string" && k.effect.trim() ? k.effect.trim() : "";
-    const flavor =
-      typeof k.flavor_text === "string" && k.flavor_text.trim()
-        ? k.flavor_text.trim()
-        : "";
-    const rarity =
-      typeof k.rarity === "string" && k.rarity.trim() ? k.rarity.trim() : "";
-
-    const kbLines: string[] = [];
-    if (cardRelicDesc) kbLines.push(cardRelicDesc);
-    if (flavor) kbLines.push(flavor);
-    if (effect) kbLines.push(effect);
-    if (kbLines.length) {
-      if (rarity) kbLines.push(`(${rarity})`);
-      return kbLines.join("\n\n");
-    }
-
-    const parts: string[] = [];
-    if (k.general) parts.push(String(k.general));
-    if (k.notes) parts.push(String(k.notes));
-    if (k.ai) parts.push(`AI: ${k.ai}`);
-    if (k.hp_range) parts.push(`HP range: ${k.hp_range}`);
-    if (Array.isArray(k.moves)) parts.push(`Moves: ${k.moves.join(", ")}`);
-    if (parts.length) return parts.join("\n\n");
-  }
-  return "";
-}
-
-function labeledTooltip(name: string, obj: Record<string, unknown>): string {
-  const t = entityTooltip(obj);
-  if (t) return `${name}\n\n${t}`;
-  return name.trim() ? name : "";
-}
-
-function monsterTooltip(m: Record<string, unknown>): string {
-  const name = String(m.name ?? "?");
-  const body = entityTooltip(m);
-  if (body) return `${name}\n\n${body}`;
-  const intent = m.intent_display ? String(m.intent_display) : "";
-  const powers = (m.powers as Record<string, unknown>[] | undefined) ?? [];
-  const pStr = powers.length
-    ? powers
-        .map((p) => {
-          const pn = String(p.name ?? "");
-          const stacks = p.stacks != null ? ` (${p.stacks})` : "";
-          const d = entityTooltip(p);
-          return d ? `${pn}${stacks} — ${d}` : `${pn}${stacks}`;
-        })
-        .join("\n")
-    : "";
-  return [name, intent, pStr].filter(Boolean).join("\n");
-}
+import type {
+  ActionDTO,
+  AgentSnapshotDTO,
+  HeaderDTO,
+  PendingApprovalDTO,
+  ProposalDTO,
+  ViewModelDTO,
+} from "../types/viewModel";
 
 /** In-game card text / KB description for the hand & pile tables (no hover). */
 function cardTableText(c: Record<string, unknown>): string {
@@ -96,6 +38,7 @@ function cardTableText(c: Record<string, unknown>): string {
 
 type TipSide = "top" | "right" | "bottom";
 
+/** Renders in `document.body` with fixed position so parent `overflow-auto` never clips tooltips. */
 function HoverTip({
   tip,
   children,
@@ -108,29 +51,117 @@ function HoverTip({
   side?: TipSide;
 }) {
   const text = tip.trim();
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<CSSProperties>({});
+
+  const computePos = useCallback(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const margin = 8;
+    const maxW = Math.min(22 * 16, window.innerWidth - 2 * margin);
+    const maxH = Math.min(window.innerHeight * 0.7, 24 * 16);
+    const base: CSSProperties = {
+      position: "fixed",
+      zIndex: 99999,
+      maxWidth: maxW,
+      maxHeight: maxH,
+      overflowY: "auto",
+    };
+    if (side === "right") {
+      let left = r.right + margin;
+      const top = r.top + r.height / 2;
+      const transformDefault = "translateY(-50%)";
+      if (left + 120 > window.innerWidth - margin) {
+        left = r.left - margin;
+        setPos({
+          ...base,
+          left,
+          top,
+          transform: "translate(-100%, -50%)",
+        });
+      } else {
+        setPos({
+          ...base,
+          left,
+          top,
+          transform: transformDefault,
+        });
+      }
+      return;
+    }
+    if (side === "bottom") {
+      setPos({
+        ...base,
+        left: r.left + r.width / 2,
+        top: r.bottom + margin,
+        transform: "translateX(-50%)",
+      });
+      return;
+    }
+    setPos({
+      ...base,
+      left: r.left + r.width / 2,
+      top: r.top - margin,
+      transform: "translate(-50%, -100%)",
+    });
+  }, [side]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    computePos();
+  }, [open, computePos, text]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onScrollOrResize = () => computePos();
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
+    return () => {
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
+    };
+  }, [open, computePos]);
+
   if (!text) return <div className={className}>{children}</div>;
-  const pos =
-    side === "right"
-      ? "left-full top-1/2 z-[200] ml-2 max-h-[min(70vh,24rem)] -translate-y-1/2 overflow-y-auto"
-      : side === "bottom"
-        ? "left-1/2 top-full z-[200] mt-2 max-h-[min(70vh,24rem)] -translate-x-1/2 overflow-y-auto"
-        : "left-1/2 z-[200] mb-2 max-h-[min(70vh,24rem)] -translate-x-1/2 overflow-y-auto bottom-full";
+
   return (
-    <div className={`group/tip relative min-w-0 cursor-help ${className}`}>
-      {children}
+    <>
       <div
-        role="tooltip"
-        className={`custom-scroll pointer-events-none absolute ${pos} w-max min-w-[8rem] max-w-[min(22rem,calc(100vw-2rem))] scale-95 rounded-md border border-slate-600 bg-slate-800 px-2.5 py-2 text-left font-telemetry text-xs font-normal leading-snug tracking-normal whitespace-pre-wrap text-slate-200 opacity-0 shadow-xl transition-all duration-150 group-hover/tip:scale-100 group-hover/tip:opacity-100`}
+        ref={wrapRef}
+        className={`min-w-0 cursor-help ${className}`}
+        onMouseEnter={() => {
+          computePos();
+          setOpen(true);
+        }}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => {
+          computePos();
+          setOpen(true);
+        }}
+        onBlur={() => setOpen(false)}
       >
-        {text}
+        {children}
       </div>
-    </div>
+      {open &&
+        createPortal(
+          <div
+            role="tooltip"
+            style={pos}
+            className="custom-scroll pointer-events-none rounded-md border border-slate-600 bg-slate-800 px-2.5 py-2 text-left font-telemetry text-sm font-normal leading-snug tracking-normal whitespace-pre-wrap text-slate-200 shadow-xl"
+          >
+            {text}
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 
-/** Compact operator controls — dense enough for a narrow AI rail + full HD. */
+/** Operator controls — sized for the AI rail + legible type. */
 const osdBtnBase =
-  "font-console inline-flex h-6 shrink-0 items-center justify-center rounded border px-2 text-[10px] font-semibold uppercase tracking-[0.08em] transition duration-150 disabled:cursor-not-allowed disabled:opacity-35";
+  "font-console inline-flex h-8 shrink-0 items-center justify-center rounded border px-3 text-sm font-semibold uppercase tracking-[0.08em] transition duration-150 disabled:cursor-not-allowed disabled:opacity-35";
 
 const osdBtnGhost =
   `${osdBtnBase} border-slate-600/90 bg-slate-800/80 text-slate-400 hover:border-slate-500 hover:bg-slate-700/75 hover:text-slate-200`;
@@ -147,13 +178,13 @@ const osdBtnCta =
   `${osdBtnBase} border-indigo-700/85 bg-indigo-800 text-indigo-50 hover:bg-indigo-700`;
 
 const osdPanelStrip =
-  "flex shrink-0 items-center justify-between gap-2 border-b border-slate-700/85 bg-slate-800/95 px-2 py-1 font-console text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-300";
+  "flex shrink-0 items-center justify-between gap-2 border-b border-slate-700/85 bg-slate-800/95 px-3 py-2 font-console text-sm font-semibold uppercase tracking-[0.12em] text-slate-300";
 
 const osdSectionLabel =
-  "font-console text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500";
+  "font-console text-sm font-semibold uppercase tracking-[0.12em] text-slate-500";
 
 const osdStatCaption =
-  "font-console text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-500";
+  "font-console text-sm font-semibold uppercase tracking-[0.18em] text-slate-500";
 
 function actionBtnClass(style: string): string {
   const map: Record<string, string> = {
@@ -166,7 +197,7 @@ function actionBtnClass(style: string): string {
     secondary:
       "border-slate-600/90 bg-slate-800/80 text-slate-200 hover:bg-slate-700/90",
   };
-  return `font-console rounded border py-0.5 px-2 text-[10px] font-semibold uppercase tracking-wide transition ${map[style] ?? map.secondary}`;
+  return `font-console rounded border py-1 px-2.5 text-sm font-semibold uppercase tracking-wide transition ${map[style] ?? map.secondary}`;
 }
 
 type PileKind = "draw" | "discard" | "exhaust";
@@ -236,11 +267,11 @@ function PileTelemetryBar({
             (i > 0 ? "border-l border-slate-700/55 " : "")
           }
         >
-          <span className="font-console text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500 transition-colors group-hover:text-slate-400">
+          <span className="font-console text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 transition-colors group-hover:text-slate-400">
             {s.abbr}
           </span>
           <span
-            className={`font-telemetry text-[13px] font-semibold leading-none tabular-nums tracking-tight transition-colors ${s.tint} ${s.glow}`}
+            className={`font-telemetry text-base font-semibold leading-none tabular-nums tracking-tight transition-colors ${s.tint} ${s.glow}`}
           >
             {s.n}
           </span>
@@ -268,44 +299,47 @@ function EnemyCard({ m }: { m: Record<string, unknown> }) {
   const tip = monsterTooltip(m);
 
   return (
-    <div
-      className="flex cursor-help flex-col overflow-hidden rounded border border-slate-700 bg-slate-800/30"
-      title={tip || undefined}
+    <HoverTip
+      tip={tip}
+      className="flex flex-col overflow-hidden rounded border border-slate-700 bg-slate-800/30"
     >
         <div className="flex items-center justify-between border-b border-slate-700/50 bg-slate-800/50 px-3 py-1.5">
           <div className="flex items-baseline gap-2">
-            <span className="font-console text-xs font-bold text-red-400">
+            <span className="font-console text-sm font-bold text-red-400">
               {name}
             </span>
             <span className={osdStatCaption}>HP</span>
-            <span className="font-telemetry text-xs font-medium text-slate-200">
+            <span className="font-telemetry text-sm font-medium text-slate-200">
               {hp || "—"}
             </span>
           </div>
-          <div className="font-console text-[10px] font-semibold uppercase tracking-wide text-red-400">
+          <div className="font-console text-xs font-semibold uppercase tracking-wide text-red-400">
             {intent || "—"}
           </div>
         </div>
         <div className="flex flex-wrap gap-2 px-3 py-2">
           {powers.length === 0 ? (
-            <span className="text-[10px] text-slate-600">—</span>
+            <span className="text-xs text-slate-600">—</span>
           ) : (
-            powers.map((p, i) => {
-              const pDesc = entityTooltip(p);
-              return (
-                <span
-                  key={i}
-                  title={pDesc || undefined}
-                  className="inline-flex rounded border border-purple-700/50 bg-purple-900/40 px-1.5 py-0.5 text-[10px] text-purple-300"
-                >
+            powers.map((p, i) => (
+              <HoverTip
+                key={i}
+                tip={labeledTooltip(
+                  `${String(p.name ?? "?")}${p.stacks != null ? ` (${String(p.stacks)})` : ""}`,
+                  p,
+                )}
+                side="top"
+                className="inline-flex"
+              >
+                <span className="inline-flex cursor-help rounded border border-purple-700/50 bg-purple-900/40 px-1.5 py-0.5 text-xs text-purple-300">
                   {String(p.name ?? "?")}
                   {p.stacks != null ? ` (${String(p.stacks)})` : ""}
                 </span>
-              );
-            })
+              </HoverTip>
+            ))
           )}
         </div>
-      </div>
+    </HoverTip>
   );
 }
 
@@ -320,7 +354,7 @@ function cardNameClass(type: unknown): string {
 function CardTable({ cards }: { cards: Record<string, unknown>[] }) {
   return (
     <table className="w-full text-left whitespace-nowrap [&_td:last-child]:whitespace-normal">
-      <thead className="sticky top-0 z-10 bg-slate-900 font-console text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+      <thead className="sticky top-0 z-10 bg-slate-900 font-console text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
         <tr>
           <th className="w-8 border-b border-slate-800 py-2 px-3 font-semibold">
             #
@@ -342,7 +376,7 @@ function CardTable({ cards }: { cards: Record<string, unknown>[] }) {
           </th>
         </tr>
       </thead>
-      <tbody className="divide-y divide-slate-800 font-telemetry text-[10px] text-slate-400">
+      <tbody className="divide-y divide-slate-800 font-telemetry text-sm text-slate-400">
         {cards.map((c, idx) => (
             <tr key={idx} className="hover:bg-slate-800/50">
               <td className="py-2 px-3">{idx + 1}</td>
@@ -355,7 +389,7 @@ function CardTable({ cards }: { cards: Record<string, unknown>[] }) {
               <td className={`py-2 px-3 ${cardNameClass(c.type)}`}>
                 {String(c.name ?? "?")}
               </td>
-              <td className="py-2 px-3 text-[11px] text-slate-500">
+              <td className="py-2 px-3 text-sm text-slate-500">
                 {String(c.type ?? "—")}
               </td>
               <td className="max-w-md py-2 px-3 break-words text-slate-300">
@@ -402,7 +436,7 @@ function PileInspectModal({
             <span className="truncate font-console text-xs font-bold text-slate-100">
               {title}
             </span>
-            <span className="shrink-0 font-telemetry text-[10px] text-slate-500">
+            <span className="shrink-0 font-telemetry text-xs text-slate-500">
               {cards.length} cards
             </span>
           </div>
@@ -422,25 +456,38 @@ function PileInspectModal({
   );
 }
 
+/** Derived status for the AI operator rail (always prefer a visible state over “blank”). */
+type LlmRailStatus =
+  | { kind: "error"; title: string; message: string }
+  | {
+      kind: "pending";
+      title: string;
+      message: string;
+      hint?: string;
+      /** When false, omit the pulsing dot (idle / informational). */
+      pulse?: boolean;
+    };
+
 export function MonitorDashboard() {
   const {
     snapshot,
     connected,
     logLines,
-    postIngress,
-    loadSample,
     queueManualCommand,
     resumeAgent,
     retryAgent,
     pushLog,
-    historyThreads,
-    historyEvents,
-    historyCheckpoints,
-    historyThreadFilter,
-    setHistoryThreadFilter,
-    refreshHistoryThreads,
-    loadHistoryEvents,
-    loadHistoryCheckpoints,
+    replayRuns,
+    replayPickerRun,
+    setReplayPickerRun,
+    replayFiles,
+    replayIndex,
+    replayBusy,
+    replayRunName,
+    replayAiSidecar,
+    loadReplayRun,
+    replaySeek,
+    clearReplaySelection,
   } = useControlPlane();
 
   const copyClipboard = useCallback(
@@ -459,12 +506,69 @@ export function MonitorDashboard() {
     [pushLog],
   );
 
-  const [paste, setPaste] = useState("");
   const [editCmd, setEditCmd] = useState("");
   const [pileInspect, setPileInspect] = useState<PileKind | null>(null);
 
+  const vm: ViewModelDTO | null = snapshot?.view_model ?? null;
+  const stateId = snapshot?.state_id ?? null;
+
+  const agentForRail = useMemo((): AgentSnapshotDTO | undefined => {
+    const base = snapshot?.agent;
+    const inReplay = replayRunName !== "" && replayFiles.length > 0;
+    if (!inReplay) return base ?? undefined;
+    if (replayAiSidecar?.kind === "loading") {
+      return {
+        ...base,
+        ai_enabled: true,
+        llm_backend: "replay",
+        ai_system_status: "ok",
+        ai_system_message: "",
+        proposal_in_flight: true,
+        proposal_for_state_id: null,
+        agent_error: undefined,
+        proposal: undefined,
+        pending_approval: undefined,
+      };
+    }
+    if (replayAiSidecar?.kind === "missing") {
+      return {
+        ...base,
+        ai_enabled: true,
+        llm_backend: "replay",
+        ai_system_status: "ok",
+        ai_system_message: "",
+        proposal_in_flight: false,
+        proposal_for_state_id: null,
+        agent_error: undefined,
+        proposal: undefined,
+        pending_approval: undefined,
+      };
+    }
+    if (replayAiSidecar?.kind === "ok") {
+      return {
+        ...base,
+        ai_enabled: true,
+        llm_backend: "replay",
+        ai_system_status: "ok",
+        ai_system_message: "",
+        proposal_in_flight: false,
+        proposal_for_state_id: null,
+        agent_error: undefined,
+        proposal: (replayAiSidecar.proposal ?? undefined) as
+          | ProposalDTO
+          | undefined,
+        pending_approval: (replayAiSidecar.pending_approval ??
+          undefined) as PendingApprovalDTO | undefined,
+      };
+    }
+    return base ?? undefined;
+  }, [snapshot?.agent, replayAiSidecar, replayFiles.length, replayRunName]);
+
+  const hitlReadOnly =
+    String(agentForRail?.llm_backend ?? "").toLowerCase() === "replay";
+
   const hitlQueuedSteps = useMemo(() => {
-    const intr = snapshot?.agent?.pending_approval?.interrupt;
+    const intr = agentForRail?.pending_approval?.interrupt;
     if (!intr) return [];
     const head = intr.command != null ? String(intr.command).trim() : "";
     const tail = Array.isArray(intr.command_queue)
@@ -472,13 +576,40 @@ export function MonitorDashboard() {
       : [];
     if (head) return [head, ...tail];
     return tail;
-  }, [snapshot?.agent?.pending_approval?.interrupt]);
-
-  const vm: ViewModelDTO | null = snapshot?.view_model ?? null;
-  const stateId = snapshot?.state_id ?? null;
+  }, [agentForRail?.pending_approval?.interrupt]);
   const combat = vm?.combat as Record<string, unknown> | null | undefined;
   const inventory = vm?.inventory as Record<string, unknown> | null | undefined;
   const header = vm?.header;
+  const screenVm = vm?.screen as Record<string, unknown> | undefined;
+  const screenType =
+    screenVm && typeof screenVm.type === "string"
+      ? String(screenVm.type).trim()
+      : "";
+
+  const nonCombatBoardHint = useMemo(() => {
+    if (combat) return null;
+    if (!vm?.in_game) return null;
+    const st = screenType || "NONE";
+    const namedScreens = new Set([
+      "COMBAT_REWARD",
+      "REST",
+      "SHOP",
+      "MAP",
+      "EVENT",
+      "CARD_REWARD",
+      "GRID",
+      "HAND_SELECT",
+      "TREASURE",
+      "SMITH",
+    ]);
+    if (namedScreens.has(st)) {
+      return `Screen ${st.replace(/_/g, " ")} — not a combat tick, so the mod omits combat_state (no hand or enemy rows). Step replay to a frame with Energy and Turn filled in; those frames include hand and monsters.`;
+    }
+    if (st === "NONE") {
+      return "Screen NONE and no combat_state on this frame. If you expected combat, advance replay until the prompt shows HAND / MONSTERS sections.";
+    }
+    return "No combat_state in this snapshot — hand and enemies only exist while combat is active.";
+  }, [combat, screenType, vm?.in_game]);
 
   const hand = (combat?.hand as Record<string, unknown>[] | undefined) ?? [];
   const monsters =
@@ -516,131 +647,281 @@ export function MonitorDashboard() {
     return slots;
   }, [potions]);
 
-  const applyPaste = () => {
-    try {
-      const body = JSON.parse(paste) as Record<string, unknown>;
-      void postIngress(body);
-      pushLog("SYSTEM", "Applied JSON from paste buffer");
-    } catch (e) {
-      pushLog("ERROR", `Invalid JSON: ${String(e)}`);
-    }
-  };
-
   const actions: ActionDTO[] = vm?.actions ?? [];
   const { user: tacticalUser } = useMemo(() => buildTacticalPrompt(vm), [vm]);
 
-  const proposal = snapshot?.agent?.proposal as Record<string, unknown> | undefined;
-  const proposalRationale =
-    proposal?.rationale != null && String(proposal.rationale).trim() !== ""
-      ? String(proposal.rationale)
-      : null;
+  const proposal = agentForRail?.proposal as Record<string, unknown> | undefined;
 
   const llmRaw =
     proposal?.llm_raw != null ? String(proposal.llm_raw) : "";
 
-  const parsedModelBlock = useMemo(() => {
-    if (!proposal) return null;
-    const status = proposal.status != null ? String(proposal.status) : null;
-    const command =
-      proposal.command != null && String(proposal.command).trim() !== ""
-        ? String(proposal.command)
-        : null;
-    const rationale =
-      proposal.rationale != null && String(proposal.rationale).trim() !== ""
-        ? String(proposal.rationale)
-        : null;
-    const errorReason =
-      proposal.error_reason != null &&
-      String(proposal.error_reason).trim() !== ""
-        ? String(proposal.error_reason)
-        : null;
-    const resolveTag =
-      proposal.resolve_tag != null &&
-      String(proposal.resolve_tag).trim() !== ""
-        ? String(proposal.resolve_tag)
-        : null;
-    const parsedModel = proposal.parsed_model as Record<string, unknown> | null | undefined;
-    let parsedJson: string | null = null;
-    if (parsedModel != null && typeof parsedModel === "object") {
-      try {
-        parsedJson = JSON.stringify(parsedModel, null, 2);
-      } catch {
-        parsedJson = String(parsedModel);
-      }
+  const proposalStatus =
+    proposal?.status != null ? String(proposal.status).trim().toLowerCase() : "";
+  const proposalErrorReason =
+    proposal?.error_reason != null && String(proposal.error_reason).trim() !== ""
+      ? String(proposal.error_reason).trim()
+      : "";
+
+  const llmRunStatus = useMemo((): LlmRailStatus => {
+    if (
+      replayRunName !== "" &&
+      replayFiles.length > 0 &&
+      replayAiSidecar?.kind === "loading"
+    ) {
+      return {
+        kind: "pending",
+        pulse: true,
+        title: "Replay",
+        message: "Loading logged model output for this frame…",
+      };
     }
     if (
-      !status &&
-      !command &&
-      !rationale &&
-      !errorReason &&
-      !resolveTag &&
-      !parsedJson
+      replayRunName !== "" &&
+      replayFiles.length > 0 &&
+      replayAiSidecar?.kind === "missing"
     ) {
-      return null;
+      return {
+        kind: "pending",
+        pulse: false,
+        title: "Replay",
+        message:
+          "No .ai.json sidecar for this frame — the model trace was not logged next to this state file.",
+      };
     }
+
+    const agent = agentForRail;
+    const sysStatus = String(agent?.ai_system_status ?? "").trim().toLowerCase();
+    const sysMsg = String(agent?.ai_system_message ?? "").trim();
+    const aiEnabled = agent?.ai_enabled === true;
+    const llmBackend = String(agent?.llm_backend ?? "").trim().toLowerCase();
+    const llmOff = llmBackend === "" || llmBackend === "off";
+    const proposalInFlight = agent?.proposal_in_flight === true;
+    const mode = String(agent?.agent_mode ?? "").trim().toLowerCase();
+    const srvProposalSid = String(agent?.proposal_for_state_id ?? "").trim();
+
+    const traceForSid = String(proposal?.for_state_id ?? "").trim();
+    const curSid = String(stateId ?? "").trim();
+    const stateMismatch =
+      traceForSid !== "" &&
+      curSid !== "" &&
+      traceForSid !== curSid &&
+      proposalStatus !== "stale";
+
+    if (sysStatus === "checking") {
+      return {
+        kind: "pending",
+        pulse: true,
+        title: "AI starting",
+        message:
+          sysMsg ||
+          "The game process is checking LLM configuration (see session log).",
+      };
+    }
+
+    if (stateMismatch) {
+      return {
+        kind: "error",
+        title: "State mismatch",
+        message: `Trace is for state ${traceForSid}; dashboard state is ${curSid}. Wait for a fresh trace or use Retry AI to clear the monitor.`,
+      };
+    }
+
+    if (!aiEnabled || llmOff || sysStatus === "disabled") {
+      return {
+        kind: "error",
+        title: "AI unavailable",
+        message:
+          sysMsg ||
+          (llmOff
+            ? "LLM backend is off or not configured for this run."
+            : "AI is disabled for this run."),
+      };
+    }
+
+    const backendErr =
+      agent?.agent_error != null &&
+      String(agent.agent_error).trim() !== ""
+        ? String(agent.agent_error).trim()
+        : "";
+    if (backendErr) {
+      return {
+        kind: "error",
+        title: "LLM / agent error",
+        message: backendErr,
+      };
+    }
+    if (proposalStatus === "error" || proposalStatus === "disabled") {
+      return {
+        kind: "error",
+        title:
+          proposalStatus === "disabled" ? "AI disabled" : "LLM request failed",
+        message:
+          proposalErrorReason ||
+          (proposalStatus === "disabled"
+            ? "LLM is not available for this run."
+            : "The model or tool loop reported an error."),
+      };
+    }
+    if (proposalStatus === "invalid") {
+      return {
+        kind: "error",
+        title: "Invalid proposal",
+        message:
+          proposalErrorReason ||
+          "The model output did not include a valid final decision.",
+      };
+    }
+    if (proposalStatus === "building_prompt") {
+      return {
+        kind: "pending",
+        pulse: true,
+        title: "Preparing prompt",
+        message:
+          "Building the user prompt and context before calling the model…",
+        hint:
+          proposal?.command != null ? String(proposal.command) : undefined,
+      };
+    }
+    if (proposalStatus === "running") {
+      return {
+        kind: "pending",
+        pulse: true,
+        title: "Awaiting model response",
+        message:
+          "The model is generating a reply (including after tool calls). This can take a while.",
+        hint:
+          proposal?.command != null ? String(proposal.command) : undefined,
+      };
+    }
+    if (proposalStatus === "awaiting_approval") {
+      return {
+        kind: "pending",
+        pulse: false,
+        title: "Proposal ready",
+        message:
+          "The model returned a legal command. Use Awaiting approval below or switch to auto mode.",
+        hint:
+          proposal?.command != null ? String(proposal.command) : undefined,
+      };
+    }
+    if (proposalStatus === "stale") {
+      return {
+        kind: "pending",
+        pulse: false,
+        title: "Superseded",
+        message:
+          "This run was for an earlier room. Wait for the game process to post a new trace, or use Retry AI to clear the monitor.",
+      };
+    }
+    if (proposalStatus === "rejected") {
+      return {
+        kind: "pending",
+        pulse: false,
+        title: "Proposal rejected",
+        message:
+          "The last proposal was rejected. The next game tick or state change should start a new run if auto/propose mode allows it.",
+      };
+    }
+    if (proposalStatus === "approved") {
+      return {
+        kind: "pending",
+        pulse: true,
+        title: "Approved",
+        message:
+          "Waiting for the game loop to pick up the approved action from the dashboard.",
+      };
+    }
+    if (proposalStatus === "executed") {
+      return {
+        kind: "pending",
+        pulse: false,
+        title: "Idle",
+        message:
+          "Last proposal was executed. Waiting for the next decision point from the game.",
+      };
+    }
+
+    if (proposalInFlight) {
+      const sidHint =
+        srvProposalSid && curSid && srvProposalSid !== curSid
+          ? ` (worker state ${srvProposalSid} vs dashboard ${curSid})`
+          : "";
+      return {
+        kind: "pending",
+        pulse: true,
+        title: "Awaiting model response",
+        message: `The game process has an LLM call in flight${sidHint}. Streamed trace updates will appear when the worker posts them.`,
+      };
+    }
+
+    if (mode === "manual") {
+      return {
+        kind: "pending",
+        pulse: false,
+        title: "Manual mode",
+        message:
+          "AI is enabled but mode is manual — no automatic proposals. Use legal actions or queue a command.",
+      };
+    }
+
+    if (actions.length > 0 && !proposal && (mode === "auto" || mode === "propose")) {
+      const ingressReady = snapshot?.ingress_ready_for_command;
+      const readyHint =
+        ingressReady === true
+          ? " Game ingress: ready_for_command=true (decision room is ready); the agent should attach a proposal on the next state packet."
+          : ingressReady === false
+            ? " Game ingress: ready_for_command=false on the last frame."
+            : "";
+      return {
+        kind: "pending",
+        pulse: true,
+        title: "Waiting for AI",
+        message: `No trace for this state yet.${readyHint}`,
+      };
+    }
+
+    if (vm && actions.length > 0) {
+      return {
+        kind: "pending",
+        pulse: false,
+        title: "Watching",
+        message:
+          "Connected with legal actions; no AI activity flag for this frame.",
+      };
+    }
+
     return {
-      status,
-      command,
-      rationale,
-      resolveTag,
-      errorReason,
-      parsedJson,
+      kind: "pending",
+      pulse: false,
+      title: "No game state",
+      message:
+        connected
+          ? "Load ingress or run CommunicationMod so the dashboard receives state."
+          : "WebSocket offline — reconnect to see live status.",
     };
-  }, [proposal]);
-
-  const proposalCmdNotLegalNow = useMemo(() => {
-    const c = parsedModelBlock?.command;
-    if (!c || !actions.length) return false;
-    return !isCommandLegal(actions, c);
-  }, [parsedModelBlock?.command, actions]);
-
-  const resolvedCommandSteps = useMemo((): CommandStepRow[] => {
-    if (!vm?.actions?.length || !proposal) return [];
-    const pm = proposal.parsed_model as Record<string, unknown> | null | undefined;
-    const apiSteps = pm?.command_steps;
-    if (Array.isArray(apiSteps) && apiSteps.length > 0) {
-      return apiSteps as CommandStepRow[];
-    }
-    const cmds = pm?.commands;
-    if (Array.isArray(cmds) && cmds.length > 0) {
-      return commandStepsForDisplay(vm.actions, cmds.map(String));
-    }
-    const single = pm?.command;
-    if (single != null && String(single).trim() !== "") {
-      return commandStepsForDisplay(vm.actions, [String(single).trim()]);
-    }
-    const pc = proposal.command;
-    if (pc != null && String(pc).trim() !== "") {
-      return commandStepsForDisplay(vm.actions, [String(pc).trim()]);
-    }
-    return [];
-  }, [proposal, vm]);
-
-  const parsedCopyText = useMemo(() => {
-    if (!parsedModelBlock) return "";
-    const b = parsedModelBlock;
-    const lines: string[] = [];
-    if (b.status) lines.push(`status: ${b.status}`);
-    if (b.command) lines.push(`command: ${b.command}`);
-    if (b.errorReason) lines.push(`error: ${b.errorReason}`);
-    if (b.resolveTag && b.resolveTag !== b.rationale) {
-      lines.push(`resolve_tag: ${b.resolveTag}`);
-    }
-    if (b.rationale && b.rationale !== b.errorReason) {
-      lines.push(`rationale: ${b.rationale}`);
-    }
-    if (b.parsedJson) lines.push(b.parsedJson);
-    if (resolvedCommandSteps.length) {
-      lines.push(
-        "resolved_steps:",
-        ...resolvedCommandSteps.map(
-          (r) =>
-            `  ${r.model} => ${r.canonical ?? "—"} (${r.resolve_tag})`,
-        ),
-      );
-    }
-    return lines.join("\n");
-  }, [parsedModelBlock, resolvedCommandSteps]);
+  }, [
+    actions.length,
+    connected,
+    proposal,
+    proposal?.command,
+    proposal?.for_state_id,
+    proposalErrorReason,
+    proposalStatus,
+    agentForRail?.agent_error,
+    agentForRail?.agent_mode,
+    agentForRail?.ai_enabled,
+    agentForRail?.ai_system_message,
+    agentForRail?.ai_system_status,
+    agentForRail?.llm_backend,
+    agentForRail?.proposal_for_state_id,
+    agentForRail?.proposal_in_flight,
+    replayAiSidecar,
+    replayFiles.length,
+    replayRunName,
+    snapshot?.ingress_ready_for_command,
+    stateId,
+    vm,
+  ]);
 
   const tacticalPromptText = !vm?.actions?.length
     ? "— Load ingress —"
@@ -650,15 +931,14 @@ export function MonitorDashboard() {
     snapshot?.agent?.thread_id != null && snapshot.agent.thread_id !== ""
       ? `/explorer?thread_id=${encodeURIComponent(snapshot.agent.thread_id)}`
       : "/explorer";
-  const envLine = `${snapshot?.agent?.agent_mode ?? "—"} · ${snapshot?.agent?.proposer ?? "legacy"}/${snapshot?.agent?.llm_backend ?? "off"} · tid ${snapshot?.agent?.thread_id ?? "n/a"} · seed ${snapshot?.agent?.run_seed ?? "n/a"} · ${stateId ?? "—"}`;
-  const agentErrorText = snapshot?.agent?.agent_error;
+  const envLine = `${agentForRail?.agent_mode ?? "—"} · ${agentForRail?.proposer ?? "legacy"}/${agentForRail?.llm_backend ?? "off"} · tid ${agentForRail?.thread_id ?? "n/a"} · seed ${agentForRail?.run_seed ?? "n/a"} · ${stateId ?? "—"}`;
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-gradient-to-b from-slate-900 via-[#0a0d11] to-[#06080a] text-xs text-slate-300 select-none">
+    <div className="flex h-screen flex-col overflow-hidden bg-gradient-to-b from-slate-900 via-[#0a0d11] to-[#06080a] text-sm text-slate-300 select-none">
       {/* Top bar — game / session controls only; combat readouts live in the stats strip */}
       <header className="flex shrink-0 items-center border-b border-slate-700/90 bg-slate-900/80 px-3 py-2 backdrop-blur-sm">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-          <span className="font-console text-xs font-bold tracking-[0.14em] text-slate-100">
+          <span className="font-console text-sm font-bold tracking-[0.14em] text-slate-100">
             SPIRE AGENT
             <span className="ml-1.5 font-medium tracking-normal text-slate-500">
               · operator
@@ -666,13 +946,13 @@ export function MonitorDashboard() {
           </span>
           <Link
             to={explorerHref}
-            title="History explorer (no LangGraph threads in legacy mode; page opens for future log-backed views)"
-            className="rounded border border-sky-800/60 bg-sky-950/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-300 hover:bg-sky-900/50"
+            title="Thread / checkpoint explorer (stub APIs on legacy dashboard; intended home until top-bar Replay loads log runs)"
+            className="rounded border border-sky-800/60 bg-sky-950/40 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-sky-300 hover:bg-sky-900/50"
           >
-            History
+            Explorer
           </Link>
           <div
-            className={`font-console flex h-6 items-center gap-1.5 rounded border px-2 text-[10px] font-semibold uppercase tracking-wide ${
+            className={`font-console flex h-7 items-center gap-1.5 rounded border px-2.5 text-xs font-semibold uppercase tracking-wide ${
               connected
                 ? "border-emerald-700/50 bg-emerald-950/35 text-emerald-400"
                 : "border-red-800/55 bg-red-950/30 text-red-400"
@@ -691,30 +971,109 @@ export function MonitorDashboard() {
             {connected ? "Live" : "Offline"}
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 border-l border-slate-600/70 pl-4">
+          <div
+            className="flex flex-wrap items-center gap-1.5 border-l border-slate-600/70 pl-4"
+            title="Choosing a run loads its first frame automatically. Prev/Next POST each JSON to /api/debug/ingress. While a run is selected, WebSocket snapshots are ignored so replay is not overwritten. Clear the run to resume live updates."
+          >
             <span className={osdStatCaption}>Replay</span>
             <select
-              disabled
-              className="font-console h-6 rounded border border-slate-700 bg-slate-950/80 px-2 text-[10px] font-medium text-slate-500 outline-none"
+              value={replayPickerRun}
+              onChange={(e) => {
+                const v = e.target.value;
+                setReplayPickerRun(v);
+                if (v) void loadReplayRun(v);
+                else clearReplaySelection();
+              }}
+              disabled={replayBusy}
+              className="font-console h-7 max-w-[14rem] rounded border border-slate-700 bg-slate-950/80 px-2 text-xs font-medium text-slate-200 outline-none"
+              aria-label="Log run directory under logs/"
             >
-              <option>Select run…</option>
+              <option value="">Select run…</option>
+              {replayRuns.map((run) => (
+                <option key={run} value={run}>
+                  {run}
+                </option>
+              ))}
             </select>
-            <button type="button" disabled className={osdBtnGhost}>
-              Load
-            </button>
-            <button type="button" onClick={() => loadSample()} className={osdBtnCta}>
-              Load sample
-            </button>
+            {replayFiles.length > 0 ? (
+              <>
+                <button
+                  type="button"
+                  disabled={replayBusy || replayIndex <= 0}
+                  className={osdBtnGhost}
+                  onClick={() => replaySeek(-10)}
+                  title="Back 10 frames"
+                >
+                  −10
+                </button>
+                <button
+                  type="button"
+                  disabled={replayBusy || replayIndex <= 0}
+                  className={osdBtnGhost}
+                  onClick={() => replaySeek(-1)}
+                >
+                  Prev
+                </button>
+                <span className="font-telemetry min-w-[4.5rem] text-center text-xs tabular-nums text-slate-400">
+                  {replayIndex + 1}/{replayFiles.length}
+                </span>
+                <button
+                  type="button"
+                  disabled={
+                    replayBusy || replayIndex >= replayFiles.length - 1
+                  }
+                  className={osdBtnGhost}
+                  onClick={() => replaySeek(1)}
+                >
+                  Next
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    replayBusy || replayIndex >= replayFiles.length - 1
+                  }
+                  className={osdBtnGhost}
+                  onClick={() => replaySeek(10)}
+                  title="Forward 10 frames"
+                >
+                  +10
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
       </header>
+
+      {snapshot?.live_ingress === false ? (
+        <div
+          className="shrink-0 border-b border-amber-900/50 bg-amber-950/40 px-3 py-2 text-sm text-amber-100/95"
+          role="status"
+        >
+          <span className="font-console font-semibold uppercase tracking-wide text-amber-300">
+            No live game feed
+          </span>
+          <span className="text-amber-100/85">
+            {" "}
+            — the monitor hides stale snapshots when CommunicationMod has not sent a
+            state for a while. Start the game +{" "}
+            <code className="rounded bg-black/25 px-1">src.main</code>, or choose a
+            run under <span className="font-medium">Replay</span>.
+            {typeof snapshot.ingress_age_seconds === "number" ? (
+              <span className="text-amber-200/80">
+                {" "}
+                Last packet was ~{Math.round(snapshot.ingress_age_seconds)}s ago.
+              </span>
+            ) : null}
+          </span>
+        </div>
+      ) : null}
 
       {/* Stats + potions — left-aligned run readout */}
       <div className="flex min-h-0 shrink-0 flex-wrap items-end gap-x-6 gap-y-1.5 border-b border-slate-700/85 bg-slate-800/75 px-3 py-2">
         <div className="flex flex-wrap items-end gap-x-6 gap-y-1.5">
           <div className="flex flex-col gap-px">
             <span className={osdStatCaption}>Turn</span>
-            <span className="font-telemetry text-sm font-semibold tabular-nums leading-none text-slate-50">
+            <span className="font-telemetry text-base font-semibold tabular-nums leading-none text-slate-50">
               {header?.turn ?? "—"}
             </span>
           </div>
@@ -730,7 +1089,7 @@ export function MonitorDashboard() {
             <div key={label} className="flex flex-col gap-px">
               <span className={osdStatCaption}>{label}</span>
               <span
-                className={`font-telemetry text-sm font-semibold tabular-nums leading-none ${col}`}
+                className={`font-telemetry text-base font-semibold tabular-nums leading-none ${col}`}
               >
                 {val}
               </span>
@@ -746,14 +1105,14 @@ export function MonitorDashboard() {
                   side="bottom"
                   className="w-auto shrink-0"
                 >
-                  <div className="font-console max-w-[7.5rem] truncate rounded border border-slate-600/90 bg-slate-800/80 px-1.5 py-0.5 text-[10px] font-medium text-slate-200">
+                  <div className="font-console max-w-[7.5rem] truncate rounded border border-slate-600/90 bg-slate-800/80 px-1.5 py-0.5 text-xs font-medium text-slate-200">
                     {String(p.name ?? "Potion")}
                   </div>
                 </HoverTip>
               ) : (
                 <div
                   key={i}
-                  className="font-console rounded border border-dashed border-slate-600/70 px-1.5 py-0.5 text-[10px] text-slate-600"
+                  className="font-console rounded border border-dashed border-slate-600/70 px-1.5 py-0.5 text-xs text-slate-600"
                 >
                   —
                 </div>
@@ -771,20 +1130,21 @@ export function MonitorDashboard() {
             <div className={osdPanelStrip}>Relics · {relics.length}</div>
             <div className="custom-scroll flex-1 space-y-1 overflow-y-auto p-2">
               {relics.length === 0 ? (
-                <div className="px-1 font-console text-[10px] italic text-slate-600">
+                <div className="px-1 font-console text-sm italic text-slate-600">
                   None
                 </div>
               ) : (
                 relics.map((r, i) => (
-                  <div
+                  <HoverTip
                     key={i}
-                    title={
-                      labeledTooltip(String(r.name ?? "?"), r) || undefined
-                    }
-                    className="cursor-help rounded border border-slate-700 bg-slate-800/50 px-1.5 py-1 text-[10px] text-slate-300"
+                    tip={labeledTooltip(String(r.name ?? "?"), r)}
+                    side="right"
+                    className="w-full min-w-0"
                   >
-                    {String(r.name ?? "?")}
-                  </div>
+                    <div className="cursor-help truncate rounded border border-slate-700 bg-slate-800/50 px-1.5 py-1 text-sm text-slate-300">
+                      {String(r.name ?? "?")}
+                    </div>
+                  </HoverTip>
                 ))
               )}
             </div>
@@ -793,21 +1153,22 @@ export function MonitorDashboard() {
             <div className={osdPanelStrip}>Powers</div>
             <div className="custom-scroll flex-1 overflow-y-auto p-2">
               {playerPowers.length === 0 ? (
-                <div className="px-1 font-console text-[10px] italic text-slate-600">
+                <div className="px-1 font-console text-sm italic text-slate-600">
                   None
                 </div>
               ) : (
                 <div className="space-y-1">
                   {playerPowers.map((p, i) => (
-                    <div
+                    <HoverTip
                       key={i}
-                      title={
-                        labeledTooltip(String(p.name ?? "?"), p) || undefined
-                      }
-                      className="cursor-help rounded border border-slate-700 bg-slate-800/50 px-1.5 py-0.5 text-[10px]"
+                      tip={labeledTooltip(String(p.name ?? "?"), p)}
+                      side="right"
+                      className="w-full min-w-0"
                     >
-                      {String(p.name ?? "?")}
-                    </div>
+                      <div className="cursor-help truncate rounded border border-slate-700 bg-slate-800/50 px-1.5 py-0.5 text-sm">
+                        {String(p.name ?? "?")}
+                      </div>
+                    </HoverTip>
                   ))}
                 </div>
               )}
@@ -819,14 +1180,23 @@ export function MonitorDashboard() {
         <main className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-slate-700">
           {/* Top: enemies | hand */}
           <div className="flex min-h-0 flex-1 border-b border-slate-700">
-            <div className="flex min-h-0 min-w-0 flex-[1.05] flex-col border-r border-slate-700">
+            <div className="flex min-h-0 min-w-0 flex-[0.68] flex-col border-r border-slate-700">
               <div className={`sticky top-0 z-10 ${osdPanelStrip}`}>
                 Enemies · {monsters.length}
               </div>
               <div className="custom-scroll flex-1 space-y-3 overflow-y-auto p-3">
                 {monsters.length === 0 ? (
-                  <div className="py-6 text-center text-slate-600">
-                    No combat / no enemies
+                  <div className="space-y-2 px-2 py-6 text-center text-sm text-slate-500">
+                    <p className="font-medium text-slate-400">No enemies</p>
+                    {nonCombatBoardHint ? (
+                      <p className="text-xs leading-relaxed text-slate-600">
+                        {nonCombatBoardHint}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-600">
+                        In combat but no living foes, or snapshot incomplete.
+                      </p>
+                    )}
                   </div>
                 ) : (
                   monsters.map((m, i) => <EnemyCard key={i} m={m} />)
@@ -834,7 +1204,7 @@ export function MonitorDashboard() {
               </div>
             </div>
 
-            <div className="flex min-h-0 min-w-0 flex-[0.95] flex-col bg-slate-900">
+            <div className="flex min-h-0 min-w-0 flex-[1.32] flex-col bg-slate-900">
               <div
                 className={`sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 ${osdPanelStrip}`}
               >
@@ -849,13 +1219,30 @@ export function MonitorDashboard() {
                 />
               </div>
               <div className="custom-scroll min-h-0 flex-1 overflow-y-auto">
-                <CardTable cards={hand} />
+                {hand.length === 0 ? (
+                  <div className="space-y-2 px-3 py-8 text-center text-sm text-slate-500">
+                    <p className="font-medium text-slate-400">
+                      No cards in hand
+                    </p>
+                    {nonCombatBoardHint ? (
+                      <p className="text-xs leading-relaxed text-slate-600">
+                        {nonCombatBoardHint}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-600">
+                        Empty hand this turn, or combat not loaded.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <CardTable cards={hand} />
+                )}
               </div>
             </div>
           </div>
 
           {/* Valid actions — full width under enemies + hand */}
-          <div className="flex h-[5.5rem] max-h-[26vh] shrink-0 flex-col border-b border-slate-700 bg-slate-900/50">
+          <div className="flex h-[6.25rem] max-h-[28vh] shrink-0 flex-col border-b border-slate-700 bg-slate-900/50">
             <div
               className={`shrink-0 border-b border-slate-700/85 bg-slate-800/80 px-2 py-1 ${osdSectionLabel}`}
             >
@@ -863,7 +1250,7 @@ export function MonitorDashboard() {
             </div>
             <div className="custom-scroll flex flex-1 flex-wrap content-start gap-1 overflow-y-auto px-2 py-1">
               {actions.length === 0 ? (
-                <span className="font-console text-[10px] text-slate-600">
+                <span className="font-console text-xs text-slate-600">
                   No actions
                 </span>
               ) : (
@@ -897,38 +1284,28 @@ export function MonitorDashboard() {
                   >
                     Copy
                   </button>
-                  <span className="max-w-[11rem] truncate font-console text-[10px] font-normal normal-case tracking-normal text-slate-500 md:max-w-md">
-                    {snapshot?.agent?.proposer === "legacy"
+                  <span className="max-w-[11rem] truncate font-console text-xs font-normal normal-case tracking-normal text-slate-500 md:max-w-md">
+                    {agentForRail?.proposer === "legacy"
                       ? "Debug summary — legacy prompt_builder may differ."
                       : "Proposer status from server."}
                   </span>
                 </div>
               </div>
-              {proposalRationale ? (
-                <div className="flex shrink-0 items-start gap-2 border-b border-emerald-900/35 bg-emerald-950/25 px-2 py-1">
-                  <span className="shrink-0 font-console text-[9px] font-semibold uppercase tracking-wide text-emerald-500">
-                    Rationale
-                  </span>
-                  <span className="font-telemetry text-[10px] leading-snug text-emerald-200">
-                    {proposalRationale}
-                  </span>
-                </div>
-              ) : null}
-              <pre className="font-telemetry custom-scroll flex-1 overflow-auto p-2 text-[10px] leading-relaxed whitespace-pre text-slate-400">
+              <pre className="font-telemetry custom-scroll flex-1 overflow-auto p-2 text-sm leading-relaxed whitespace-pre text-slate-400">
                 {!vm?.actions?.length
                   ? "— Load ingress —"
                   : tacticalUser}
               </pre>
             </div>
 
-            <div className="flex w-[min(24vw,19rem)] min-w-[14rem] max-w-[20rem] shrink-0 flex-col bg-slate-950">
+            <div className="flex w-[min(26vw,22rem)] min-w-[15rem] max-w-[24rem] shrink-0 flex-col bg-slate-950">
               <div className={osdPanelStrip}>
                 <span>Session log</span>
-                <span className="font-telemetry text-[10px] tabular-nums text-slate-500">
+                <span className="font-telemetry text-xs tabular-nums text-slate-500">
                   {logLines.length}
                 </span>
               </div>
-              <div className="custom-scroll flex-1 space-y-1 overflow-y-auto p-2 font-telemetry text-[10px] leading-snug">
+              <div className="custom-scroll flex-1 space-y-1 overflow-y-auto p-2 font-telemetry text-sm leading-snug">
                 {logLines.map((line, i) => (
                   <div key={i} className="flex gap-2">
                     <span className="shrink-0 whitespace-nowrap text-slate-500">
@@ -942,12 +1319,22 @@ export function MonitorDashboard() {
                             ? "text-blue-400"
                             : line.kind === "SYSTEM"
                               ? "text-yellow-500"
-                              : "text-slate-500"
+                              : line.kind === "REPLAY"
+                                ? "text-violet-400"
+                                : "text-slate-500"
                       }`}
                     >
                       {line.kind}
                     </span>
-                    <span className="text-slate-300">{line.msg}</span>
+                    <span className="text-slate-300">
+                      {line.msg}
+                      {(line.repeat ?? 1) > 1 ? (
+                        <span className="whitespace-nowrap text-slate-500">
+                          {" "}
+                          x{line.repeat}
+                        </span>
+                      ) : null}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -956,16 +1343,13 @@ export function MonitorDashboard() {
         </main>
 
         {/* Col 4 — AI operator rail (compact; boxed headers avoid overlap with scroll areas) */}
-        <aside className="z-20 flex w-[22.5rem] min-w-[19rem] shrink-0 flex-col border-l border-emerald-950/30 bg-[#07090c] shadow-[-8px_0_24px_rgba(0,0,0,0.4)]">
+        <aside className="z-20 flex w-[min(32rem,40vw)] min-w-[26rem] shrink-0 flex-col border-l border-emerald-950/30 bg-[#07090c] shadow-[-8px_0_24px_rgba(0,0,0,0.4)]">
           <div className={osdPanelStrip}>
             <span className="min-w-0 truncate">AI control</span>
             <button
               type="button"
-              disabled={
-                snapshot?.ingress == null ||
-                typeof snapshot.ingress !== "object"
-              }
-              title="Legacy: clears a pending approval if any; a new AI proposal requires the next game update (CommunicationMod), not a server graph replay."
+              disabled={snapshot == null}
+              title="Clears the current proposal trace on the server (any status). A new AI run still requires the next game state from CommunicationMod."
               className={osdBtnRetry}
               onClick={() => void retryAgent()}
             >
@@ -974,103 +1358,65 @@ export function MonitorDashboard() {
           </div>
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 custom-scroll">
             <div
-              className="font-telemetry shrink-0 cursor-default truncate rounded border border-slate-700/80 bg-slate-950/80 px-2 py-1 text-[10px] leading-snug text-slate-500"
+              className="font-telemetry shrink-0 cursor-default truncate rounded border border-slate-700/80 bg-slate-950/80 px-2 py-1.5 text-sm leading-snug text-slate-500"
               title={envLine}
             >
               {envLine}
             </div>
 
-            <div className="shrink-0 space-y-1.5 rounded border border-indigo-900/40 bg-slate-950/50 p-2">
-              <div className="flex items-center justify-between gap-1">
-                <span className={osdSectionLabel}>History</span>
-                <button
-                  type="button"
-                  className={osdBtnGhost}
-                  onClick={() => void refreshHistoryThreads()}
-                >
-                  Threads
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-1">
-                <select
-                  value={historyThreadFilter}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setHistoryThreadFilter(v);
-                    if (v) {
-                      void loadHistoryEvents(v);
-                      void loadHistoryCheckpoints(v);
+            {llmRunStatus.kind === "error" ? (
+              <div className="shrink-0 rounded border border-red-800/65 bg-red-950/35 p-2 shadow-[inset_0_0_0_1px_rgba(248,113,113,0.12)]">
+                <div className="mb-1 flex items-start justify-between gap-2">
+                  <span className="font-console text-xs font-bold uppercase tracking-[0.1em] text-red-300">
+                    {llmRunStatus.title}
+                  </span>
+                  <button
+                    type="button"
+                    className={osdBtnGhost}
+                    onClick={() =>
+                      void copyClipboard(llmRunStatus.message, "LLM error")
                     }
-                  }}
-                  className="font-telemetry h-6 max-w-full flex-1 rounded border border-slate-700 bg-slate-950 px-1 text-[10px] text-slate-200 outline-none"
-                >
-                  <option value="">Thread…</option>
-                  {historyThreads.map((t) => (
-                    <option key={t.thread_id} value={t.thread_id}>
-                      {t.thread_id} ({t.event_count})
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className={osdBtnGhost}
-                  onClick={() => {
-                    const tid =
-                      historyThreadFilter ||
-                      snapshot?.agent?.thread_id ||
-                      "default";
-                    setHistoryThreadFilter(tid);
-                    void loadHistoryEvents(tid);
-                    void loadHistoryCheckpoints(tid);
-                  }}
-                >
-                  Load
-                </button>
+                  >
+                    Copy
+                  </button>
+                </div>
+                <p className="font-telemetry text-sm leading-snug text-red-100/95 whitespace-pre-wrap break-words">
+                  {llmRunStatus.message}
+                </p>
               </div>
-              <div className="custom-scroll max-h-24 space-y-0.5 overflow-y-auto font-telemetry text-[9px] leading-tight text-slate-400">
-                {historyEvents.length === 0 ? (
-                  <div className="text-slate-600">No events loaded</div>
-                ) : (
-                  historyEvents.map((e, i) => (
-                    <div
-                      key={i}
-                      className="truncate border-b border-slate-800/50 border-b-transparent py-0.5"
-                      title={JSON.stringify(e)}
-                    >
-                      <span className="text-indigo-400">
-                        {String(e.step_kind ?? "?")}
-                      </span>{" "}
-                      · seq {String(e.step_seq ?? "—")} ·{" "}
-                      <span className="text-slate-500">
-                        {String(e.state_id ?? "—")}
-                      </span>
-                    </div>
-                  ))
-                )}
+            ) : (
+              <div className="shrink-0 rounded border border-sky-800/55 bg-sky-950/30 p-2 shadow-[inset_0_0_0_1px_rgba(56,189,248,0.12)]">
+                <div className="mb-1 flex items-center gap-2">
+                  {llmRunStatus.pulse !== false ? (
+                    <span
+                      className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.7)]"
+                      aria-hidden
+                    />
+                  ) : null}
+                  <span className="font-console text-xs font-bold uppercase tracking-[0.1em] text-sky-200">
+                    {llmRunStatus.title}
+                  </span>
+                </div>
+                <p className="font-telemetry text-sm leading-snug text-sky-100/90">
+                  {llmRunStatus.message}
+                </p>
+                {llmRunStatus.hint ? (
+                  <p className="mt-1.5 font-telemetry text-sm leading-snug text-slate-400">
+                    Latest trace:{" "}
+                    <span className="font-medium text-slate-300">
+                      {llmRunStatus.hint}
+                    </span>
+                  </p>
+                ) : null}
               </div>
-              <div className="custom-scroll max-h-20 space-y-0.5 overflow-y-auto font-console text-[9px] text-slate-500">
-                {historyCheckpoints.length === 0 ? null : (
-                  <>
-                    <div className="font-semibold text-slate-400">
-                      Checkpoints
-                    </div>
-                    {historyCheckpoints.slice(0, 8).map((c, i) => (
-                      <div key={i} className="truncate">
-                        {c.checkpoint_id?.slice(0, 8) ?? "?"} ·{" "}
-                        {c.state_id != null ? String(c.state_id) : "—"}
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            </div>
+            )}
 
-            {snapshot?.agent?.pending_approval ? (
+            {agentForRail?.pending_approval ? (
               <div className="flex shrink-0 flex-col gap-2 rounded border border-amber-900/35 bg-slate-800/35 p-2">
-                <span className="font-console text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-400">
+                <span className="font-console text-xs font-semibold uppercase tracking-[0.12em] text-amber-400">
                   Awaiting approval
                 </span>
-                <div className="space-y-1 rounded border border-slate-700/90 bg-slate-950 px-2 py-1.5 font-telemetry text-[11px] text-slate-200">
+                <div className="space-y-1 rounded border border-slate-700/90 bg-slate-950 px-2 py-1.5 font-telemetry text-sm text-slate-200">
                   {hitlQueuedSteps.length === 0 ? (
                     <div className="text-xs font-semibold text-white">—</div>
                   ) : (
@@ -1079,7 +1425,7 @@ export function MonitorDashboard() {
                         key={`${i}-${line}`}
                         className="flex gap-2 leading-snug"
                       >
-                        <span className="w-5 shrink-0 text-right font-mono text-[10px] text-slate-500">
+                        <span className="w-5 shrink-0 text-right font-mono text-xs text-slate-500">
                           {i + 1}.
                         </span>
                         <span className="min-w-0 flex-1 font-semibold tracking-wide text-white">
@@ -1089,15 +1435,21 @@ export function MonitorDashboard() {
                     ))
                   )}
                 </div>
-                <p className="font-telemetry text-[9px] leading-snug text-slate-500">
-                  Approve runs the first command and leaves further steps to the game
-                  process queue when the model proposed a sequence. Reject cancels
-                  this proposal.
+                <p className="font-telemetry text-xs leading-snug text-slate-500">
+                  {hitlReadOnly
+                    ? "Replay: logged proposal only — approve/reject/edit do not apply."
+                    : "Approve runs the first command and leaves further steps to the game process queue when the model proposed a sequence. Reject cancels this proposal."}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     type="button"
                     className={osdBtnApprove}
+                    disabled={hitlReadOnly}
+                    title={
+                      hitlReadOnly
+                        ? "Replay: not connected to live agent"
+                        : undefined
+                    }
                     onClick={() => void resumeAgent("approve")}
                   >
                     Approve all
@@ -1105,6 +1457,12 @@ export function MonitorDashboard() {
                   <button
                     type="button"
                     className={osdBtnReject}
+                    disabled={hitlReadOnly}
+                    title={
+                      hitlReadOnly
+                        ? "Replay: not connected to live agent"
+                        : undefined
+                    }
                     onClick={() => void resumeAgent("reject")}
                   >
                     Reject all
@@ -1114,12 +1472,14 @@ export function MonitorDashboard() {
                   <input
                     value={editCmd}
                     onChange={(e) => setEditCmd(e.target.value)}
+                    disabled={hitlReadOnly}
                     placeholder="Edit command…"
-                    className="font-telemetry h-6 min-h-6 min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 px-2 py-0.5 text-[11px] leading-tight text-slate-100 outline-none focus-visible:border-indigo-500 focus-visible:ring-1 focus-visible:ring-indigo-500/25"
+                    className="font-telemetry h-7 min-h-7 min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-sm leading-tight text-slate-100 outline-none focus-visible:border-indigo-500 focus-visible:ring-1 focus-visible:ring-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-50"
                   />
                   <button
                     type="button"
                     className={osdBtnCta}
+                    disabled={hitlReadOnly}
                     onClick={() => void resumeAgent("edit", editCmd)}
                   >
                     Apply
@@ -1128,26 +1488,7 @@ export function MonitorDashboard() {
               </div>
             ) : null}
 
-            {agentErrorText ? (
-              <div className="custom-scroll max-h-32 shrink-0 space-y-1 overflow-y-auto rounded border border-red-900/55 bg-red-950/25 p-2 font-telemetry text-[10px] text-red-200">
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    className={osdBtnGhost}
-                    onClick={() =>
-                      void copyClipboard(String(agentErrorText), "agent error")
-                    }
-                  >
-                    Copy error
-                  </button>
-                </div>
-                <div className="whitespace-pre-wrap break-words leading-snug">
-                  {agentErrorText}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="flex min-h-0 flex-1 flex-col gap-2">
+            <div className="flex min-h-0 flex-1 flex-col">
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-slate-800/90 bg-slate-950/30">
                 <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-800 bg-slate-900/95 px-2 py-1">
                   <span className={osdSectionLabel}>Model output</span>
@@ -1163,164 +1504,23 @@ export function MonitorDashboard() {
                 <textarea
                   readOnly
                   value={llmRaw}
-                  className="font-telemetry custom-scroll min-h-0 flex-1 resize-none border-0 bg-transparent p-2 text-[10px] leading-relaxed text-slate-400 outline-none"
-                  placeholder={
-                    snapshot?.agent?.llm_backend === "off" ||
-                    snapshot?.agent?.llm_backend === ""
-                      ? "AI disabled or no API — enable LLM in legacy config for raw output here."
-                      : "Raw model output from legacy trace when available."
-                  }
+                  className="font-telemetry custom-scroll min-h-0 flex-1 resize-none border-0 bg-transparent p-2 text-sm leading-relaxed text-slate-400 outline-none"
+                  placeholder={(() => {
+                    const b = String(agentForRail?.llm_backend ?? "")
+                      .trim()
+                      .toLowerCase();
+                    if (b === "replay") {
+                      return replayAiSidecar?.kind === "missing"
+                        ? "No .ai.json for this replay frame."
+                        : "Raw output from the logged *.ai.json sidecar.";
+                    }
+                    if (b === "off" || b === "") {
+                      return "AI disabled or no API — enable LLM in legacy config for raw output here.";
+                    }
+                    return "Raw model output from legacy trace when available.";
+                  })()}
                   spellCheck={false}
                 />
-              </div>
-
-              <div className="flex shrink-0 flex-col overflow-hidden rounded border border-slate-800/90 bg-slate-950/30">
-                <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-800 bg-slate-900/95 px-2 py-1">
-                  <span className={osdSectionLabel}>Parsed</span>
-                  <button
-                    type="button"
-                    className={osdBtnGhost}
-                    disabled={parsedCopyText === ""}
-                    onClick={() =>
-                      void copyClipboard(parsedCopyText, "parsed proposal")
-                    }
-                  >
-                    Copy
-                  </button>
-                </div>
-                {parsedModelBlock ? (
-                  <div className="custom-scroll max-h-28 overflow-y-auto p-2 font-telemetry text-[10px] leading-snug text-slate-400">
-                    {parsedModelBlock.status ? (
-                      <div className="mb-1 flex flex-wrap gap-x-2 gap-y-0.5">
-                        <span className="shrink-0 font-console text-[9px] font-medium uppercase tracking-wide text-slate-500">
-                          status
-                        </span>
-                        <span className="min-w-0 text-slate-200">
-                          {parsedModelBlock.status}
-                        </span>
-                      </div>
-                    ) : null}
-                    {parsedModelBlock.command ? (
-                      <div className="mb-1 flex flex-wrap gap-x-2 gap-y-0.5">
-                        <span className="shrink-0 font-console text-[9px] font-medium uppercase tracking-wide text-slate-500">
-                          command
-                        </span>
-                        <span className="min-w-0 text-indigo-300">
-                          {parsedModelBlock.command}
-                        </span>
-                      </div>
-                    ) : null}
-                    {proposalCmdNotLegalNow ? (
-                      <div className="mb-1 text-amber-400/90">
-                        Command is not in the current legal action list (stale
-                        proposal or state mismatch). Send a fresh ingress or use
-                        Retry AI.
-                      </div>
-                    ) : null}
-                    {parsedModelBlock.errorReason ? (
-                      <div className="mb-1 flex flex-wrap gap-x-2 text-red-300/90">
-                        <span className="shrink-0 font-console text-[9px] font-medium uppercase tracking-wide text-slate-500">
-                          error
-                        </span>
-                        <span className="min-w-0">{parsedModelBlock.errorReason}</span>
-                      </div>
-                    ) : null}
-                    {resolvedCommandSteps.length ? (
-                      <div className="mb-1.5 space-y-1 border-b border-slate-800/80 pb-1.5">
-                        <span className="font-console text-[9px] font-medium uppercase tracking-wide text-slate-500">
-                          Resolved (token → mod index)
-                        </span>
-                        <ul className="mt-1 space-y-0.5 pl-2">
-                          {resolvedCommandSteps.map((row, i) => (
-                            <li
-                              key={`${row.model}-${i}`}
-                              className="font-telemetry break-all text-[10px] leading-snug text-slate-400"
-                            >
-                              <span className="text-slate-300">{row.model}</span>
-                              {row.canonical != null && row.canonical !== row.model ? (
-                                <>
-                                  <span className="text-slate-600"> → </span>
-                                  <span className="text-emerald-300/90">
-                                    {row.canonical}
-                                  </span>
-                                </>
-                              ) : row.canonical != null ? (
-                                <span className="text-slate-600"> (mod)</span>
-                              ) : (
-                                <span className="text-amber-400/80"> → ?</span>
-                              )}
-                              <span className="ml-1.5 text-[9px] text-slate-600">
-                                {row.resolve_tag}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                    {parsedModelBlock.resolveTag &&
-                    parsedModelBlock.resolveTag !== parsedModelBlock.rationale ? (
-                      <div className="mb-1 flex flex-wrap gap-x-2 text-slate-400">
-                        <span className="shrink-0 font-console text-[9px] font-medium uppercase tracking-wide text-slate-500">
-                          resolver
-                        </span>
-                        <span className="min-w-0 font-telemetry text-slate-400">
-                          {parsedModelBlock.resolveTag}
-                        </span>
-                      </div>
-                    ) : null}
-                    {parsedModelBlock.rationale &&
-                    parsedModelBlock.rationale !== parsedModelBlock.errorReason ? (
-                      <div className="mb-1 flex flex-wrap gap-x-2 text-slate-300">
-                        <span className="shrink-0 font-console text-[9px] font-medium uppercase tracking-wide text-slate-500">
-                          rationale
-                        </span>
-                        <span className="min-w-0 leading-snug">
-                          {parsedModelBlock.rationale}
-                        </span>
-                      </div>
-                    ) : null}
-                    {parsedModelBlock.parsedJson ? (
-                      <pre className="mt-1.5 whitespace-pre-wrap break-all border-t border-slate-800/80 pt-1.5 text-[10px] leading-relaxed text-slate-500">
-                        {parsedModelBlock.parsedJson}
-                      </pre>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className="px-2 py-3 text-center font-console text-[10px] text-slate-600">
-                    No proposal fields yet
-                  </div>
-                )}
-              </div>
-
-              <div className="shrink-0 space-y-1.5 border-t border-slate-800/80 pt-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className={`${osdStatCaption} text-slate-500`}>
-                    Paste ingress · debug
-                  </span>
-                  <button
-                    type="button"
-                    className={osdBtnGhost}
-                    disabled={paste === ""}
-                    onClick={() =>
-                      void copyClipboard(paste, "ingress JSON buffer")
-                    }
-                  >
-                    Copy
-                  </button>
-                </div>
-                <textarea
-                  value={paste}
-                  onChange={(e) => setPaste(e.target.value)}
-                  className="font-telemetry custom-scroll h-16 w-full resize-none rounded border border-slate-800 bg-slate-950 p-2 text-[10px] text-slate-400 outline-none focus-visible:border-indigo-500 focus-visible:ring-1 focus-visible:ring-indigo-500/25"
-                  placeholder='{"in_game": true, ...}'
-                />
-                <button
-                  type="button"
-                  onClick={applyPaste}
-                  className={`${osdBtnCta} w-full`}
-                >
-                  Apply projection
-                </button>
               </div>
             </div>
           </div>

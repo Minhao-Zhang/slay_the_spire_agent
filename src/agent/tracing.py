@@ -4,8 +4,8 @@ import datetime as dt
 import hashlib
 import json
 from pathlib import Path
-
 from src.agent.schemas import AgentMode, AgentTrace, PersistedAiLog
+from src.agent.vm_shapes import as_dict
 
 
 def utc_now_iso() -> str:
@@ -28,13 +28,15 @@ def combat_encounter_fingerprint(vm: dict) -> str | None:
     Uses floor plus live monsters (name + max_hp). Returns None if not in combat.
     """
     combat = vm.get("combat")
-    if not combat:
+    if not combat or not isinstance(combat, dict):
         return None
-    header = vm.get("header") or {}
+    header = as_dict(vm.get("header"))
     floor = header.get("floor", "?")
     monsters = combat.get("monsters") or []
     parts: list[str] = []
     for m in monsters:
+        if not isinstance(m, dict):
+            continue
         if m.get("is_gone"):
             continue
         name = str(m.get("name", "?"))
@@ -50,8 +52,8 @@ def build_turn_key(vm: dict) -> str:
     - In combat: one key per fight (same key for all turns in that fight).
     - Out of combat: one key per (floor, screen type), e.g. MAP, COMBAT_REWARD, GRID.
     """
-    header = vm.get("header") or {}
-    screen = vm.get("screen") or {}
+    header = as_dict(vm.get("header"))
+    screen = as_dict(vm.get("screen"))
     combat = vm.get("combat")
     floor = header.get("floor", "?")
     if combat:
@@ -62,8 +64,8 @@ def build_turn_key(vm: dict) -> str:
 
 
 def create_trace(vm: dict, state_id: str, agent_mode: AgentMode, system_prompt: str, user_prompt: str) -> AgentTrace:
-    header = vm.get("header") or {}
-    screen = vm.get("screen") or {}
+    header = as_dict(vm.get("header"))
+    screen = as_dict(vm.get("screen"))
     return AgentTrace(
         decision_id=build_decision_id(state_id),
         state_id=state_id,
