@@ -177,6 +177,25 @@ def resolve_token_play(
     return None
 
 
+def is_end_turn_command_token(cmd: str) -> bool:
+    """True if this string is the end-turn command (``END``), ignoring case/extra spaces."""
+    return " ".join((cmd or "").strip().upper().split()) == "END"
+
+
+def end_turn_must_be_standalone_error(commands: list[str]) -> str | None:
+    """If END appears in a multi-command list, return an error message; else None."""
+    raw = [str(c).strip() for c in commands if str(c).strip()]
+    if len(raw) <= 1:
+        return None
+    if any(is_end_turn_command_token(c) for c in raw):
+        return (
+            "END (end turn) must be the only entry in chosen_commands — never queue END with "
+            "other commands. List only card/potion/other plays here; after they execute and the "
+            "state refreshes, output a new <final_decision> with chosen_commands:[\"END\"] alone."
+        )
+    return None
+
+
 def validate_final_decision(
     final_decision: FinalDecision | None,
     legal_actions: list[dict[str, Any]],
@@ -192,6 +211,10 @@ def validate_final_decision(
     commands = final_decision.chosen_commands
     if not commands:
         return ValidationResult(valid=False, error="chosen_commands is empty.")
+
+    end_err = end_turn_must_be_standalone_error(commands)
+    if end_err:
+        return ValidationResult(valid=False, error=end_err)
 
     chosen = str(commands[0]).strip()
     by_command = {_norm(str(action.get("command", ""))): action for action in legal_actions}

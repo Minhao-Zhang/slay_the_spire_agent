@@ -21,7 +21,7 @@ flowchart LR
 
 - **Game → bridge:** each line of game state JSON is sent to the dashboard with `meta.state_id` and processed with [`src/ui/state_processor.py`](src/ui/state_processor.py).
 - **Bridge → game:** when `ready_for_command`, `main` polls for `manual_action` or `approved_action`, validates against the current legal list, and **prints** the command for the mod.
-- **Operators:** Jinja pages on port 8000, or the React monitor (via compatibility routes that emit **`snapshot`** payloads over **`/ws`**.
+- **Operators:** the React monitor on Vite (proxies /api and /ws to port 8000); the dashboard emits **`snapshot`** payloads over **`/ws`**.
 
 ## React compatibility shim
 

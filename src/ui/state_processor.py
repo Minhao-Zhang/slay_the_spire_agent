@@ -49,6 +49,7 @@ def process_state(raw: dict) -> dict:
     vm["header"] = {
         "class": game.get("class", "?"),
         "floor": game.get("floor", "?"),
+        "act": game.get("act"),
         "gold": game.get("gold", "?"),
         "hp_display": hp_display,
         "energy": combat["player"]["energy"] if combat else "-",
@@ -252,6 +253,9 @@ def _build_screen(screen_type: str, s: dict, game: dict, combat: Optional[dict])
                 }
                 for i, o in enumerate(s.get("options", []))
             ],
+            # Mirror game_state.choice_list so main.py / guards match LLM-visible actions when
+            # CommunicationMod omits "choose" for one frame but choice_list is already set.
+            "choice_list": list(game.get("choice_list") or []),
             "event_kb": {
                 "name": event_kb.get("name", ""),
                 "choices": event_kb.get("choices", []),
@@ -410,6 +414,17 @@ _COMMAND_BUTTONS = [
 ]
 
 
+def _event_has_chooseable_data(screen_type: str, screen_state: dict, game: dict) -> bool:
+    """True when EVENT has option rows or a non-empty game choice_list (Neow / mod skew)."""
+    if screen_type != "EVENT":
+        return False
+    opts = screen_state.get("options") or []
+    if isinstance(opts, list) and len(opts) > 0:
+        return True
+    cl = game.get("choice_list") or []
+    return isinstance(cl, list) and len(cl) > 0
+
+
 def _build_actions(commands: list, game: dict, combat: Optional[dict],
                    screen_type: str, screen_state: dict) -> list[dict]:
     actions: list[dict] = []
@@ -473,8 +488,9 @@ def _build_actions(commands: list, game: dict, combat: Optional[dict],
                     "style": "secondary",
                 })
 
-    # Choose actions depend on screen type
-    if "choose" in commands:
+    # Choose actions depend on screen type. EVENT may expose choices in JSON before
+    # available_commands includes "choose" (CommunicationMod one-frame skew).
+    if "choose" in commands or _event_has_chooseable_data(screen_type, screen_state, game):
         actions.extend(_build_choose_actions(screen_type, screen_state, game))
 
     return actions
@@ -508,6 +524,16 @@ def _build_choose_actions(screen_type: str, s: dict, game: dict) -> list[dict]:
                     "command": f"choose {i}",
                     "style": "primary",
                 })
+
+    elif screen_type == "EVENT" and not s.get("options") and game.get("choice_list"):
+        # Prefer screen_state.options when any rows exist (above), including all-disabled
+        # edge cases. Fallback only when options is empty/missing but choice_list is set.
+        for i, choice in enumerate(game.get("choice_list") or []):
+            actions.append({
+                "label": str(choice),
+                "command": f"choose {i}",
+                "style": "primary",
+            })
 
     elif screen_type == "COMBAT_REWARD" and s.get("rewards"):
         for i, r in enumerate(s["rewards"]):

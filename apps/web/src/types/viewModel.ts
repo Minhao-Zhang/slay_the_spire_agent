@@ -32,6 +32,10 @@ export interface ViewModelDTO {
   in_game: boolean;
   header?: HeaderDTO | null;
   actions: ActionDTO[];
+  /**
+   * Combat snapshot when `combat_state` is present. May include `player_orbs` (Defect): slot list where
+   * index 0 is the right-most / first in stack order.
+   */
   combat?: Record<string, unknown> | null;
   screen?: GameScreenDTO | null;
   inventory?: Record<string, unknown> | null;
@@ -55,6 +59,8 @@ export interface ProposalDTO {
   status?: string;
   for_state_id?: string | null;
   command?: string | null;
+  /** Same user message the agent sent to the LLM (from trace / replay sidecar). */
+  user_prompt?: string | null;
   /** Text from the model JSON (LLM / mock), not the resolver tag. */
   rationale?: string | null;
   /** Post-parse pipeline tag, e.g. `resolved:direct`. */
@@ -88,6 +94,8 @@ export interface AgentSnapshotDTO {
   /** True while ``main.py`` has a running ``agent.propose`` future (before final trace lands). */
   proposal_in_flight?: boolean;
   proposal_for_state_id?: string | null;
+  /** Server-built tactical user message (trace when state matches, else ``build_user_prompt`` preview). */
+  llm_user_prompt?: string | null;
 }
 
 export interface DebugSnapshotPayload {
@@ -106,8 +114,23 @@ export interface DebugSnapshotPayload {
 
 export interface WsMessage {
   type: string;
+  /** Game snapshot when ``type === "snapshot"``; other event types may use a different shape. */
   payload?: DebugSnapshotPayload;
   detail?: string;
+}
+
+/** Response from ``GET /api/ai/state`` (live agent traces for debugging). */
+export interface AiStateResponse {
+  mode?: string;
+  system_prompt?: string;
+  latest_state_id?: string;
+  latest_trace?: Record<string, unknown> | null;
+  sequence_preview?: string[];
+  trace_history?: Record<string, unknown>[];
+  ai_enabled?: boolean;
+  ai_status?: string;
+  ai_api_style?: string;
+  ai_status_message?: string;
 }
 
 export interface HistoryThreadSummaryDTO {

@@ -7,7 +7,7 @@ LLM-powered assist for Slay the Spire via [CommunicationMod](https://github.com/
 
 ## Repository layout
 
-- **`src/`** — Legacy package: **`python -m src.main`** (game bridge), **`src.ui.dashboard:app`** (FastAPI + Jinja + React compatibility routes).
+- **`src/`** — Legacy package: **`python -m src.main`** (game bridge), **`src.ui.dashboard:app`** (FastAPI API + WebSocket; Vite proxies here from `apps/web`).
 - **`archive/greenfield_src/`** — Quarantined rewrite (`control_api`, LangGraph, `domain`, …).
 - **`archive/legacy_src/`** — Original frozen copy; see [`archive/README.md`](archive/README.md).
 - **`apps/web/`** — Vite + React monitor (proxies `/api` and `/ws` to port **8000**).
@@ -43,7 +43,7 @@ run_api.bat
 npm run dev:web
 ```
 
-Open **`http://127.0.0.1:5173/`** for the Vite monitor, or **`http://127.0.0.1:8000/`** for the legacy Jinja UI.
+Open **`http://127.0.0.1:5173/`** for the Vite monitor. **`http://127.0.0.1:8000/`** serves a short API landing page only (no full HTML UI).
 
 **Terminal C — game bridge:**
 

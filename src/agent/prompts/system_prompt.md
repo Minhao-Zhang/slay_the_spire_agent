@@ -61,10 +61,18 @@ For non-card commands (END, POTION USE, choose, etc.) use the exact command stri
 
 Write your normal visible assistant reply first, then return a sequence of up to 5 commands for this turn.
 
-**In combat**, return a `chosen_commands` list. Include `END` at the end when the turn should end. You may return fewer commands if appropriate (e.g. when a card has side effects that require you to reassess):
+**In combat**, return a `chosen_commands` list with **only** plays and other non-END actions (potions, etc.). **Do not** put `END` in the same list as other commands. When you are done playing cards for now, stop without `END`; after the game applies your plays and sends a fresh snapshot, make **another** decision whose `chosen_commands` is **only** `["END"]` if you still want to end the turn.
+
+Example (plays only — no END in this block):
 
 <final_decision>
-{"chosen_commands":["PLAY 10f08b 0","PLAY a3c7d2","END"]}
+{"chosen_commands":["PLAY 10f08b 0","PLAY a3c7d2"]}
+</final_decision>
+
+Example (end turn only — must be standalone):
+
+<final_decision>
+{"chosen_commands":["END"]}
 </final_decision>
 
 **Outside combat** (map, reward, event, shop, etc.), return a single command:
@@ -79,6 +87,7 @@ Requirements for commands in `chosen_commands`:
 - Never invent a command or token.
 - Never emit both a tool call and a `chosen_commands` block.
 - The list must contain at least 1 command and at most 5 commands.
+- **`END` is never combined with other commands.** If you include `END`, `chosen_commands` must be exactly `["END"]`.
 
 Optional fields when exact command text is uncertain (non-combat screens):
 

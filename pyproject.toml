@@ -17,7 +17,6 @@ dependencies = [
     "fastapi",
     "websockets",
     "uvicorn[standard]",
-    "jinja2",
     "openai",
     "httpx",
     "langgraph",

@@ -8,8 +8,6 @@ import {
 } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Link } from "react-router-dom";
-
 import { useControlPlane } from "../hooks/useControlPlane";
 import { GameScreenPanel } from "./gameScreen/GameScreenPanel";
 import {
@@ -17,7 +15,11 @@ import {
   monsterTooltip,
 } from "../lib/entityKb";
 import { cardNameClass } from "../lib/cardTypeStyle";
-import { buildTacticalPrompt } from "../lib/tacticalPrompt";
+import {
+  formatOrbChipTooltip,
+  orbMechanics,
+  orbStripHelpText,
+} from "../lib/orbMechanics";
 import type {
   ActionDTO,
   AgentSnapshotDTO,
@@ -563,6 +565,8 @@ export function MonitorDashboard() {
   const vm: ViewModelDTO | null = snapshot?.view_model ?? null;
   const showScreenPanel = Boolean(vm?.screen);
   const stateId = snapshot?.state_id ?? null;
+  /** Recent CommunicationMod / bridge feed — not merely WebSocket connected to the dashboard. */
+  const gameFeedLive = snapshot?.live_ingress === true;
 
   const agentForRail = useMemo((): AgentSnapshotDTO | undefined => {
     const base = snapshot?.agent;
@@ -699,10 +703,26 @@ export function MonitorDashboard() {
     return slots;
   }, [potions]);
 
+  const playerClass =
+    header && typeof header["class"] === "string"
+      ? header["class"].trim()
+      : "";
+  const playerOrbs =
+    (combat?.player_orbs as Record<string, unknown>[] | undefined) ?? [];
+  const showOrbStrip =
+    playerClass.toUpperCase() === "DEFECT" &&
+    Boolean(combat) &&
+    playerOrbs.length > 0;
+
   const actions: ActionDTO[] = vm?.actions ?? [];
-  const { user: tacticalUser } = useMemo(() => buildTacticalPrompt(vm), [vm]);
 
   const proposal = agentForRail?.proposal as Record<string, unknown> | undefined;
+
+  const llmUserPromptLive = useMemo(() => {
+    const fromProposal = String(proposal?.user_prompt ?? "").trim();
+    const fromAgent = String(agentForRail?.llm_user_prompt ?? "").trim();
+    return fromProposal || fromAgent;
+  }, [proposal?.user_prompt, agentForRail?.llm_user_prompt]);
 
   const llmRaw =
     proposal?.llm_raw != null ? String(proposal.llm_raw) : "";
@@ -946,14 +966,16 @@ export function MonitorDashboard() {
       kind: "pending",
       pulse: false,
       title: "No game state",
-      message:
-        connected
-          ? "Load ingress or run CommunicationMod so the dashboard receives state."
-          : "WebSocket offline — reconnect to see live status.",
+      message: !connected
+        ? "WebSocket offline — reconnect to see live status."
+        : snapshot?.live_ingress === false
+          ? "No live game feed (game stopped or last state is stale). Start the bridge or use Replay."
+          : "Load ingress or run CommunicationMod so the dashboard receives state.",
     };
   }, [
     actions.length,
     connected,
+    snapshot?.live_ingress,
     proposal,
     proposal?.command,
     proposal?.for_state_id,
@@ -977,12 +999,9 @@ export function MonitorDashboard() {
 
   const tacticalPromptText = !vm?.actions?.length
     ? "— Load ingress —"
-    : tacticalUser;
+    : llmUserPromptLive ||
+      "— User prompt not available (wait for agent trace or check dashboard logs). —";
 
-  const explorerHref =
-    snapshot?.agent?.thread_id != null && snapshot.agent.thread_id !== ""
-      ? `/explorer?thread_id=${encodeURIComponent(snapshot.agent.thread_id)}`
-      : "/explorer";
   const aiRailTitle =
     "LLM / replay backend for this row. Legacy dashboard snapshot does not populate thread_id; state is the current frame id. Run seed comes from game_state.seed on the current ingress frame.";
   const runSeedDisplay =
@@ -1002,22 +1021,22 @@ export function MonitorDashboard() {
               · operator
             </span>
           </span>
-          <Link
-            to={explorerHref}
-            title="Thread / checkpoint explorer (stub APIs on legacy dashboard; intended home until top-bar Replay loads log runs)"
-            className="rounded border border-sky-800/60 bg-sky-950/40 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-sky-300 hover:bg-sky-900/50"
-          >
-            Explorer
-          </Link>
           <div
             className={`font-console flex h-7 items-center gap-1.5 rounded border px-2.5 text-xs font-semibold uppercase tracking-wide ${
-              connected
+              gameFeedLive
                 ? "border-emerald-700/50 bg-emerald-950/35 text-emerald-400"
                 : "border-red-800/55 bg-red-950/30 text-red-400"
             }`}
+            title={
+              gameFeedLive
+                ? "Live: the game bridge has sent state recently (CommunicationMod + main.py)."
+                : !connected
+                  ? "WebSocket to the dashboard is disconnected."
+                  : "Offline: dashboard is connected but there is no fresh game feed (stop the game, or wait past DASHBOARD_INGRESS_MAX_AGE_SECONDS)."
+            }
           >
             <span className="relative flex h-1.5 w-1.5">
-              {connected ? (
+              {gameFeedLive ? (
                 <>
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                   <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -1026,7 +1045,7 @@ export function MonitorDashboard() {
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-500" />
               )}
             </span>
-            {connected ? "Live" : "Offline"}
+            {gameFeedLive ? "Live" : "Offline"}
           </div>
 
           <div
@@ -1188,6 +1207,45 @@ export function MonitorDashboard() {
               ),
             )}
           </div>
+          {showOrbStrip ? (
+            <div className="flex flex-wrap items-center gap-1.5 border-l border-slate-600/55 pl-5">
+              <HoverTip
+                tip={orbStripHelpText()}
+                side="bottom"
+                className="shrink-0"
+              >
+                <span
+                  className={`${osdStatCaption} mr-0.5 cursor-help border-b border-dotted border-slate-500/80`}
+                >
+                  {orbMechanics.ui?.strip_label ?? "Orbs"}
+                </span>
+              </HoverTip>
+              <div className="flex max-w-[16rem] flex-row-reverse flex-wrap items-center gap-1">
+                {playerOrbs.map((orb, i) => {
+                  const name = String(orb.name ?? "").trim();
+                  const empty = name === "Orb Slot";
+                  return (
+                    <HoverTip
+                      key={i}
+                      tip={formatOrbChipTooltip(orb)}
+                      side="bottom"
+                      className="w-auto shrink-0"
+                    >
+                      {empty ? (
+                        <div className="font-console rounded border border-dashed border-slate-600/70 px-1.5 py-0.5 text-xs text-slate-600">
+                          {orbMechanics.ui?.empty_chip ?? "—"}
+                        </div>
+                      ) : (
+                        <div className="font-console max-w-[6.5rem] truncate rounded border border-violet-600/75 bg-violet-950/40 px-1.5 py-0.5 text-xs font-medium text-violet-100">
+                          {name || "?"}
+                        </div>
+                      )}
+                    </HoverTip>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -1350,7 +1408,10 @@ export function MonitorDashboard() {
           {/* Bottom: LLM prompt | session log */}
           <div className="flex h-[min(38vh,30rem)] min-h-[20rem] shrink-0 border-t border-slate-700">
             <div className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-slate-700 bg-slate-950">
-              <div className={osdPanelStrip}>
+              <div
+                className={osdPanelStrip}
+                title="Same tactical user message as build_user_prompt in Python: from the live trace when state matches, otherwise a server preview (strategy memory may appear only after the agent builds the turn)."
+              >
                 <span className="min-w-0 shrink truncate">LLM user prompt</span>
                 <button
                   type="button"
@@ -1363,9 +1424,7 @@ export function MonitorDashboard() {
                 </button>
               </div>
               <pre className="font-telemetry custom-scroll flex-1 overflow-auto p-2 text-sm leading-relaxed whitespace-pre text-slate-400">
-                {!vm?.actions?.length
-                  ? "— Load ingress —"
-                  : tacticalUser}
+                {tacticalPromptText}
               </pre>
             </div>
 
@@ -1419,8 +1478,13 @@ export function MonitorDashboard() {
             <span className="min-w-0 truncate">AI control</span>
             <button
               type="button"
-              disabled={snapshot == null}
-              title="Clears the current proposal trace on the server (any status). A new AI run still requires the next game state from CommunicationMod."
+              disabled={
+                snapshot == null ||
+                String(snapshot?.agent?.agent_mode ?? "")
+                  .toLowerCase()
+                  .trim() === "manual"
+              }
+              title="Propose/auto: clears the stuck trace, cancels any in-flight LLM proposal for this state, and allows the game loop to start a fresh proposal on the next tick. Disabled in manual mode (server no-op)."
               className={osdBtnRetry}
               onClick={() => void retryAgent()}
             >

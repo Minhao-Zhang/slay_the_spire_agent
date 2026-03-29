@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from src.agent.vm_shapes import as_dict, normalize_legal_actions
+from src.agent.vm_shapes import as_dict, normalize_legal_actions, prompt_command_for_action
 from src.repo_paths import REPO_ROOT
 
 # Lazy-loaded map of buff/power name -> description (from buff_descriptions.json + powers)
 _BUFF_DESCRIPTIONS: dict[str, str] | None = None
+_ORB_MECHANICS: dict[str, Any] | None = None
 _TOKEN_PATTERN = re.compile(r"\[([^\]]+)\]")
 
 
@@ -33,6 +35,86 @@ def _get_buff_descriptions() -> dict[str, str]:
     except Exception:
         pass
     return _BUFF_DESCRIPTIONS
+
+
+def _get_orb_mechanics() -> dict[str, Any]:
+    """Load orb_mechanics.json — canonical orb reference for prompts (shared with web UI)."""
+    global _ORB_MECHANICS
+    if _ORB_MECHANICS is not None:
+        return _ORB_MECHANICS
+    path = REPO_ROOT / "data" / "processed" / "orb_mechanics.json"
+    if path.exists():
+        with open(path, encoding="utf-8") as f:
+            _ORB_MECHANICS = json.load(f)
+    else:
+        _ORB_MECHANICS = {"global": {"bullets": []}, "types": {}, "ui": {}}
+    return _ORB_MECHANICS
+
+
+def _is_defect_class(vm: dict[str, Any]) -> bool:
+    h = as_dict(vm.get("header"))
+    return str(h.get("class", "")).strip().upper() == "DEFECT"
+
+
+def _orb_type_meta(orb: dict[str, Any], types_map: dict[str, Any]) -> dict[str, Any]:
+    oid = str(orb.get("id") or "").strip()
+    name = str(orb.get("name") or "").strip()
+    if oid and oid in types_map:
+        m = types_map[oid]
+        if isinstance(m, dict):
+            return m
+    if name and name in types_map:
+        m = types_map[name]
+        if isinstance(m, dict):
+            return m
+    d = types_map.get("_default")
+    return d if isinstance(d, dict) else {}
+
+
+def _orb_lines_for_prompt(orbs: list[Any]) -> list[str]:
+    mechanics = _get_orb_mechanics()
+    g = mechanics.get("global") if isinstance(mechanics.get("global"), dict) else {}
+    bullets_raw = g.get("bullets")
+    bullets = [str(b).strip() for b in bullets_raw] if isinstance(bullets_raw, list) else []
+    bullets = [b for b in bullets if b]
+    types_map = mechanics.get("types") if isinstance(mechanics.get("types"), dict) else {}
+    out: list[str] = list(bullets)
+    for i, raw in enumerate(orbs):
+        if not isinstance(raw, dict):
+            continue
+        o = raw
+        name = str(o.get("name", "?")).strip()
+        pa = o.get("passive_amount")
+        ea = o.get("evoke_amount")
+        meta = _orb_type_meta(o, types_map)
+        short = str(meta.get("short", "")).strip()
+        pd = str(meta.get("passive_detail", "")).strip()
+        ed = str(meta.get("evoke_detail", "")).strip()
+        if name == "Orb Slot":
+            out.append(
+                f"slot {i} (index 0 = right-most / first in stack order): empty | "
+                f"passive_amount={pa} evoke_amount={ea}"
+            )
+        else:
+            detail = " | ".join(x for x in (short, pd, ed) if x)
+            out.append(
+                f"slot {i} (index 0 = right-most / first in stack order): {name} | "
+                f"passive_amount={pa} evoke_amount={ea}"
+                + (f" | {detail}" if detail else "")
+            )
+    return out
+
+
+def _orb_subsection_body(vm: dict[str, Any]) -> str | None:
+    if not _is_defect_class(vm):
+        return None
+    combat = as_dict(vm.get("combat"))
+    if not combat:
+        return None
+    orbs = combat.get("player_orbs")
+    if not isinstance(orbs, list) or len(orbs) == 0:
+        return None
+    return _fmt_list(_orb_lines_for_prompt(orbs))
 
 
 def _resolve_buff_description(name: str) -> str:
@@ -78,35 +160,108 @@ def _neows_lament_is_spent(relic: dict[str, Any]) -> bool:
     return v <= 0
 
 
+def _potion_row_name(p: dict[str, Any]) -> str:
+    return str(p.get("name") or p.get("id") or "").strip()
+
+
+def _potion_inventory_has_no_empty_slots(potions: Any) -> bool:
+    """True when the inventory lists no ``Potion Slot`` row — no visible free slot, even if there are 4+ potions."""
+    if not isinstance(potions, list) or not potions:
+        return False
+    saw_named_potion = False
+    for p in potions:
+        if not isinstance(p, dict):
+            continue
+        name = _potion_row_name(p)
+        if name == "Potion Slot":
+            return False
+        if name:
+            saw_named_potion = True
+    return saw_named_potion
+
+
+def _vm_offers_potion_acquire(vm: dict[str, Any]) -> bool:
+    """Screen offers taking or buying a potion (combat reward, shop, or event option mentioning potions)."""
+    screen = as_dict(vm.get("screen"))
+    st = str(screen.get("type") or "")
+    content = as_dict(screen.get("content"))
+    if st == "COMBAT_REWARD":
+        for r in content.get("rewards") or []:
+            if isinstance(r, dict) and str(r.get("reward_type") or "").upper() == "POTION":
+                return True
+        return False
+    if st == "SHOP_SCREEN":
+        return bool(content.get("shop_potions"))
+    if st == "EVENT":
+        for opt in content.get("options") or []:
+            if not isinstance(opt, dict):
+                continue
+            blob = f"{opt.get('label', '')} {opt.get('text', '')}".lower()
+            if "potion" in blob:
+                return True
+        return False
+    return False
+
+
 def _fmt_list(items: list[str], fallback: str = "None") -> str:
     return "\n".join(f"- {item}" for item in items) if items else f"- {fallback}"
 
 
-def _apply_prompt_profile(sections: list[tuple[str, str]], profile: str) -> list[tuple[str, str]]:
+@dataclass
+class PromptSubsection:
+    title: str
+    body: str
+    profile_key: str | None = None
+
+
+@dataclass
+class PromptGroup:
+    title: str
+    subsections: list[PromptSubsection] = field(default_factory=list)
+
+
+def _render_hierarchical(groups: list[PromptGroup]) -> str:
+    blocks: list[str] = []
+    for g in groups:
+        if not g.subsections:
+            continue
+        inner = "\n\n".join(f"### {sub.title}\n{sub.body}" for sub in g.subsections)
+        blocks.append(f"## {g.title}\n\n{inner}")
+    return "\n\n".join(blocks) + "\n"
+
+
+def _apply_prompt_profile(groups: list[PromptGroup], profile: str) -> list[PromptGroup]:
     """Minimal profile drops secondary context for ablation experiments."""
     p = (profile or "default").strip().lower()
-    if p in ("default", "verbose"):
-        return sections
     if p != "minimal":
-        return sections
-    drop_titles = {
-        "BUFF GLOSSARY (meanings of powers/tokens above)",
-        "MAP SCENE",
-        "CARD CHOICE GUIDANCE",
-    }
+        return groups
+    drop_keys = {"buff_glossary", "map_scene", "card_choice_guidance"}
     thin_tooling = (
         "- Pile tools only if hidden information is required.\n"
-        "- inspect_deck_summary for deck stats."
+        "- inspect_deck_summary for deck stats.\n"
+        "- END: chosen_commands must be [\"END\"] alone, never queued with plays."
     )
-    out: list[tuple[str, str]] = []
-    for title, body in sections:
-        if title in drop_titles:
-            continue
-        if title == "TOOLING NOTES":
-            out.append((title, thin_tooling))
-        else:
-            out.append((title, body))
+    out: list[PromptGroup] = []
+    for g in groups:
+        kept: list[PromptSubsection] = []
+        for sub in g.subsections:
+            if sub.profile_key in drop_keys:
+                continue
+            if sub.profile_key == "tooling_notes":
+                kept.append(PromptSubsection(sub.title, thin_tooling, sub.profile_key))
+            else:
+                kept.append(sub)
+        if kept:
+            out.append(PromptGroup(g.title, kept))
     return out
+
+
+def _combat_screen_context_worth_showing(screen_lines: list[str]) -> bool:
+    if len(screen_lines) > 1:
+        return True
+    if not screen_lines:
+        return False
+    return screen_lines[0].strip() != "type=NONE"
 
 
 def _compact_text(text: str, *, limit: int = 160) -> str:
@@ -471,6 +626,16 @@ def _screen_content_lines(vm: dict[str, Any]) -> list[str]:
         if content.get("has_rested"):
             lines.append("(Already rested this stop.)")
 
+    elif screen_type == "SHOP_ROOM":
+        lines.append(
+            "Shop entrance: inventory is not shown on this screen — you must enter the shop first. "
+            "To browse and buy, use the legal action that opens the shop (e.g. `choose shop`). "
+            "Use PROCEED only if you mean to leave without shopping."
+        )
+        choices = content.get("choices") or []
+        if choices:
+            lines.append("Available choices: " + ", ".join(str(c) for c in choices))
+
     elif screen_type == "SHOP_SCREEN":
         gold = content.get("gold", 0)
         lines.append(f"Shop — you have {gold} gold.")
@@ -531,16 +696,6 @@ def _screen_content_lines(vm: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _valid_play_lines(legal_actions: list[dict[str, Any]]) -> list[str]:
-    lines: list[str] = []
-    for action in legal_actions:
-        command = str(action.get("command", "")).strip()
-        if not command.startswith("PLAY "):
-            continue
-        lines.append(f"label={action.get('label', '?')} | command={command}")
-    return lines
-
-
 # Guidance injected into the user prompt when making card/combat decisions.
 CARD_CHOICE_GUIDANCE = [
     "Maximize damage long term and minimize health loss long term.",
@@ -548,6 +703,8 @@ CARD_CHOICE_GUIDANCE = [
     "Do damage calculations when choosing attacks and targets (enemy block, Vulnerable, Weak, multi-hit).",
     "Prefer lines that kill or heavily weaken the most dangerous enemy when possible.",
     "Use block and debuffs when they prevent more damage than alternative plays.",
+    "Never put END in chosen_commands together with other commands. END must be a separate decision: "
+    "after your plays execute and the snapshot updates, respond again with chosen_commands:[\"END\"] only.",
 ]
 
 COMBAT_PLAN_SYSTEM = """You are a Slay the Spire combat strategist. You receive a full opening snapshot (hand, piles, master deck, enemies, relics).
@@ -564,13 +721,13 @@ Use markdown with these headings (keep each section brief):
 Do not emit game commands or <final_decision> tags. Plain markdown only."""
 
 
-def build_prompt_sections(
+def build_prompt_groups(
     vm: dict[str, Any],
     recent_actions: list[str],
     strategy_memory: list[str] | None = None,
     combat_plan_guide: str | None = None,
     prompt_profile: str = "default",
-) -> list[tuple[str, str]]:
+) -> list[PromptGroup]:
     header = as_dict(vm.get("header"))
     inventory = as_dict(vm.get("inventory"))
     combat = as_dict(vm.get("combat"))
@@ -598,6 +755,12 @@ def build_prompt_sections(
         if effect:
             line += f" | effect={effect}"
         potion_lines.append(line)
+
+    if _potion_inventory_has_no_empty_slots(inventory.get("potions")) and _vm_offers_potion_acquire(vm):
+        potion_lines.append(
+            "If you see no empty potion slots in the Potions list above, discard one first (e.g. "
+            "POTION DISCARD <slot> from LEGAL ACTIONS) before you can take or buy another potion."
+        )
 
     hand_lines = [
         _card_line(card, idx, show_token=True)
@@ -630,82 +793,131 @@ def build_prompt_sections(
         screen_lines.append(f"context={content['screen_reason']}")
 
     legal_lines = [
-        f"{idx}. label={action.get('label', '?')} | command={action.get('command', '?')}"
+        f"{idx}. label={action.get('label', '?')} | command={prompt_command_for_action(action)}"
         for idx, action in enumerate(legal_actions, start=1)
     ]
 
-    valid_play_lines = _valid_play_lines(legal_actions)
     map_lines = _map_planning_lines(vm)
+    map_scene = _map_scene_lines(vm)
     recent_action_lines = recent_actions[-5:]
     screen_content_lines = _screen_content_lines(vm)
 
     buff_glossary_lines = _buff_glossary_lines(vm)
 
-    play_syntax_lines = [
-        "Use PLAY <card_token> <target_index> for targeted cards (target_index is 0-based, shown in MONSTERS).",
-        "Use PLAY <card_token> for untargeted cards.",
-        "card_token is the 6-char token shown in HAND lines. Enemy indices are stable even after kills.",
-        "You may propose up to 5 commands per turn as a sequence. Include END when the turn should end.",
-    ] if combat else []
+    tooling_body = (
+        "- Use a pile inspection tool only if you need hidden pile details.\n"
+        "- Use inspect_deck_summary for archetype/cost-curve checks.\n"
+        "- Do not request a tool if the visible state already answers the question.\n"
+        "- END (end turn): chosen_commands must be [\"END\"] alone — never queue END with plays or potions."
+    )
 
-    sections: list[tuple[str, str]] = [
-        ("PLAYER STATE", _fmt_list(player_lines)),
-        ("LEGAL ACTIONS", _fmt_list(legal_lines)),
-        ("VALID PLAYS", _fmt_list(valid_play_lines, fallback="No playable cards.")),
-        ("MONSTERS", _fmt_list(monster_lines)),
-        ("HAND", _fmt_list(hand_lines)),
-        ("PLAYER POWERS", _fmt_list(power_lines)),
-        ("RELICS", _fmt_list(relic_lines)),
-        ("POTIONS", _fmt_list(potion_lines)),
-        ("CURRENT SCREEN", _fmt_list(screen_lines)),
-        ("SCREEN CONTENT", _fmt_list(screen_content_lines, fallback="No content.")),
-        (
-            "RECENT EXECUTED ACTIONS",
-            _fmt_list(recent_action_lines, fallback="No prior executed actions in this scene."),
-        ),
-        (
-            "TOOLING NOTES",
-            "- Use a pile inspection tool only if you need hidden pile details.\n"
-            "- Use inspect_deck_summary for archetype/cost-curve checks.\n"
-            "- Do not request a tool if the visible state already answers the question.",
-        ),
+    groups: list[PromptGroup] = []
+
+    run_subs: list[PromptSubsection] = [
+        PromptSubsection("Player snapshot", _fmt_list(player_lines)),
     ]
-    # Add card-choice guidance when in combat so the model considers damage and planning.
-    if combat:
-        idx_valid = next((i for i, (t, _) in enumerate(sections) if t == "VALID PLAYS"), -1)
-        if idx_valid >= 0:
-            sections.insert(
-                idx_valid + 1,
-                ("CARD CHOICE GUIDANCE", _fmt_list(CARD_CHOICE_GUIDANCE)),
-            )
-        if play_syntax_lines:
-            idx_hand = next((i for i, (t, _) in enumerate(sections) if t == "HAND"), -1)
-            if idx_hand >= 0:
-                sections.insert(
-                    idx_hand + 1,
-                    ("PLAY SYNTAX", _fmt_list(play_syntax_lines)),
-                )
     if strategy_memory:
-        sections.insert(1, ("STRATEGY MEMORY", _fmt_list(strategy_memory)))
+        run_subs.append(PromptSubsection("Strategy memory", _fmt_list(strategy_memory)))
     guide = (combat_plan_guide or "").strip()
     if guide and combat:
-        sm_idx = next((i for i, (t, _) in enumerate(sections) if t == "STRATEGY MEMORY"), -1)
-        insert_at = sm_idx + 1 if sm_idx >= 0 else 1
-        sections.insert(
-            insert_at,
-            ("COMBAT PLAN GUIDE (advisory — live state overrides)", guide),
+        run_subs.append(
+            PromptSubsection("Combat plan guide (advisory — live state overrides)", guide),
         )
+    groups.append(PromptGroup("Run context", run_subs))
+
+    load_subs: list[PromptSubsection] = [
+        PromptSubsection("Relics", _fmt_list(relic_lines)),
+        PromptSubsection("Potions", _fmt_list(potion_lines)),
+    ]
+    orb_body = _orb_subsection_body(vm)
+    if orb_body:
+        load_subs.append(PromptSubsection("ORBS", orb_body))
     if buff_glossary_lines:
-        sections.insert(
-            next(i for i, (t, _) in enumerate(sections) if t == "POTIONS") + 1,
-            ("BUFF GLOSSARY (meanings of powers/tokens above)", _fmt_list(buff_glossary_lines)),
+        load_subs.append(
+            PromptSubsection(
+                "BUFF GLOSSARY (meanings of powers/tokens above)",
+                _fmt_list(buff_glossary_lines),
+                profile_key="buff_glossary",
+            ),
         )
-    if map_lines:
-        sections.insert(8, ("MAP PLANNING", _fmt_list(map_lines)))
-    map_scene = _map_scene_lines(vm)
-    if map_scene:
-        sections.insert(9, ("MAP SCENE", _fmt_list(map_scene)))
-    return _apply_prompt_profile(sections, prompt_profile)
+    groups.append(PromptGroup("Loadout", load_subs))
+
+    if combat:
+        sit_subs: list[PromptSubsection] = []
+        if monster_lines:
+            sit_subs.append(PromptSubsection("MONSTERS", _fmt_list(monster_lines)))
+        if hand_lines:
+            sit_subs.append(PromptSubsection("HAND", _fmt_list(hand_lines)))
+        if power_lines:
+            sit_subs.append(PromptSubsection("PLAYER POWERS", _fmt_list(power_lines)))
+        if _combat_screen_context_worth_showing(screen_lines):
+            sit_subs.append(PromptSubsection("Screen context", _fmt_list(screen_lines)))
+        if screen_content_lines:
+            sit_subs.append(PromptSubsection("Scene body", _fmt_list(screen_content_lines)))
+        if sit_subs:
+            groups.append(PromptGroup("Combat situation", sit_subs))
+    else:
+        nc_subs: list[PromptSubsection] = [
+            PromptSubsection("Screen header", _fmt_list(screen_lines)),
+            PromptSubsection(
+                "Scene body",
+                _fmt_list(screen_content_lines, fallback="No content."),
+            ),
+        ]
+        if map_lines:
+            nc_subs.append(PromptSubsection("Map planning", _fmt_list(map_lines)))
+        if map_scene:
+            nc_subs.append(
+                PromptSubsection(
+                    "Map scene",
+                    _fmt_list(map_scene),
+                    profile_key="map_scene",
+                ),
+            )
+        groups.append(PromptGroup("Current scene", nc_subs))
+
+    if combat:
+        groups.append(
+            PromptGroup(
+                "Turn heuristics",
+                [
+                    PromptSubsection(
+                        "CARD CHOICE GUIDANCE",
+                        _fmt_list(CARD_CHOICE_GUIDANCE),
+                        profile_key="card_choice_guidance",
+                    ),
+                ],
+            ),
+        )
+
+    groups.append(
+        PromptGroup(
+            "History & tools",
+            [
+                PromptSubsection(
+                    "RECENT EXECUTED ACTIONS",
+                    _fmt_list(
+                        recent_action_lines,
+                        fallback="No prior executed actions in this scene.",
+                    ),
+                ),
+                PromptSubsection(
+                    "TOOLING NOTES",
+                    tooling_body,
+                    profile_key="tooling_notes",
+                ),
+            ],
+        ),
+    )
+
+    groups.append(
+        PromptGroup(
+            "What you can do",
+            [PromptSubsection("LEGAL ACTIONS", _fmt_list(legal_lines))],
+        ),
+    )
+
+    return _apply_prompt_profile(groups, prompt_profile)
 
 
 def build_user_prompt(
@@ -718,14 +930,14 @@ def build_user_prompt(
 ) -> str:
     from src.agent.config import get_agent_config
 
-    sections = build_prompt_sections(
+    groups = build_prompt_groups(
         vm,
         recent_actions,
         strategy_memory=strategy_memory,
         combat_plan_guide=combat_plan_guide,
         prompt_profile=prompt_profile,
     )
-    main = "\n\n".join(f"## {title}\n{body}" for title, body in sections) + "\n"
+    main = _render_hierarchical(groups)
     cfg = get_agent_config()
     path = cfg.resolved_strategy_corpus_path()
     if path and path.is_file():
@@ -807,6 +1019,10 @@ def build_combat_planning_prompt(vm: dict[str, Any], *, max_cards_per_section: i
         ("RELICS", _fmt_list(relic_lines)),
         ("POTIONS", _fmt_list(potion_lines)),
     ]
+    if _is_defect_class(vm):
+        porbs = combat.get("player_orbs")
+        if isinstance(porbs, list) and len(porbs) > 0:
+            sections.append(("ORBS", _fmt_list(_orb_lines_for_prompt(porbs))))
     preamble = (
         "You have full pile and deck lists (subject to per-section card caps). "
         "Reason about the whole combat; the tactical agent will get fresh snapshots each turn.\n\n"

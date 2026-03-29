@@ -11,7 +11,7 @@ from pathlib import Path
 import requests
 
 from src.agent.graph import SpireDecisionAgent
-from src.agent.policy import resolve_token_play
+from src.agent.policy import is_end_turn_command_token, resolve_token_play
 from src.agent.session_state import is_command_failure_state, mark_trace_command_failed
 from src.agent.schemas import AgentTrace
 from src.agent.tracing import build_state_id, build_turn_key, create_trace, write_ai_log
@@ -60,6 +60,23 @@ def poll_instruction() -> dict:
         return {}
 
 
+def poll_retry_proposal(state_id: str) -> dict | None:
+    """Consume a one-shot Retry AI request from the dashboard for this ``state_id``."""
+    try:
+        r = requests.get(
+            f"{DASHBOARD_URL}/api/ai/retry_poll",
+            params={"current_state_id": state_id},
+            timeout=0.4,
+        )
+        if not r.ok:
+            return None
+        body = r.json()
+        rp = body.get("retry_proposal")
+        return rp if isinstance(rp, dict) else None
+    except requests.exceptions.RequestException:
+        return None
+
+
 def execute_action(action: str, source: str):
     print(action, flush=True)
     notify_dashboard("/action_taken", {"action": action, "source": source})
@@ -67,6 +84,7 @@ def execute_action(action: str, source: str):
 
 def choose_idle_command(state: dict) -> str | None:
     commands = state.get("available_commands", []) or []
+    # Title / pre-run envelopes only expose start/state (no wait) — never send wait.
     if "wait" in commands:
         return "wait 10"
     if "state" in commands:
@@ -75,7 +93,7 @@ def choose_idle_command(state: dict) -> str | None:
 
 
 def _vm_event_has_no_listed_choices(vm: dict) -> bool:
-    """True on EVENT screens before ``screen_state.options`` has populated.
+    """True on EVENT screens before listed choices exist in the VM.
 
     CommunicationMod can emit a frame with empty ``options`` (and no ``choice_list`` on
     game_state) while the event UI is still loading. :func:`process_state` then builds
@@ -85,8 +103,14 @@ def _vm_event_has_no_listed_choices(vm: dict) -> bool:
     screen = vm.get("screen") or {}
     if screen.get("type") != "EVENT":
         return False
-    opts = (screen.get("content") or {}).get("options")
-    return not (isinstance(opts, list) and len(opts) > 0)
+    content = screen.get("content") or {}
+    opts = content.get("options")
+    if isinstance(opts, list) and len(opts) > 0:
+        return False
+    cl = content.get("choice_list")
+    if isinstance(cl, list) and len(cl) > 0:
+        return False
+    return True
 
 
 def _should_skip_single_action_shortcut(vm: dict, actions_list: list) -> bool:
@@ -190,6 +214,8 @@ def main():
         "last_trace": None,
     }
     proposal_failures: dict[str, int] = {"streak": 0}
+    # Futures discarded because state_id advanced before refresh consumed them — drain async.
+    orphan_proposal_futures: list[tuple[concurrent.futures.Future, str]] = []
     # Queued sequence: remaining token-based commands from an approved multi-command sequence
     queued_sequence: dict[str, object] = {
         "commands": [],   # list[str] of remaining token-based commands
@@ -229,6 +255,46 @@ def main():
         )
         if reason:
             notify_dashboard("/log", {"message": reason})
+
+    def enqueue_orphan_proposal_future(fut: concurrent.futures.Future | None, sid: str) -> None:
+        if fut is None or not str(sid or "").strip():
+            return
+        orphan_proposal_futures.append((fut, str(sid)))
+
+    def drain_orphan_proposal_futures() -> None:
+        nonlocal orphan_proposal_futures
+        kept: list[tuple[concurrent.futures.Future, str]] = []
+        for fut, sid in orphan_proposal_futures:
+            if not fut.done():
+                kept.append((fut, sid))
+                continue
+            try:
+                trace = fut.result()
+            except Exception as exc:  # noqa: BLE001
+                notify_dashboard(
+                    "/log",
+                    {"message": f"Orphaned AI worker for state {sid} raised: {exc!r}."},
+                )
+                continue
+            err = str(trace.error or "").strip()
+            stale = trace.model_copy(
+                update={
+                    "status": "stale",
+                    "approval_status": "rejected",
+                    "execution_outcome": "discarded",
+                    "error": err or "Game state changed before this proposal could execute.",
+                    "update_seq": trace.update_seq + 1,
+                }
+            )
+            path = state_log_paths.get(sid)
+            if path:
+                write_ai_log(path, stale)
+            notify_dashboard("/agent_trace", stale.model_dump(mode="json"))
+            notify_dashboard(
+                "/log",
+                {"message": f"Persisted stale AI trace for superseded state {sid} (game advanced)."},
+            )
+        orphan_proposal_futures = kept
 
     def note_proposal_success() -> None:
         if proposal_failures["streak"] <= 0:
@@ -489,11 +555,33 @@ def main():
         notify_dashboard("/update_state", {"state": state, "meta": {"state_id": state_id}})
 
         refresh_proposal_state()
+        drain_orphan_proposal_futures()
         if proposal_state.get("future") is not None and proposal_state.get("state_id") != state_id:
+            old_fut = proposal_state.get("future")
+            old_sid = str(proposal_state.get("state_id") or "")
             clear_active_proposal(
-                f"Discarded in-flight AI proposal for state {proposal_state.get('state_id')} after the game advanced."
+                f"Discarded in-flight AI proposal for state {old_sid} after the game advanced."
             )
+            enqueue_orphan_proposal_future(old_fut, old_sid)
             last_proposed_state_id = None  # Treat previous state as nothing; auto re-call AI for new state
+
+        retry_req = poll_retry_proposal(state_id)
+        if retry_req:
+            old_fut = proposal_state.get("future")
+            old_sid = str(proposal_state.get("state_id") or "")
+            clear_active_proposal("Retry AI: cancelled in-flight proposal for this state.")
+            enqueue_orphan_proposal_future(old_fut, old_sid)
+            trace_cache.pop(state_id, None)
+            last_proposed_state_id = None
+            notify_dashboard(
+                "/log",
+                {
+                    "message": (
+                        "Retry AI: cleared in-flight work and cache for this state; "
+                        "will re-propose when the loop is eligible."
+                    )
+                },
+            )
 
         ready_for_command = state.get("ready_for_command", False)
 
@@ -505,7 +593,14 @@ def main():
                 f"Cleared queued sequence: game moved from {queued_sequence['turn_key']!r} to {current_turn_key!r}."
             )
         if ready_for_command and queued_sequence["commands"]:
-            next_cmd_token = queued_sequence["commands"][0]
+            q_cmds = queued_sequence["commands"]
+            next_cmd_token = q_cmds[0]
+            if is_end_turn_command_token(next_cmd_token) and len(q_cmds) > 1:
+                clear_queued_sequence(
+                    "Refusing queued END: END must be the only command in the sequence; "
+                    "clearing invalid queue."
+                )
+                continue
             actions_list_now = vm.get("actions") or []
             canonical_cmd = None
             if next_cmd_token.upper().startswith("PLAY "):
@@ -714,6 +809,9 @@ def main():
         if not command_to_send:
             command_to_send = choose_idle_command(state)
             command_source = "poll" if command_to_send else "none"
+        if ready_for_command and not command_to_send:
+            command_to_send = "state"
+            command_source = "fallback"
 
         log_signature = (
             state_id,
@@ -760,11 +858,6 @@ def main():
 
         if command_to_send:
             print(command_to_send, flush=True)
-        elif ready_for_command:
-            # Last-resort fallback: send `state` to re-fetch the full game state.
-            # This prevents a deadlock where the game is waiting for a command and we
-            # have nothing to send (e.g., after a command failure returns a minimal error state).
-            print("state", flush=True)
         else:
             notify_dashboard(
                 "/log",

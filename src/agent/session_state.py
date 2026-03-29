@@ -60,6 +60,7 @@ class TurnConversation:
     combat_plan_guide: str = ""
     combat_plan_fingerprint: str | None = None
     combat_plan_last_turn: int | None = None
+    _last_seen_act: int | None = field(default=None, repr=False)
 
     def sync_combat_plan_for_vm(self, vm: dict) -> None:
         """Drop cached combat plan when leaving combat or when the encounter changes."""
@@ -137,6 +138,13 @@ class TurnConversation:
 
         m = vm.get("map")
         map_state = m if isinstance(m, dict) else {}
+        act = header.get("act")
+        if isinstance(act, int) and self._last_seen_act is not None and act > self._last_seen_act:
+            # Act advanced; clear stale boss line until game sends the new act_boss name.
+            self.strategy_memory["boss_prep"] = ""
+        if isinstance(act, int):
+            self._last_seen_act = act
+
         boss_name = map_state.get("boss_name")
         if boss_name:
             self.strategy_memory["boss_prep"] = f"Prepare for upcoming boss: {boss_name}."

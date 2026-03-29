@@ -7,11 +7,11 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from src.agent.config import get_agent_config, load_system_prompt
 from src.agent.policy import parse_agent_output
+from src.agent.prompt_builder import build_user_prompt
 from src.agent.tracing import build_state_id
 from src.repo_paths import REPO_ROOT
 from src.ui.state_processor import process_state
@@ -20,8 +20,6 @@ app = FastAPI()
 
 manual_actions_queue: list[str] = []
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 LOGS_DIR = os.path.join(str(REPO_ROOT), "logs")
 AGENT_CONFIG = get_agent_config()
 SYSTEM_PROMPT = load_system_prompt()
@@ -38,6 +36,8 @@ ai_runtime: dict[str, Any] = {
     "ai_status_message": "",
     "proposal_in_flight": False,
     "proposal_for_state_id": "",
+    # One-shot from POST /api/agent/retry; main.py consumes via GET /api/ai/retry_poll.
+    "retry_proposal_request": None,
 }
 
 # Last envelope or raw ingress (CommunicationMod JSON) for React monitor / debug paste.
@@ -187,6 +187,45 @@ def _first_playable_command_from_final(fd: Any) -> str | None:
     return str(ch).strip() or None
 
 
+def _trace_user_prompt_field(trace: dict[str, Any]) -> str:
+    u = trace.get("user_prompt") or trace.get("user_message") or ""
+    return str(u).strip() if u else ""
+
+
+def _merge_llm_user_prompt_for_monitor(
+    vm: dict[str, Any] | None,
+    state_id: str,
+    trace: dict[str, Any] | None,
+) -> str:
+    """Text shown as the LLM user message on the React monitor.
+
+    Prefer the trace copy when it matches the current ingress ``state_id`` (exact
+    string sent to the model, including strategy memory and planner prefix).
+    Otherwise rebuild with :func:`build_user_prompt` (no session history extras).
+    """
+    sid = str(state_id or "").strip()
+    if trace and sid:
+        tsid = str(trace.get("state_id") or "").strip()
+        if tsid == sid:
+            u = _trace_user_prompt_field(trace)
+            if u:
+                return u
+    if not vm or not vm.get("actions"):
+        return ""
+    try:
+        cfg = get_agent_config()
+        return build_user_prompt(
+            vm,
+            sid,
+            [],
+            strategy_memory=None,
+            combat_plan_guide=None,
+            prompt_profile=cfg.prompt_profile,
+        )
+    except Exception:
+        return ""
+
+
 def _trace_to_proposal(trace: dict[str, Any] | None) -> dict[str, Any] | None:
     """Shape AgentTrace into the React ``proposal`` object.
 
@@ -206,6 +245,7 @@ def _trace_to_proposal(trace: dict[str, Any] | None) -> dict[str, Any] | None:
             "error_reason": None,
             "resolve_tag": "legacy:stale",
             "for_state_id": trace.get("state_id"),
+            "user_prompt": None,
         }
     val = trace.get("validation")
     err = None
@@ -293,6 +333,7 @@ def _trace_to_proposal(trace: dict[str, Any] | None) -> dict[str, Any] | None:
     if final_cmd:
         command = str(final_cmd)
 
+    up = _trace_user_prompt_field(trace)
     return {
         "llm_raw": llm_raw,
         "parsed_model": parsed_model,
@@ -302,6 +343,7 @@ def _trace_to_proposal(trace: dict[str, Any] | None) -> dict[str, Any] | None:
         "error_reason": str(err) if err else None,
         "resolve_tag": resolve_tag,
         "for_state_id": trace.get("state_id"),
+        "user_prompt": up or None,
     }
 
 
@@ -363,7 +405,7 @@ def _build_agent_snapshot() -> dict[str, Any]:
 
     run_seed = _run_seed_from_ingress(_last_ingress_body)
 
-    return {
+    snap = {
         "pending_approval": pending,
         "command_queue": queue,
         "emitted_command": None,
@@ -384,7 +426,9 @@ def _build_agent_snapshot() -> dict[str, Any]:
         "ai_system_message": str(ai_runtime.get("ai_status_message") or ""),
         "proposal_in_flight": bool(ai_runtime.get("proposal_in_flight")),
         "proposal_for_state_id": ai_runtime.get("proposal_for_state_id") or None,
+        "llm_user_prompt": None,
     }
+    return snap
 
 
 def _ingress_ready_for_command(data: dict[str, Any] | None) -> bool | None:
@@ -420,6 +464,14 @@ def _build_react_snapshot_payload() -> dict[str, Any]:
         ingress_wire = deepcopy(_last_ingress_body)
         _stringify_game_seed_for_json_wire(ingress_wire)
 
+    agent_snap = _build_agent_snapshot()
+    trace_d = _trace_as_dict(ai_runtime.get("latest_trace"))
+    agent_snap["llm_user_prompt"] = _merge_llm_user_prompt_for_monitor(
+        vm,
+        state_id or "",
+        trace_d,
+    )
+
     return {
         "view_model": vm,
         "state_id": state_id or None,
@@ -428,7 +480,7 @@ def _build_react_snapshot_payload() -> dict[str, Any]:
         if live
         else None,
         "error": err_msg,
-        "agent": _build_agent_snapshot(),
+        "agent": agent_snap,
         "live_ingress": live,
         "ingress_age_seconds": round(age_s, 1) if age_s is not None else None,
     }
@@ -536,14 +588,32 @@ def _canonical_legal_command(vm: dict[str, Any], cmd: str) -> str:
     raise ValueError(f"command not in legal list: {cmd!r}")
 
 
+_ROOT_INFO_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Slay the Spire agent — API</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem;
+           line-height: 1.5; color: #e2e8f0; background: #0f172a; }
+    code { background: #1e293b; padding: 0.15rem 0.35rem; border-radius: 4px; }
+    a { color: #7dd3fc; }
+  </style>
+</head>
+<body>
+  <h1>Dashboard API</h1>
+  <p>This process serves WebSocket and REST endpoints for the operator UI. There is no HTML debugger here.</p>
+  <p>Run the Vite app from <code>apps/web</code> (e.g. <code>npm run dev:web</code>) and open the URL it prints
+     (typically <code>http://localhost:5173</code>), with the dashboard running on port 8000 for proxy/API.</p>
+</body>
+</html>
+"""
+
+
 @app.get("/", response_class=HTMLResponse)
-async def get_dashboard(request: Request):
-    return templates.TemplateResponse(request, "index.html")
-
-
-@app.get("/ai", response_class=HTMLResponse)
-async def get_ai_debugger(request: Request):
-    return templates.TemplateResponse(request, "ai_debugger.html")
+async def get_root():
+    return HTMLResponse(_ROOT_INFO_HTML)
 
 
 @app.get("/api/ai/state")
@@ -993,20 +1063,46 @@ async def post_agent_resume(body: ResumeBody) -> dict[str, Any]:
     return _build_agent_snapshot()
 
 
+@app.get("/api/ai/retry_poll")
+def get_retry_poll(current_state_id: str = "") -> dict[str, Any]:
+    """Game loop: pop retry request only when ``current_state_id`` matches the request.
+
+    If the game has moved to another state, the request is discarded without action.
+    """
+    req = ai_runtime.get("retry_proposal_request")
+    ai_runtime["retry_proposal_request"] = None
+    if not isinstance(req, dict):
+        return {"retry_proposal": None}
+    req_sid = str(req.get("state_id") or "").strip()
+    cur = (current_state_id or "").strip()
+    if not cur or cur != req_sid:
+        return {"retry_proposal": None}
+    return {"retry_proposal": req}
+
+
 @app.post("/api/agent/retry")
 async def post_agent_retry() -> dict[str, Any]:
-    """Clear ``latest_trace`` so the monitor does not keep showing a stuck proposal.
+    """Clear stuck monitor trace; queue a one-shot re-proposal for the current state.
 
-    If a trace exists, record a rejection in history (same as /api/ai/reject), then
-    always drop ``latest_trace`` and ``approved_action`` so any status (invalid,
-    error, rejected, disabled, etc.) is cleared. The game process must still run
-    the model again on the next CommunicationMod ingress; this route does not
-    invoke the LLM.
+    In **manual** mode this is a no-op (does not clear trace or queue retry).
+    Otherwise: same as reject-in-history when a trace exists, clear ``latest_trace``
+    and ``approved_action``, set ``retry_proposal_request`` for ``latest_state_id``.
+    The game process picks this up via ``GET /api/ai/retry_poll``, cancels any
+    in-flight ``propose`` future, drops ``trace_cache`` for that state, and resets
+    ``last_proposed_state_id`` so ``start_proposal`` can run again. This route does
+    not invoke the LLM itself.
     """
+    mode = str(ai_runtime.get("mode") or "").strip().lower()
+    if mode == "manual":
+        await _broadcast_react_snapshot()
+        return _build_react_snapshot_payload()
+
     if ai_runtime.get("latest_trace"):
         await reject_ai_action()
     ai_runtime["latest_trace"] = None
     ai_runtime["approved_action"] = None
+    sid = str(ai_runtime.get("latest_state_id") or "").strip()
+    ai_runtime["retry_proposal_request"] = {"state_id": sid} if sid else None
     await _broadcast_react_snapshot()
     return _build_react_snapshot_payload()
 

@@ -25,7 +25,7 @@ export type MapVizData = {
 const MAX_COL = 6;
 const ROW_H = 70;
 
-/** Port of ``renderFullMap`` from ``src/ui/templates/index.html`` (dark theme). */
+/** Port of the legacy dashboard map view (dark theme). */
 export function MapView({
   mapData,
   onChoose,

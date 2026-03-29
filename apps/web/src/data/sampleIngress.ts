@@ -4,7 +4,7 @@ export const SAMPLE_INGRESS: Record<string, unknown> = {
   ready_for_command: true,
   available_commands: ["end", "play", "potion"],
   game_state: {
-    class: "IRONCLAD",
+    class: "DEFECT",
     floor: 3,
     gold: 130,
     current_hp: 76,
@@ -30,7 +30,16 @@ export const SAMPLE_INGRESS: Record<string, unknown> = {
         energy: 3,
         block: 0,
         powers: [],
-        orbs: [],
+        orbs: [
+          {
+            passive_amount: 3,
+            name: "Lightning",
+            id: "Lightning",
+            evoke_amount: 8,
+          },
+          { passive_amount: 0, name: "Orb Slot", evoke_amount: 0 },
+          { passive_amount: 0, name: "Orb Slot", evoke_amount: 0 },
+        ],
       },
       hand: [
         {

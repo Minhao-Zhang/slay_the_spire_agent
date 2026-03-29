@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "global": {
+    "bullets": [
+      "Orbs (Defect): each orb has a Passive that repeats and an Evoke when the orb is removed.",
+      "Channel places an orb in the right-most empty slot; if all slots are full, the right-most orb is Evoked first, then the new orb is placed.",
+      "Ingress order: array index 0 is the right-most slot (first for channel/evoke resolution in this ordering); higher indices are to the left.",
+      "Lightning, Frost, Dark passives trigger at end of turn; Plasma passive triggers at start of turn.",
+      "Focus improves Lightning, Frost, and Dark orb numbers shown below; Plasma is unaffected by Focus.",
+      "Dark: passive_amount/evoke_amount from the mod reflect scaled damage; Dark grows each end of turn and Evoke hits the lowest-current-HP enemy (leftmost on ties).",
+      "Lock-On (e.g. Bullseye): affected enemy takes 50% more damage from Lightning and Dark orbs."
+    ]
+  },
+  "types": {
+    "Lightning": {
+      "short": "Damage orb — random enemy.",
+      "passive_detail": "End of turn: deal passive_amount damage to a random enemy (includes Focus).",
+      "evoke_detail": "Evoke: deal evoke_amount damage to a random enemy (includes Focus)."
+    },
+    "Frost": {
+      "short": "Block orb.",
+      "passive_detail": "End of turn: gain passive_amount Block (includes Focus).",
+      "evoke_detail": "Evoke: gain evoke_amount Block (includes Focus)."
+    },
+    "Dark": {
+      "short": "Scaling damage orb — lowest HP target on evoke.",
+      "passive_detail": "End of turn: increases stored damage (mod reports in passive_amount / related fields; includes scaling).",
+      "evoke_detail": "Evoke: deal current stored damage to enemy with lowest HP (leftmost if tied)."
+    },
+    "Plasma": {
+      "short": "Energy orb — not scaled by Focus.",
+      "passive_detail": "Start of turn: gain Energy from passive (mod value; typically 1).",
+      "evoke_detail": "Evoke: gain Energy (mod value; typically 2). Plasma ignores Focus."
+    },
+    "Orb Slot": {
+      "short": "Empty orb slot.",
+      "passive_detail": "No passive.",
+      "evoke_detail": "No orb to evoke."
+    },
+    "_default": {
+      "short": "Unknown orb type.",
+      "passive_detail": "Passive uses passive_amount from state.",
+      "evoke_detail": "Evoke uses evoke_amount from state."
+    }
+  },
+  "ui": {
+    "strip_label": "Orbs",
+    "strip_help_title": "Orb mechanics",
+    "empty_chip": "Empty"
+  }
+}

@@ -298,7 +298,7 @@ export function useControlPlane() {
     void fetchSnapshot();
     pushLog(
       "SYSTEM",
-      "Agent retry: cleared stuck proposal on the server; the game process must run the model again on the next state update.",
+      "Retry AI: monitor trace cleared; game loop will cancel in-flight propose (if any) and re-propose for this state when eligible (not in manual mode).",
     );
   }, [applyPayload, fetchSnapshot, pushLog]);
 
