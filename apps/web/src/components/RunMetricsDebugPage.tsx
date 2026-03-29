@@ -22,6 +22,41 @@ const X_AXIS_EVENT_INDEX = {
   tickFormatter: tickFmtIntEn,
 };
 
+const CHART_MARGIN_SCATTER = { top: 8, right: 8, left: 0, bottom: 0 };
+const DEBUG_SCATTER_Y_DOMAIN: [number, number] = [0, 2];
+
+type TooltipLite = {
+  active?: boolean;
+  payload?: ReadonlyArray<{ payload?: unknown }>;
+};
+
+type FailureScatterPoint = {
+  event_index: number;
+  y: number;
+  status: string;
+  decision_id: string;
+  validation_error: string;
+  error: string;
+};
+
+function TooltipFailureScatter(tp: TooltipLite) {
+  if (!tp.active || !tp.payload?.[0]) return null;
+  const p = tp.payload[0].payload as FailureScatterPoint;
+  return (
+    <div className="max-w-xs rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+      <div className="font-mono">event_index: {fmtIntEn(p.event_index)}</div>
+      <div>status: {p.status}</div>
+      <div>decision_id: {p.decision_id}</div>
+      {p.validation_error !== "—" ? (
+        <div className="mt-1 text-amber-200/90">validation: {p.validation_error}</div>
+      ) : null}
+      {p.error !== "—" ? (
+        <div className="mt-1 text-red-300/90">error: {p.error}</div>
+      ) : null}
+    </div>
+  );
+}
+
 export function RunMetricsDebugPage() {
   const {
     runs,
@@ -124,38 +159,23 @@ export function RunMetricsDebugPage() {
               </h2>
               <ChartCard title="Failure events vs event_index">
                 <ResponsiveContainer width="100%" height={CHART_H}>
-                  <ScatterChart margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <ScatterChart margin={CHART_MARGIN_SCATTER}>
                     <CartesianGrid {...GRID} />
                     <XAxis
                       dataKey="event_index"
                       type="number"
                       {...X_AXIS_EVENT_INDEX}
                     />
-                    <YAxis dataKey="y" hide domain={[0, 2]} />
+                    <YAxis dataKey="y" hide domain={DEBUG_SCATTER_Y_DOMAIN} />
                     <Tooltip
-                      content={({ active, payload: pl }) => {
-                        if (!active || !pl?.[0]) return null;
-                        const p = pl[0].payload as (typeof failureScatter)[0];
-                        return (
-                          <div className="max-w-xs rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
-                            <div className="font-mono">
-                              event_index: {fmtIntEn(p.event_index)}
-                            </div>
-                            <div>status: {p.status}</div>
-                            <div>decision_id: {p.decision_id}</div>
-                            {p.validation_error !== "—" ? (
-                              <div className="mt-1 text-amber-200/90">
-                                validation: {p.validation_error}
-                              </div>
-                            ) : null}
-                            {p.error !== "—" ? (
-                              <div className="mt-1 text-red-300/90">error: {p.error}</div>
-                            ) : null}
-                          </div>
-                        );
-                      }}
+                      content={TooltipFailureScatter}
+                      isAnimationActive={false}
                     />
-                    <Scatter data={failureScatter} fill="#f87171" />
+                    <Scatter
+                      data={failureScatter}
+                      fill="#f87171"
+                      isAnimationActive={false}
+                    />
                   </ScatterChart>
                 </ResponsiveContainer>
               </ChartCard>

@@ -2,9 +2,46 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field
+from typing import Any
+
+import tiktoken
 
 from src.agent.tracing import combat_encounter_fingerprint
 from src.agent.vm_shapes import normalize_legal_actions
+
+
+def _tiktoken_encoding_for_model(model_name: str) -> tiktoken.Encoding:
+    name = (model_name or "").strip() or "gpt-4o"
+    try:
+        return tiktoken.encoding_for_model(name)
+    except KeyError:
+        try:
+            return tiktoken.encoding_for_model("gpt-4o")
+        except KeyError:
+            return tiktoken.get_encoding("o200k_base")
+
+
+def count_tokens_system_and_history(
+    system_prompt: str,
+    messages: list[dict[str, Any]],
+    tokenizer_model: str,
+) -> int:
+    """Approximate chat input tokens (system + messages) for compaction gating.
+
+    Uses tiktoken with the same per-message overhead pattern as OpenAI chat docs;
+    provider billed prompt_tokens may still differ slightly (tools, merges, etc.).
+    """
+    enc = _tiktoken_encoding_for_model(tokenizer_model)
+    total = 0
+    chain: list[dict[str, Any]] = [{"role": "system", "content": system_prompt or ""}, *messages]
+    for msg in chain:
+        role = str(msg.get("role", "") or "")
+        content = str(msg.get("content", "") or "")
+        total += 4
+        total += len(enc.encode(role))
+        total += len(enc.encode(content))
+    total += 2
+    return total
 
 
 def estimate_message_tokens(message: dict[str, str]) -> int:
@@ -170,8 +207,10 @@ class TurnConversation:
     def estimated_token_count(self) -> int:
         return sum(estimate_message_tokens(message) for message in self.messages)
 
-    def needs_compaction(self, token_threshold: int) -> bool:
-        return token_threshold > 0 and self.estimated_token_count() > token_threshold
+    def needs_compaction(self, token_threshold: int, system_prompt: str, tokenizer_model: str) -> bool:
+        if token_threshold <= 0:
+            return False
+        return count_tokens_system_and_history(system_prompt, self.messages, tokenizer_model) > token_threshold
 
     def compact_history(self, summary: str, keep_recent: int) -> None:
         if not summary:
@@ -184,5 +223,16 @@ class TurnConversation:
             "content": f"## COMPACTED HISTORY\n{summary.strip()}",
         }
         self.messages = [compacted_summary, *recent_messages]
+        self.compaction_count += 1
+
+    def compact_history_fallback(self, keep_recent: int) -> None:
+        """If summarization fails, keep only the recent tail and a short stub (bounded history)."""
+        keep_recent = max(0, keep_recent)
+        recent_messages = self.messages[-keep_recent:] if keep_recent else []
+        stub = {
+            "role": "user",
+            "content": "## COMPACTED HISTORY\n(Prior turns dropped: summarization failed or returned empty.)",
+        }
+        self.messages = [stub, *recent_messages]
         self.compaction_count += 1
 

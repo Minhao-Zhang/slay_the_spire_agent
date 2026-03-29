@@ -705,10 +705,18 @@ def _summarize_run_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
         k = str(r.get("status") or "unknown")
         status_counts[k] = status_counts.get(k, 0) + 1
     total_tokens = 0
+    input_tokens = 0
+    output_tokens = 0
     for r in executed:
         t = r.get("total_tokens")
         if isinstance(t, (int, float)):
             total_tokens += int(t)
+        ti = r.get("input_tokens")
+        if isinstance(ti, (int, float)):
+            input_tokens += int(ti)
+        to = r.get("output_tokens")
+        if isinstance(to, (int, float)):
+            output_tokens += int(to)
     latencies = [
         float(r["latency_ms"])
         for r in executed
@@ -740,6 +748,8 @@ def _summarize_run_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
         "ai_executed_row_count": len(executed),
         "status_counts": status_counts,
         "total_tokens_executed": total_tokens,
+        "input_tokens_executed": input_tokens,
+        "output_tokens_executed": output_tokens,
         "latency_ms_mean": mean_lat,
         "latency_ms_median": median_lat,
         "event_index_min": min(event_indices) if event_indices else None,

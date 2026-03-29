@@ -235,12 +235,34 @@ class SpireDecisionAgent:
         turn_key = state["trace"].turn_key
         self.session.set_scene(turn_key)
         self.session.update_strategy_memory(vm)
-        if self.llm and self.session.needs_compaction(self.config.history_compact_token_threshold):
-            keep_recent = min(self.config.history_keep_recent, max(len(self.session.messages) - 1, 0))
-            older_messages = self.session.messages[:-keep_recent] if keep_recent else list(self.session.messages)
-            summary = self.llm.summarize_history_compaction(older_messages)
+        tokenizer_model = (self.config.history_tokenizer_model or self.config.fast_model).strip()
+        if self.llm and self.session.needs_compaction(
+            self.config.history_compact_token_threshold,
+            self.system_prompt,
+            tokenizer_model,
+        ):
+            msgs = self.session.messages
+            keep_recent = min(self.config.history_keep_recent, len(msgs))
+            older_messages = msgs[:-keep_recent] if keep_recent else list(msgs)
+            if not older_messages and len(msgs) > 1:
+                keep_recent = max(1, len(msgs) // 2)
+                older_messages = msgs[:-keep_recent]
+            max_chars = self.config.history_compaction_transcript_max_chars
+            summary = ""
+            if older_messages:
+                summary = self.llm.summarize_history_compaction(
+                    older_messages,
+                    max_transcript_chars=max_chars,
+                )
+            if not summary and older_messages:
+                summary = self.llm.summarize_history_compaction(
+                    older_messages,
+                    max_transcript_chars=max(50_000, max_chars // 2),
+                )
             if summary:
-                self.session.compact_history(summary, self.config.history_keep_recent)
+                self.session.compact_history(summary, keep_recent)
+            elif older_messages:
+                self.session.compact_history_fallback(keep_recent)
         self._ensure_combat_plan(vm, state["trace"])
         user_prompt = build_user_prompt(
             vm,

@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useCallback, useMemo, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   Area,
@@ -34,6 +34,8 @@ import {
   deriveAiRows,
   deriveStateRows,
   screenTypeOrder,
+  type BinnedNumeric,
+  type MetricsSummary,
   type StateRow,
 } from "../lib/runMetricsDerive";
 
@@ -78,6 +80,112 @@ const PIE_COLORS = [
   "#f87171",
   "#94a3b8",
 ];
+
+const CHART_MARGIN_TIGHT = { top: 8, right: 8, left: 0, bottom: 0 };
+const CHART_MARGIN_LEFT4 = { top: 8, right: 8, left: 4, bottom: 0 };
+const CHART_MARGIN_SCATTER = { top: 8, right: 8, left: 8, bottom: 0 };
+const CHART_MARGIN_PIE = { top: 8, right: 8, bottom: 8, left: 8 };
+const CHART_MARGIN_BAR = { top: 8, right: 8, left: 0, bottom: 24 };
+
+const Y_LABEL_K_TOKENS = {
+  value: "k tokens",
+  angle: -90,
+  position: "insideLeft" as const,
+  fill: "#64748b",
+  fontSize: 10,
+  dx: -4,
+};
+
+const Y_LABEL_LATENCY_S = {
+  value: "s",
+  angle: -90,
+  position: "insideLeft" as const,
+  fill: "#64748b",
+  fontSize: 10,
+  dx: -4,
+};
+
+const SCATTER_TOOLTIP_CURSOR = { strokeDasharray: "3 3" };
+
+const X_AXIS_BAR_TICK = { fontSize: 9 };
+
+type StateTooltipKeys = Array<
+  "hp" | "gold" | "floor" | "legal" | "monsters" | "hand"
+>;
+
+const STATE_KEYS_HP: StateTooltipKeys = ["hp"];
+const STATE_KEYS_GOLD: StateTooltipKeys = ["gold"];
+const STATE_KEYS_FLOOR: StateTooltipKeys = ["floor"];
+const STATE_KEYS_LEGAL: StateTooltipKeys = ["legal"];
+const STATE_KEYS_MONSTERS: StateTooltipKeys = ["monsters"];
+const STATE_KEYS_HAND: StateTooltipKeys = ["hand"];
+
+type TooltipLite = {
+  active?: boolean;
+  payload?: ReadonlyArray<{ payload?: unknown }>;
+};
+
+type ScreenScatterPoint = {
+  event_index: number;
+  screen_y: number;
+  screen_type: string;
+  turn_key: string;
+  in_combat: boolean;
+  legal_action_count: unknown;
+};
+
+function pieStatusLabel(props: {
+  name?: string;
+  percent?: number;
+}): string {
+  return `${props.name ?? ""} ${fmtIntEn(
+    Math.round((props.percent ?? 0) * 100),
+  )}%`;
+}
+
+function TooltipScreenScatter(tp: TooltipLite) {
+  if (!tp.active || !tp.payload?.[0]) return null;
+  const p = tp.payload[0].payload as ScreenScatterPoint;
+  return (
+    <div className="rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+      <div className="font-mono text-slate-200">
+        event_index: {fmtIntEn(p.event_index)}
+      </div>
+      <div>screen_type: {p.screen_type}</div>
+      <div>turn_key: {p.turn_key}</div>
+      <div>in_combat: {String(p.in_combat)}</div>
+      <div>
+        legal_action_count: {fmtUnknownNumericOrText(p.legal_action_count)}
+      </div>
+    </div>
+  );
+}
+
+function HistogramTooltipInput(tp: TooltipLite) {
+  if (!tp.active || !tp.payload?.[0]) return null;
+  const p = tp.payload[0].payload as BinnedNumeric;
+  return (
+    <div className="rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+      <div className="tabular-nums">count: {fmtIntEn(p.count)}</div>
+      <div>
+        range: {fmtNumEn(p.lo, 2)}–{fmtNumEn(p.hi, 2)} tokens
+      </div>
+    </div>
+  );
+}
+
+function HistogramTooltipLatency(tp: TooltipLite) {
+  if (!tp.active || !tp.payload?.[0]) return null;
+  const p = tp.payload[0].payload as BinnedNumeric;
+  return (
+    <div className="rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+      <div className="tabular-nums">count: {fmtIntEn(p.count)}</div>
+      <div>
+        range: {fmtNumEn(p.lo, 1)}–{fmtNumEn(p.hi, 1)} ms
+      </div>
+    </div>
+  );
+}
 
 export function RunMetricsPage() {
   const {
@@ -187,7 +295,61 @@ export function RunMetricsPage() {
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
   }, [aiRows]);
 
+  const screenOrderTicks = useMemo(
+    () => (screenOrder.length ? screenOrder.map((_, i) => i) : [0]),
+    [screenOrder],
+  );
+
+  const screenScatterYDomain = useMemo(
+    (): [number, number] => [0, Math.max(0, screenOrder.length - 1)],
+    [screenOrder.length],
+  );
+
+  const screenTickFormatter = useCallback(
+    (i: number | string) =>
+      screenOrder[typeof i === "number" ? i : 0] ?? "",
+    [screenOrder],
+  );
+
+  const aiRowCount = aiRows.length;
+  const statusPieTooltipContent = useCallback(
+    (tp: TooltipLite) => {
+      if (!tp.active || !tp.payload?.[0]) return null;
+      const d = tp.payload[0].payload as { name: string; value: number };
+      const pct =
+        aiRowCount > 0
+          ? fmtNumEn((d.value / aiRowCount) * 100, 1)
+          : fmtNumEn(0, 1);
+      return (
+        <div className="rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+          <div className="font-medium text-slate-200">{d.name}</div>
+          <div className="tabular-nums">
+            count: {fmtIntEn(d.value)} ({pct}%)
+          </div>
+        </div>
+      );
+    },
+    [aiRowCount],
+  );
+
   const summary = payload?.ok === true ? payload.summary : undefined;
+
+  const executedInOutTokens = useMemo(() => {
+    const sIn = summary?.input_tokens_executed;
+    const sOut = summary?.output_tokens_executed;
+    if (typeof sIn === "number" && typeof sOut === "number") {
+      return { input: sIn, output: sOut };
+    }
+    let input = 0;
+    let output = 0;
+    for (const r of aiExec) {
+      const ti = r.input_tokens;
+      const to = r.output_tokens;
+      if (typeof ti === "number" && Number.isFinite(ti)) input += ti;
+      if (typeof to === "number" && Number.isFinite(to)) output += to;
+    }
+    return { input, output };
+  }, [summary, aiExec]);
 
   const debugSearch = run
     ? `?run=${encodeURIComponent(run)}`
@@ -272,11 +434,13 @@ export function RunMetricsPage() {
             />
             <Kpi
               label="Tokens (executed)"
-              value={fmtNumEn(summary.total_tokens_executed)}
+              value={`in ${fmtNumEn(executedInOutTokens.input)} · out ${fmtNumEn(executedInOutTokens.output)}`}
+              title="Total input and output tokens summed over executed AI decisions."
             />
             <Kpi
-              label="Latency mean / median (ms)"
-              value={`${fmtNumEn(summary.latency_ms_mean, 1)} / ${fmtNumEn(summary.latency_ms_median, 1)}`}
+              label="Latency mean / median (s)"
+              value={latencyMeanMedianSecondsKpi(summary)}
+              title="Wall time per executed AI call (mean and median)."
             />
             <Kpi
               label="Levels reached"
@@ -295,116 +459,148 @@ export function RunMetricsPage() {
               <div className="grid gap-6 lg:grid-cols-2">
                 <ChartCard title="HP & max HP">
                   <ResponsiveContainer width="100%" height={CHART_H}>
-                    <LineChart data={stateRows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
                       <XAxis dataKey="event_index" type="number" {...X_AXIS_EVENT_INDEX} />
                       <YAxis {...Y_AXIS_DEFAULT} />
                       <Tooltip
-                        content={(tp) => (
-                          <StateTooltip
-                            active={tp.active}
-                            payload={tp.payload}
-                            keys={["hp"]}
-                          />
-                        )}
+                        content={TooltipStateHp}
+                        isAnimationActive={false}
                       />
-                      <Line type="monotone" dataKey={(s) => s.vm.current_hp ?? null} name="current_hp" stroke="#f87171" dot={false} strokeWidth={2} connectNulls />
-                      <Line type="monotone" dataKey={(s) => s.vm.max_hp ?? null} name="max_hp" stroke="#94a3b8" dot={false} strokeWidth={1.5} connectNulls />
+                      <Line
+                        type="monotone"
+                        dataKey="line_current_hp"
+                        name="current_hp"
+                        stroke="#f87171"
+                        dot={false}
+                        strokeWidth={2}
+                        connectNulls
+                        isAnimationActive={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="line_max_hp"
+                        name="max_hp"
+                        stroke="#94a3b8"
+                        dot={false}
+                        strokeWidth={1.5}
+                        connectNulls
+                        isAnimationActive={false}
+                      />
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>
                 <ChartCard title="Gold">
                   <ResponsiveContainer width="100%" height={CHART_H}>
-                    <LineChart data={stateRows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
                       <XAxis dataKey="event_index" type="number" {...X_AXIS_EVENT_INDEX} />
                       <YAxis {...Y_AXIS_DEFAULT} />
                       <Tooltip
-                        content={(tp) => (
-                          <StateTooltip
-                            active={tp.active}
-                            payload={tp.payload}
-                            keys={["gold"]}
-                          />
-                        )}
+                        content={TooltipStateGold}
+                        isAnimationActive={false}
                       />
-                      <Line type="monotone" dataKey={(s) => s.vm.gold ?? null} name="gold" stroke="#fbbf24" dot={false} strokeWidth={2} connectNulls />
+                      <Line
+                        type="monotone"
+                        dataKey="line_gold"
+                        name="gold"
+                        stroke="#fbbf24"
+                        dot={false}
+                        strokeWidth={2}
+                        connectNulls
+                        isAnimationActive={false}
+                      />
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>
                 <ChartCard title="Floor (step)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
-                    <LineChart data={stateRows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
                       <XAxis dataKey="event_index" type="number" {...X_AXIS_EVENT_INDEX} />
                       <YAxis {...Y_AXIS_DEFAULT} />
                       <Tooltip
-                        content={(tp) => (
-                          <StateTooltip
-                            active={tp.active}
-                            payload={tp.payload}
-                            keys={["floor"]}
-                          />
-                        )}
+                        content={TooltipStateFloor}
+                        isAnimationActive={false}
                       />
-                      <Line type="stepAfter" dataKey={(s) => s.vm.floor ?? null} name="floor" stroke="#38bdf8" dot={false} strokeWidth={2} connectNulls />
+                      <Line
+                        type="stepAfter"
+                        dataKey="line_floor"
+                        name="floor"
+                        stroke="#38bdf8"
+                        dot={false}
+                        strokeWidth={2}
+                        connectNulls
+                        isAnimationActive={false}
+                      />
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>
                 <ChartCard title="Legal action count">
                   <ResponsiveContainer width="100%" height={CHART_H}>
-                    <LineChart data={stateRows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
                       <XAxis dataKey="event_index" type="number" {...X_AXIS_EVENT_INDEX} />
                       <YAxis {...Y_AXIS_DEFAULT} />
                       <Tooltip
-                        content={(tp) => (
-                          <StateTooltip
-                            active={tp.active}
-                            payload={tp.payload}
-                            keys={["legal"]}
-                          />
-                        )}
+                        content={TooltipStateLegal}
+                        isAnimationActive={false}
                       />
-                      <Line type="monotone" dataKey={(s) => s.vm.legal_action_count ?? null} name="legal_action_count" stroke="#a78bfa" dot={false} strokeWidth={2} connectNulls />
+                      <Line
+                        type="monotone"
+                        dataKey="line_legal_action_count"
+                        name="legal_action_count"
+                        stroke="#a78bfa"
+                        dot={false}
+                        strokeWidth={2}
+                        connectNulls
+                        isAnimationActive={false}
+                      />
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>
                 <ChartCard title="Combat: enemy HP sum">
                   <ResponsiveContainer width="100%" height={CHART_H}>
-                    <LineChart data={stateRows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
                       <XAxis dataKey="event_index" type="number" {...X_AXIS_EVENT_INDEX} />
                       <YAxis {...Y_AXIS_DEFAULT} />
                       <Tooltip
-                        content={(tp) => (
-                          <StateTooltip
-                            active={tp.active}
-                            payload={tp.payload}
-                            keys={["monsters"]}
-                          />
-                        )}
+                        content={TooltipStateMonsters}
+                        isAnimationActive={false}
                       />
-                      <Line type="monotone" dataKey="monster_hp_sum" name="enemy_hp_sum" stroke="#f472b6" dot={false} strokeWidth={2} connectNulls />
+                      <Line
+                        type="monotone"
+                        dataKey="monster_hp_sum"
+                        name="enemy_hp_sum"
+                        stroke="#f472b6"
+                        dot={false}
+                        strokeWidth={2}
+                        connectNulls
+                        isAnimationActive={false}
+                      />
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>
                 <ChartCard title="Hand size">
                   <ResponsiveContainer width="100%" height={CHART_H}>
-                    <LineChart data={stateRows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
                       <XAxis dataKey="event_index" type="number" {...X_AXIS_EVENT_INDEX} />
                       <YAxis {...Y_AXIS_DEFAULT} />
                       <Tooltip
-                        content={(tp) => (
-                          <StateTooltip
-                            active={tp.active}
-                            payload={tp.payload}
-                            keys={["hand"]}
-                          />
-                        )}
+                        content={TooltipStateHand}
+                        isAnimationActive={false}
                       />
-                      <Line type="monotone" dataKey="hand_size" name="hand_size" stroke="#34d399" dot={false} strokeWidth={2} />
+                      <Line
+                        type="monotone"
+                        dataKey="hand_size"
+                        name="hand_size"
+                        stroke="#34d399"
+                        dot={false}
+                        strokeWidth={2}
+                        isAnimationActive={false}
+                      />
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>
@@ -414,46 +610,28 @@ export function RunMetricsPage() {
                     Hover for turn_key and flags.
                   </p>
                   <ResponsiveContainer width="100%" height={CHART_H}>
-                    <ScatterChart margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+                    <ScatterChart margin={CHART_MARGIN_SCATTER}>
                       <CartesianGrid {...GRID} />
                       <XAxis dataKey="event_index" type="number" name="event_index" {...X_AXIS_EVENT_INDEX} />
                       <YAxis
                         dataKey="screen_y"
                         type="number"
-                        domain={[0, Math.max(0, screenOrder.length - 1)]}
-                        ticks={
-                          screenOrder.length
-                            ? screenOrder.map((_, i) => i)
-                            : [0]
-                        }
-                        tickFormatter={(i) =>
-                          screenOrder[typeof i === "number" ? i : 0] ?? ""
-                        }
+                        domain={screenScatterYDomain}
+                        ticks={screenOrderTicks}
+                        tickFormatter={screenTickFormatter}
                         width={120}
                         {...SLATE_AXIS}
                       />
                       <Tooltip
-                        cursor={{ strokeDasharray: "3 3" }}
-                        content={({ active, payload: pl }) => {
-                          if (!active || !pl?.[0]) return null;
-                          const p = pl[0].payload as (typeof screenScatter)[0];
-                          return (
-                            <div className="rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
-                              <div className="font-mono text-slate-200">
-                                event_index: {fmtIntEn(p.event_index)}
-                              </div>
-                              <div>screen_type: {p.screen_type}</div>
-                              <div>turn_key: {p.turn_key}</div>
-                              <div>in_combat: {String(p.in_combat)}</div>
-                              <div>
-                                legal_action_count:{" "}
-                                {fmtUnknownNumericOrText(p.legal_action_count)}
-                              </div>
-                            </div>
-                          );
-                        }}
+                        cursor={SCATTER_TOOLTIP_CURSOR}
+                        content={TooltipScreenScatter}
+                        isAnimationActive={false}
                       />
-                      <Scatter data={screenScatter} fill="#38bdf8" />
+                      <Scatter
+                        data={screenScatter}
+                        fill="#38bdf8"
+                        isAnimationActive={false}
+                      />
                     </ScatterChart>
                   </ResponsiveContainer>
                 </ChartCard>
@@ -477,103 +655,72 @@ export function RunMetricsPage() {
               <div className="grid gap-6 lg:grid-cols-2">
                 <ChartCard title="Input tokens per call (k tokens)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
-                    <LineChart data={tokenSeries} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
+                    <LineChart data={tokenSeries} margin={CHART_MARGIN_LEFT4}>
                       <CartesianGrid {...GRID} />
                       <XAxis dataKey="event_index" type="number" {...X_AXIS_EVENT_INDEX} />
                       <YAxis
                         {...Y_AXIS_DEFAULT}
                         tickFormatter={yAxisTickKTokens}
                         width={52}
-                        label={{
-                          value: "k tokens",
-                          angle: -90,
-                          position: "insideLeft",
-                          fill: "#64748b",
-                          fontSize: 10,
-                          dx: -4,
-                        }}
+                        label={Y_LABEL_K_TOKENS}
                       />
                       <Tooltip
-                        content={(tp) => (
-                          <AiTokenTooltip
-                            active={tp.active}
-                            payload={tp.payload}
-                          />
-                        )}
+                        content={TooltipAiToken}
+                        isAnimationActive={false}
                       />
                       <Line
                         type="monotone"
                         dataKey="input_k"
                         name="input_k"
                         stroke="#818cf8"
-                        dot
+                        dot={false}
                         strokeWidth={2}
+                        isAnimationActive={false}
                       />
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>
                 <ChartCard title="Output tokens per call (k tokens)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
-                    <LineChart data={tokenSeries} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
+                    <LineChart data={tokenSeries} margin={CHART_MARGIN_LEFT4}>
                       <CartesianGrid {...GRID} />
                       <XAxis dataKey="event_index" type="number" {...X_AXIS_EVENT_INDEX} />
                       <YAxis
                         {...Y_AXIS_DEFAULT}
                         tickFormatter={yAxisTickKTokens}
                         width={52}
-                        label={{
-                          value: "k tokens",
-                          angle: -90,
-                          position: "insideLeft",
-                          fill: "#64748b",
-                          fontSize: 10,
-                          dx: -4,
-                        }}
+                        label={Y_LABEL_K_TOKENS}
                       />
                       <Tooltip
-                        content={(tp) => (
-                          <AiTokenTooltip
-                            active={tp.active}
-                            payload={tp.payload}
-                          />
-                        )}
+                        content={TooltipAiToken}
+                        isAnimationActive={false}
                       />
                       <Line
                         type="monotone"
                         dataKey="output_k"
                         name="output_k"
                         stroke="#c084fc"
-                        dot
+                        dot={false}
                         strokeWidth={2}
+                        isAnimationActive={false}
                       />
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>
                 <ChartCard title="Cumulative total tokens (k tokens)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
-                    <AreaChart data={cumulativeTokenSeries} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
+                    <AreaChart data={cumulativeTokenSeries} margin={CHART_MARGIN_LEFT4}>
                       <CartesianGrid {...GRID} />
                       <XAxis dataKey="event_index" type="number" {...X_AXIS_EVENT_INDEX} />
                       <YAxis
                         {...Y_AXIS_DEFAULT}
                         tickFormatter={yAxisTickKTokens}
                         width={56}
-                        label={{
-                          value: "k tokens",
-                          angle: -90,
-                          position: "insideLeft",
-                          fill: "#64748b",
-                          fontSize: 10,
-                          dx: -4,
-                        }}
+                        label={Y_LABEL_K_TOKENS}
                       />
                       <Tooltip
-                        content={(tp) => (
-                          <CumulativeTokenTooltip
-                            active={tp.active}
-                            payload={tp.payload}
-                          />
-                        )}
+                        content={TooltipCumulativeToken}
+                        isAnimationActive={false}
                       />
                       <Area
                         type="monotone"
@@ -582,44 +729,35 @@ export function RunMetricsPage() {
                         stroke="#22d3ee"
                         fill="#22d3ee33"
                         strokeWidth={2}
+                        isAnimationActive={false}
                       />
                     </AreaChart>
                   </ResponsiveContainer>
                 </ChartCard>
                 <ChartCard title="Latency (seconds)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
-                    <LineChart data={tokenSeries} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
+                    <LineChart data={tokenSeries} margin={CHART_MARGIN_LEFT4}>
                       <CartesianGrid {...GRID} />
                       <XAxis dataKey="event_index" type="number" {...X_AXIS_EVENT_INDEX} />
                       <YAxis
                         {...Y_AXIS_DEFAULT}
                         tickFormatter={yAxisTickSeconds}
                         width={48}
-                        label={{
-                          value: "s",
-                          angle: -90,
-                          position: "insideLeft",
-                          fill: "#64748b",
-                          fontSize: 10,
-                          dx: -4,
-                        }}
+                        label={Y_LABEL_LATENCY_S}
                       />
                       <Tooltip
-                        content={(tp) => (
-                          <LatencySecondsTooltip
-                            active={tp.active}
-                            payload={tp.payload}
-                          />
-                        )}
+                        content={TooltipLatencySeconds}
+                        isAnimationActive={false}
                       />
                       <Line
                         type="monotone"
                         dataKey="latency_s"
                         name="latency_s"
                         stroke="#fbbf24"
-                        dot
+                        dot={false}
                         strokeWidth={2}
                         connectNulls
+                        isAnimationActive={false}
                       />
                     </LineChart>
                   </ResponsiveContainer>
@@ -639,7 +777,7 @@ export function RunMetricsPage() {
                     </p>
                   ) : (
                     <ResponsiveContainer width="100%" height={CHART_H}>
-                      <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                      <PieChart margin={CHART_MARGIN_PIE}>
                         <Pie
                           data={statusPie}
                           dataKey="value"
@@ -647,11 +785,8 @@ export function RunMetricsPage() {
                           cx="50%"
                           cy="50%"
                           outerRadius={72}
-                          label={({ name, percent }) =>
-                            `${name ?? ""} ${fmtIntEn(
-                              Math.round(((percent ?? 0) as number) * 100),
-                            )}%`
-                          }
+                          label={pieStatusLabel}
+                          isAnimationActive={false}
                         >
                           {statusPie.map((_, i) => (
                             <Cell
@@ -661,30 +796,8 @@ export function RunMetricsPage() {
                           ))}
                         </Pie>
                         <Tooltip
-                          content={({ active, payload: pl }) => {
-                            if (!active || !pl?.[0]) return null;
-                            const d = pl[0].payload as {
-                              name: string;
-                              value: number;
-                            };
-                            const pct =
-                              aiRows.length > 0
-                                ? fmtNumEn(
-                                    (d.value / aiRows.length) * 100,
-                                    1,
-                                  )
-                                : fmtNumEn(0, 1);
-                            return (
-                              <div className="rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
-                                <div className="font-medium text-slate-200">
-                                  {d.name}
-                                </div>
-                                <div className="tabular-nums">
-                                  count: {fmtIntEn(d.value)} ({pct}%)
-                                </div>
-                              </div>
-                            );
-                          }}
+                          content={statusPieTooltipContent}
+                          isAnimationActive={false}
                         />
                       </PieChart>
                     </ResponsiveContainer>
@@ -692,54 +805,55 @@ export function RunMetricsPage() {
                 </ChartCard>
                 <ChartCard title="Input tokens (histogram, executed)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
-                    <BarChart data={inputTokBins} margin={{ top: 8, right: 8, left: 0, bottom: 24 }}>
+                    <BarChart data={inputTokBins} margin={CHART_MARGIN_BAR}>
                       <CartesianGrid {...GRID} />
-                      <XAxis dataKey="label" {...SLATE_AXIS} angle={-25} textAnchor="end" height={48} interval={0} tick={{ fontSize: 9 }} />
+                      <XAxis
+                        dataKey="label"
+                        {...SLATE_AXIS}
+                        angle={-25}
+                        textAnchor="end"
+                        height={48}
+                        interval={0}
+                        tick={X_AXIS_BAR_TICK}
+                      />
                       <YAxis {...Y_AXIS_DEFAULT} />
                       <Tooltip
-                        content={({ active, payload: pl }) => {
-                          if (!active || !pl?.[0]) return null;
-                          const p = pl[0].payload as (typeof inputTokBins)[0];
-                          return (
-                            <div className="rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
-                              <div className="tabular-nums">
-                                count: {fmtIntEn(p.count)}
-                              </div>
-                              <div>
-                                range: {fmtNumEn(p.lo, 2)}–{fmtNumEn(p.hi, 2)}{" "}
-                                tokens
-                              </div>
-                            </div>
-                          );
-                        }}
+                        content={HistogramTooltipInput}
+                        isAnimationActive={false}
                       />
-                      <Bar dataKey="count" fill="#818cf8" radius={[4, 4, 0, 0]} />
+                      <Bar
+                        dataKey="count"
+                        fill="#818cf8"
+                        radius={[4, 4, 0, 0]}
+                        isAnimationActive={false}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </ChartCard>
                 <ChartCard title="Latency ms (histogram, executed)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
-                    <BarChart data={latencyBins} margin={{ top: 8, right: 8, left: 0, bottom: 24 }}>
+                    <BarChart data={latencyBins} margin={CHART_MARGIN_BAR}>
                       <CartesianGrid {...GRID} />
-                      <XAxis dataKey="label" {...SLATE_AXIS} angle={-25} textAnchor="end" height={48} interval={0} tick={{ fontSize: 9 }} />
+                      <XAxis
+                        dataKey="label"
+                        {...SLATE_AXIS}
+                        angle={-25}
+                        textAnchor="end"
+                        height={48}
+                        interval={0}
+                        tick={X_AXIS_BAR_TICK}
+                      />
                       <YAxis {...Y_AXIS_DEFAULT} />
                       <Tooltip
-                        content={({ active, payload: pl }) => {
-                          if (!active || !pl?.[0]) return null;
-                          const p = pl[0].payload as (typeof latencyBins)[0];
-                          return (
-                            <div className="rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
-                              <div className="tabular-nums">
-                                count: {fmtIntEn(p.count)}
-                              </div>
-                              <div>
-                                range: {fmtNumEn(p.lo, 1)}–{fmtNumEn(p.hi, 1)} ms
-                              </div>
-                            </div>
-                          );
-                        }}
+                        content={HistogramTooltipLatency}
+                        isAnimationActive={false}
                       />
-                      <Bar dataKey="count" fill="#f472b6" radius={[4, 4, 0, 0]} />
+                      <Bar
+                        dataKey="count"
+                        fill="#f472b6"
+                        radius={[4, 4, 0, 0]}
+                        isAnimationActive={false}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </ChartCard>
@@ -755,6 +869,16 @@ export function RunMetricsPage() {
 function numOrZero(v: unknown): number {
   if (typeof v === "number" && Number.isFinite(v)) return v;
   return 0;
+}
+
+function latencyMeanMedianSecondsKpi(summary: MetricsSummary): string {
+  const m = summary.latency_ms_mean;
+  const med = summary.latency_ms_median;
+  const meanS =
+    typeof m === "number" && Number.isFinite(m) ? m / 1000 : null;
+  const medS =
+    typeof med === "number" && Number.isFinite(med) ? med / 1000 : null;
+  return `${fmtNumEn(meanS, 2)} / ${fmtNumEn(medS, 2)}`;
 }
 
 function levelsReachedKpi(summary: {
@@ -1013,5 +1137,80 @@ function CumulativeTokenTooltip({
         {String(p.decision_id)}
       </div>
     </div>
+  );
+}
+
+function TooltipStateHp(tp: TooltipLite) {
+  return (
+    <StateTooltip active={tp.active} payload={tp.payload} keys={STATE_KEYS_HP} />
+  );
+}
+
+function TooltipStateGold(tp: TooltipLite) {
+  return (
+    <StateTooltip active={tp.active} payload={tp.payload} keys={STATE_KEYS_GOLD} />
+  );
+}
+
+function TooltipStateFloor(tp: TooltipLite) {
+  return (
+    <StateTooltip active={tp.active} payload={tp.payload} keys={STATE_KEYS_FLOOR} />
+  );
+}
+
+function TooltipStateLegal(tp: TooltipLite) {
+  return (
+    <StateTooltip active={tp.active} payload={tp.payload} keys={STATE_KEYS_LEGAL} />
+  );
+}
+
+function TooltipStateMonsters(tp: TooltipLite) {
+  return (
+    <StateTooltip active={tp.active} payload={tp.payload} keys={STATE_KEYS_MONSTERS} />
+  );
+}
+
+function TooltipStateHand(tp: TooltipLite) {
+  return (
+    <StateTooltip active={tp.active} payload={tp.payload} keys={STATE_KEYS_HAND} />
+  );
+}
+
+function TooltipAiToken(tp: TooltipLite) {
+  return (
+    <AiTokenTooltip
+      active={tp.active}
+      payload={
+        tp.payload as ReadonlyArray<{
+          payload?: Record<string, unknown>;
+        }>
+      }
+    />
+  );
+}
+
+function TooltipCumulativeToken(tp: TooltipLite) {
+  return (
+    <CumulativeTokenTooltip
+      active={tp.active}
+      payload={
+        tp.payload as ReadonlyArray<{
+          payload?: Record<string, unknown>;
+        }>
+      }
+    />
+  );
+}
+
+function TooltipLatencySeconds(tp: TooltipLite) {
+  return (
+    <LatencySecondsTooltip
+      active={tp.active}
+      payload={
+        tp.payload as ReadonlyArray<{
+          payload?: Record<string, unknown>;
+        }>
+      }
+    />
   );
 }

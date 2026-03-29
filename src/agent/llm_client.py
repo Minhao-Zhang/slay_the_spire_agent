@@ -593,18 +593,29 @@ class LLMClient:
             "token_usage": usage,
         }
 
-    def summarize_history_compaction(self, messages: list[dict[str, Any]]) -> str:
-        """Summarize older conversation turns before compacting them into memory."""
+    def summarize_history_compaction(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        max_transcript_chars: int = 200_000,
+    ) -> str:
+        """Summarize older conversation turns before compacting them into memory (fast model)."""
         if not messages:
             return ""
         if not self.available:
             return ""
         try:
-            transcript = "\n\n".join(
-                f"{m.get('role', '?')}: {m.get('content', '')[:500]}"
-                for m in messages
-                if m.get("role") in ("user", "assistant") and m.get("content")
-            )
+            parts: list[str] = []
+            for m in messages:
+                if m.get("role") not in ("user", "assistant"):
+                    continue
+                raw = m.get("content")
+                if not raw:
+                    continue
+                parts.append(f"{m.get('role', '?')}: {str(raw)}")
+            transcript = "\n\n".join(parts)
+            if len(transcript) > max_transcript_chars:
+                transcript = transcript[-max_transcript_chars:]
             if not transcript.strip():
                 return ""
             prompt = (

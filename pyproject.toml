@@ -21,6 +21,7 @@ dependencies = [
     "httpx",
     "langgraph",
     "pydantic>=2",
+    "tiktoken>=0.7",
 ]
 
 [tool.hatch.build.targets.wheel]

@@ -32,6 +32,12 @@ export type StateRow = {
   hand_size: number;
   monster_tooltip: string;
   hand_names_preview: string;
+  /** Flattened vm scalars for Recharts string dataKey (stable props / perf). */
+  line_current_hp: number | null;
+  line_max_hp: number | null;
+  line_gold: number | null;
+  line_floor: number | null;
+  line_legal_action_count: number | null;
 };
 
 export type AiRow = JsonRecord & {
@@ -123,6 +129,11 @@ export function deriveStateRows(records: JsonRecord[]): StateRow[] {
       hand_size,
       monster_tooltip,
       hand_names_preview,
+      line_current_hp: vm.current_hp ?? null,
+      line_max_hp: vm.max_hp ?? null,
+      line_gold: vm.gold ?? null,
+      line_floor: vm.floor ?? null,
+      line_legal_action_count: vm.legal_action_count ?? null,
     });
   }
   out.sort((a, b) => a.event_index - b.event_index);
@@ -150,10 +161,14 @@ export function screenTypeOrder(states: StateRow[]): string[] {
   return order;
 }
 
-export function binNumeric(
-  values: number[],
-  binCount: number,
-): { label: string; lo: number; hi: number; count: number }[] {
+export type BinnedNumeric = {
+  label: string;
+  lo: number;
+  hi: number;
+  count: number;
+};
+
+export function binNumeric(values: number[], binCount: number): BinnedNumeric[] {
   if (values.length === 0) return [];
   const vmin = Math.min(...values);
   const vmax = Math.max(...values);
@@ -192,6 +207,9 @@ export type MetricsSummary = {
   ai_executed_row_count: number;
   status_counts: Record<string, number>;
   total_tokens_executed: number;
+  /** Sum over executed AI rows; may be absent on older API responses. */
+  input_tokens_executed?: number;
+  output_tokens_executed?: number;
   latency_ms_mean: number | null;
   latency_ms_median: number | null;
   event_index_min: number | null;

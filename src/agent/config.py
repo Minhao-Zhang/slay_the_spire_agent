@@ -37,8 +37,10 @@ class AgentConfig(BaseModel):
     max_retries: int = Field(default=0, ge=0, le=2)
     proposal_timeout_seconds: float = Field(default=120.0, gt=0)
     proposal_failure_streak_limit: int = Field(default=3, ge=1, le=20)
-    history_compact_token_threshold: int = Field(default=100_000, ge=0)
-    history_keep_recent: int = Field(default=6, ge=0)
+    history_compact_token_threshold: int = Field(default=50_000, ge=0)
+    history_keep_recent: int = Field(default=10, ge=0)
+    history_tokenizer_model: str = ""
+    history_compaction_transcript_max_chars: int = Field(default=200_000, ge=10_000)
     planner_enabled: bool = False
     combat_plan_max_output_tokens: int = Field(default=2048, ge=256, le=32000)
     combat_plan_max_cards_per_section: int = Field(default=80, ge=10, le=200)
@@ -100,9 +102,13 @@ def get_agent_config() -> AgentConfig:
         proposal_timeout_seconds=proposal_timeout_seconds,
         proposal_failure_streak_limit=int(os.getenv("LLM_PROPOSAL_FAILURE_STREAK_LIMIT", "3")),
         history_compact_token_threshold=int(
-            os.getenv("LLM_HISTORY_COMPACT_TOKEN_THRESHOLD", "100000")
+            os.getenv("LLM_HISTORY_COMPACT_TOKEN_THRESHOLD", "50000")
         ),
-        history_keep_recent=int(os.getenv("LLM_HISTORY_KEEP_RECENT", "6")),
+        history_keep_recent=int(os.getenv("LLM_HISTORY_KEEP_RECENT", "10")),
+        history_tokenizer_model=os.getenv("LLM_HISTORY_TOKENIZER_MODEL", "").strip(),
+        history_compaction_transcript_max_chars=int(
+            os.getenv("LLM_HISTORY_COMPACTION_TRANSCRIPT_MAX_CHARS", "200000")
+        ),
         planner_enabled=os.getenv("LLM_ENABLE_PLANNER", "false").strip().lower() == "true",
         combat_plan_max_output_tokens=int(
             os.getenv(
