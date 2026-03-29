@@ -8,8 +8,13 @@ import {
 } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { Link } from "react-router-dom";
 import { useControlPlane } from "../hooks/useControlPlane";
 import { GameScreenPanel } from "./gameScreen/GameScreenPanel";
+import {
+  fmtGameStatDisplay,
+  fmtIntEn,
+} from "../lib/formatDisplayNumber";
 import {
   labeledTooltip,
   monsterTooltip,
@@ -277,7 +282,7 @@ function PileTelemetryBar({
           <span
             className={`font-telemetry text-base font-semibold leading-none tabular-nums tracking-tight transition-colors ${s.tint} ${s.glow}`}
           >
-            {s.n}
+            {fmtIntEn(s.n)}
           </span>
         </button>
       ))}
@@ -315,7 +320,7 @@ function EnemyCard({ m }: { m: Record<string, unknown> }) {
             </span>
             <span className={osdStatCaption}>HP</span>
             <span className="font-telemetry text-sm font-medium text-slate-200">
-              {hp || "—"}
+              {hp ? fmtGameStatDisplay(hp) : "—"}
             </span>
           </div>
           <div className="font-console text-xs font-semibold uppercase tracking-wide text-red-400">
@@ -330,7 +335,11 @@ function EnemyCard({ m }: { m: Record<string, unknown> }) {
               <HoverTip
                 key={i}
                 tip={labeledTooltip(
-                  `${String(p.name ?? "?")}${p.stacks != null ? ` (${String(p.stacks)})` : ""}`,
+                  `${String(p.name ?? "?")}${
+                    p.stacks != null
+                      ? ` (${typeof p.stacks === "number" ? fmtIntEn(p.stacks) : String(p.stacks)})`
+                      : ""
+                  }`,
                   p,
                 )}
                 side="bottom"
@@ -338,7 +347,13 @@ function EnemyCard({ m }: { m: Record<string, unknown> }) {
               >
                 <span className="inline-flex cursor-help rounded border border-purple-700/50 bg-purple-900/40 px-1.5 py-0.5 text-xs text-purple-300">
                   {String(p.name ?? "?")}
-                  {p.stacks != null ? ` (${String(p.stacks)})` : ""}
+                  {p.stacks != null
+                    ? ` (${
+                        typeof p.stacks === "number"
+                          ? fmtIntEn(p.stacks)
+                          : String(p.stacks)
+                      })`
+                    : ""}
                 </span>
               </HoverTip>
             ))
@@ -373,11 +388,11 @@ function CardTable({ cards }: { cards: Record<string, unknown>[] }) {
       <tbody className="divide-y divide-slate-800 font-telemetry text-sm text-slate-400">
         {cards.map((c, idx) => (
             <tr key={idx} className="hover:bg-slate-800/50">
-              <td className="py-2 px-3">{idx + 1}</td>
+              <td className="py-2 px-3">{fmtIntEn(idx + 1)}</td>
               <td className="py-2 px-3 text-slate-500">{cardHash(c.uuid)}</td>
               <td className="py-2 px-3 text-center">
                 <span className="font-bold text-cyan-400">
-                  {String(c.cost ?? "—")}
+                  {fmtGameStatDisplay(c.cost ?? "—")}
                 </span>
               </td>
               <td
@@ -435,7 +450,7 @@ function PileInspectModal({
               {title}
             </span>
             <span className="shrink-0 font-telemetry text-xs text-slate-500">
-              {cards.length} cards
+              {fmtIntEn(cards.length)} cards
             </span>
           </div>
           <button type="button" onClick={onClose} className={osdBtnGhost}>
@@ -531,6 +546,7 @@ export function MonitorDashboard() {
     retryAgent,
     pushLog,
     replayRuns,
+    replayArchived,
     replayPickerRun,
     setReplayPickerRun,
     replayFiles,
@@ -1007,7 +1023,7 @@ export function MonitorDashboard() {
   const runSeedDisplay =
     snapshot?.agent?.run_seed != null &&
     String(snapshot.agent.run_seed).trim() !== ""
-      ? String(snapshot.agent.run_seed)
+      ? fmtGameStatDisplay(snapshot.agent.run_seed)
       : "n/a";
 
   return (
@@ -1021,6 +1037,12 @@ export function MonitorDashboard() {
               · operator
             </span>
           </span>
+          <Link
+            to="/metrics"
+            className="font-console text-xs font-semibold uppercase tracking-wide text-sky-400 hover:text-sky-300"
+          >
+            Run metrics
+          </Link>
           <div
             className={`font-console flex h-7 items-center gap-1.5 rounded border px-2.5 text-xs font-semibold uppercase tracking-wide ${
               gameFeedLive
@@ -1079,6 +1101,7 @@ export function MonitorDashboard() {
                 {replayRuns.map((run) => (
                   <option key={run} value={run}>
                     {run}
+                    {replayArchived[run] ? " · zip" : ""}
                   </option>
                 ))}
               </select>
@@ -1102,7 +1125,7 @@ export function MonitorDashboard() {
                     Prev
                   </button>
                   <span className="font-telemetry min-w-[4.5rem] text-center text-xs tabular-nums text-slate-400">
-                    {replayIndex + 1}/{replayFiles.length}
+                    {fmtIntEn(replayIndex + 1)}/{fmtIntEn(replayFiles.length)}
                   </span>
                   <button
                     type="button"
@@ -1149,7 +1172,8 @@ export function MonitorDashboard() {
             {typeof snapshot.ingress_age_seconds === "number" ? (
               <span className="text-amber-200/80">
                 {" "}
-                Last packet was ~{Math.round(snapshot.ingress_age_seconds)}s ago.
+                Last packet was ~{fmtIntEn(Math.round(snapshot.ingress_age_seconds))}
+                s ago.
               </span>
             ) : null}
           </span>
@@ -1162,7 +1186,7 @@ export function MonitorDashboard() {
           <div className="flex flex-col gap-px">
             <span className={osdStatCaption}>Turn</span>
             <span className="font-telemetry text-base font-semibold tabular-nums leading-none text-slate-50">
-              {header?.turn ?? "—"}
+              {fmtGameStatDisplay(header?.turn ?? "—")}
             </span>
           </div>
           {(
@@ -1179,7 +1203,7 @@ export function MonitorDashboard() {
               <span
                 className={`font-telemetry text-base font-semibold tabular-nums leading-none ${col}`}
               >
-                {val}
+                {fmtGameStatDisplay(val)}
               </span>
             </div>
           ))}
@@ -1254,7 +1278,9 @@ export function MonitorDashboard() {
         {/* Col 1 — relics / powers */}
         <aside className="flex w-36 shrink-0 flex-col border-r border-slate-700 bg-slate-900">
           <div className="flex min-h-0 flex-1 flex-col border-b border-slate-700">
-            <div className={osdPanelStrip}>Relics · {relics.length}</div>
+            <div className={osdPanelStrip}>
+              Relics · {fmtIntEn(relics.length)}
+            </div>
             <div className="custom-scroll flex-1 space-y-1 overflow-y-auto p-2">
               {relics.length === 0 ? (
                 <div className="px-1 font-console text-sm italic text-slate-600">
@@ -1317,7 +1343,7 @@ export function MonitorDashboard() {
             <div className="flex min-h-0 flex-1 border-b border-slate-700">
               <div className="flex min-h-0 min-w-0 flex-[0.68] flex-col border-r border-slate-700">
                 <div className={`sticky top-0 z-10 ${osdPanelStrip}`}>
-                  Enemies · {monsters.length}
+                  Enemies · {fmtIntEn(monsters.length)}
                 </div>
                 <div className="custom-scroll flex-1 space-y-3 overflow-y-auto p-3">
                   {monsters.length === 0 ? (
@@ -1344,7 +1370,7 @@ export function MonitorDashboard() {
                   className={`sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 ${osdPanelStrip}`}
                 >
                   <span className="min-w-0 shrink-0 truncate">
-                    Hand · {hand.length}
+                    Hand · {fmtIntEn(hand.length)}
                   </span>
                   <PileTelemetryBar
                     draw={draw}
@@ -1432,7 +1458,7 @@ export function MonitorDashboard() {
               <div className={osdPanelStrip}>
                 <span>Session log</span>
                 <span className="font-telemetry text-xs tabular-nums text-slate-500">
-                  {logLines.length}
+                  {fmtIntEn(logLines.length)}
                 </span>
               </div>
               <div className="custom-scroll flex-1 space-y-1 overflow-y-auto p-2 font-telemetry text-sm leading-snug">
@@ -1461,7 +1487,7 @@ export function MonitorDashboard() {
                       {(line.repeat ?? 1) > 1 ? (
                         <span className="whitespace-nowrap text-slate-500">
                           {" "}
-                          x{line.repeat}
+                          x{fmtIntEn(line.repeat ?? 1)}
                         </span>
                       ) : null}
                     </span>
@@ -1574,7 +1600,7 @@ export function MonitorDashboard() {
                         className="flex gap-2 leading-snug"
                       >
                         <span className="w-5 shrink-0 text-right font-mono text-xs text-slate-500">
-                          {i + 1}.
+                          {fmtIntEn(i + 1)}.
                         </span>
                         <span className="min-w-0 flex-1 font-semibold tracking-wide text-white">
                           {line}

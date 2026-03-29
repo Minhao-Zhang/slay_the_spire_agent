@@ -14,7 +14,14 @@ from src.agent.graph import SpireDecisionAgent
 from src.agent.policy import is_end_turn_command_token, resolve_token_play
 from src.agent.session_state import is_command_failure_state, mark_trace_command_failed
 from src.agent.schemas import AgentTrace
-from src.agent.tracing import build_state_id, build_turn_key, create_trace, write_ai_log
+from src.agent.tracing import (
+    append_state_run_metric,
+    build_state_id,
+    build_turn_key,
+    build_vm_summary,
+    create_trace,
+    write_ai_log,
+)
 from src.repo_paths import REPO_ROOT
 from src.ui.state_processor import process_state
 
@@ -25,18 +32,24 @@ MAX_LOG_RUNS = 10
 
 
 def prune_old_log_runs(log_dir: str, keep: int = MAX_LOG_RUNS) -> None:
-    """Keep only the most recent `keep` run directories; remove older ones."""
+    """Keep the `keep` newest run folders unzipped; zip older runs to ``<name>.zip`` then remove the folder."""
     if not os.path.isdir(log_dir):
         return
+    log_path = Path(log_dir)
     runs = [
         p
-        for p in Path(log_dir).iterdir()
+        for p in log_path.iterdir()
         if p.is_dir() and not p.name.startswith(".")
     ]
     runs.sort(key=lambda p: p.name, reverse=True)
-    for old in runs[keep:]:
+    for old_dir in runs[keep:]:
+        archive_base = str(log_path / old_dir.name)
         try:
-            shutil.rmtree(old)
+            shutil.make_archive(archive_base, "zip", root_dir=str(log_path), base_dir=old_dir.name)
+        except OSError:
+            continue
+        try:
+            shutil.rmtree(old_dir)
         except OSError:
             pass
 
@@ -416,6 +429,7 @@ def main():
     def write_state_log(
         state: dict,
         *,
+        vm: dict,
         state_id: str,
         manual_action: str | None,
         agent_mode: str,
@@ -427,15 +441,18 @@ def main():
         ready_for_command: bool,
     ) -> Path:
         nonlocal event_index
-        path = Path(run_dir) / f"{event_index:04d}.json"
+        ei = event_index
+        vm_summary = build_vm_summary(vm, state, state_id=state_id, event_index=ei)
+        path = Path(run_dir) / f"{ei:04d}.json"
         with path.open("w", encoding="utf-8") as f:
             json.dump(
                 {
                     "state": state,
+                    "vm_summary": vm_summary,
                     "action": manual_action,
                     "state_id": state_id,
                     "meta": {
-                        "event_index": event_index,
+                        "event_index": ei,
                         "ready_for_command": ready_for_command,
                         "is_duplicate": is_duplicate,
                         "duplicate_run_length": duplicate_run_length,
@@ -450,6 +467,7 @@ def main():
                 f,
                 indent=2,
             )
+        append_state_run_metric(Path(run_dir), vm_summary, event_index=ei, state_id=state_id)
         event_index += 1
         state_log_paths[state_id] = path
         return path
@@ -833,6 +851,7 @@ def main():
         if should_write_log:
             write_state_log(
                 state,
+                vm=vm,
                 state_id=state_id,
                 manual_action=manual_action,
                 agent_mode=agent_mode,

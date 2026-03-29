@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import time
+import zipfile
 from copy import deepcopy
 from typing import Any
 
@@ -676,16 +677,141 @@ async def update_state(request: Request):
         return {"status": "error", "message": str(e)}
 
 
+def _parse_run_metrics_ndjson_text(text: str) -> tuple[list[dict[str, Any]], list[str]]:
+    records: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for i, line in enumerate(text.splitlines(), start=1):
+        s = line.strip()
+        if not s:
+            continue
+        try:
+            obj = json.loads(s)
+        except json.JSONDecodeError as e:
+            errors.append(f"line {i}: {e}")
+            continue
+        if isinstance(obj, dict):
+            records.append(obj)
+        else:
+            errors.append(f"line {i}: expected object, got {type(obj).__name__}")
+    return records, errors
+
+
+def _summarize_run_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
+    states = [r for r in records if r.get("type") == "state"]
+    ais = [r for r in records if r.get("type") == "ai_decision"]
+    executed = [r for r in ais if r.get("status") == "executed"]
+    status_counts: dict[str, int] = {}
+    for r in ais:
+        k = str(r.get("status") or "unknown")
+        status_counts[k] = status_counts.get(k, 0) + 1
+    total_tokens = 0
+    for r in executed:
+        t = r.get("total_tokens")
+        if isinstance(t, (int, float)):
+            total_tokens += int(t)
+    latencies = [
+        float(r["latency_ms"])
+        for r in executed
+        if isinstance(r.get("latency_ms"), (int, float))
+    ]
+    latencies.sort()
+    n_lat = len(latencies)
+    median_lat = latencies[n_lat // 2] if n_lat else None
+    mean_lat = sum(latencies) / n_lat if n_lat else None
+    event_indices: list[int] = []
+    for r in records:
+        ei = r.get("event_index")
+        if isinstance(ei, int):
+            event_indices.append(ei)
+    floors: list[int] = []
+    acts: list[int] = []
+    for r in states:
+        vm = r.get("vm_summary")
+        if isinstance(vm, dict):
+            fl = vm.get("floor")
+            if isinstance(fl, (int, float)):
+                floors.append(int(fl))
+            ac = vm.get("act")
+            if isinstance(ac, (int, float)):
+                acts.append(int(ac))
+    return {
+        "state_row_count": len(states),
+        "ai_row_count": len(ais),
+        "ai_executed_row_count": len(executed),
+        "status_counts": status_counts,
+        "total_tokens_executed": total_tokens,
+        "latency_ms_mean": mean_lat,
+        "latency_ms_median": median_lat,
+        "event_index_min": min(event_indices) if event_indices else None,
+        "event_index_max": max(event_indices) if event_indices else None,
+        "max_floor_reached": max(floors) if floors else None,
+        "max_act_reached": max(acts) if acts else None,
+    }
+
+
+def _load_run_metrics_ndjson_bytes(raw: bytes) -> tuple[list[dict[str, Any]], list[str]]:
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as e:
+        return [], [str(e)]
+    return _parse_run_metrics_ndjson_text(text)
+
+
+def _load_run_metrics_records(run_name: str) -> tuple[list[dict[str, Any]] | None, str | None, list[str]]:
+    """Returns (records, error_reason, parse_errors). records None if unreadable."""
+    if not run_name or "/" in run_name or "\\" in run_name or ".." in run_name:
+        return None, "invalid_run", []
+    base = os.path.abspath(LOGS_DIR)
+    if run_name.endswith(".zip"):
+        zip_path = os.path.abspath(os.path.join(LOGS_DIR, run_name))
+        if not zip_path.startswith(base + os.sep) or not os.path.isfile(zip_path):
+            return None, "run_not_found", []
+        stem = os.path.splitext(os.path.basename(run_name))[0]
+        inner = f"{stem}/run_metrics.ndjson".replace("\\", "/")
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                try:
+                    data = zf.read(inner)
+                except KeyError:
+                    return None, "no_metrics_file", []
+        except (zipfile.BadZipFile, OSError):
+            return None, "zip_read_error", []
+        recs, errs = _load_run_metrics_ndjson_bytes(data)
+        return recs, None, errs
+    run_dir = _safe_run_dir(run_name)
+    if run_dir is None:
+        return None, "run_not_found", []
+    path = os.path.join(run_dir, "run_metrics.ndjson")
+    if not os.path.isfile(path):
+        return None, "no_metrics_file", []
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError as e:
+        return None, "read_error", [str(e)]
+    recs, errs = _parse_run_metrics_ndjson_text(text)
+    return recs, None, errs
+
+
 @app.get("/api/runs")
 async def get_runs():
     try:
         if not os.path.exists(LOGS_DIR):
-            return {"runs": []}
-        runs = [
-            d for d in os.listdir(LOGS_DIR) if os.path.isdir(os.path.join(LOGS_DIR, d))
-        ]
+            return {"runs": [], "archived": {}}
+        runs: list[str] = []
+        archived: dict[str, bool] = {}
+        for entry in os.listdir(LOGS_DIR):
+            if entry.startswith("."):
+                continue
+            p = os.path.join(LOGS_DIR, entry)
+            if os.path.isdir(p):
+                runs.append(entry)
+                archived[entry] = False
+            elif os.path.isfile(p) and entry.lower().endswith(".zip"):
+                runs.append(entry)
+                archived[entry] = True
         runs.sort(reverse=True)
-        return {"runs": runs}
+        return {"runs": runs, "archived": archived}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -698,6 +824,49 @@ def _safe_run_dir(run_name: str) -> str | None:
     if not full.startswith(base + os.sep):
         return None
     return full if os.path.isdir(full) else None
+
+
+@app.get("/api/runs/{run_name}/metrics")
+async def get_run_metrics(
+    run_name: str, summary: int = 0
+) -> dict[str, Any]:
+    """Parse ``run_metrics.ndjson`` for a log run directory or ``*.zip`` archive under ``logs/``."""
+    records, reason, parse_errors = _load_run_metrics_records(run_name)
+    if reason == "invalid_run":
+        raise HTTPException(status_code=400, detail="Invalid run name")
+    if reason == "run_not_found":
+        raise HTTPException(status_code=404, detail="Run not found")
+    if reason == "zip_read_error":
+        return {
+            "ok": False,
+            "run": run_name,
+            "reason": "zip_read_error",
+            "records": [],
+        }
+    if reason == "read_error":
+        return {
+            "ok": False,
+            "run": run_name,
+            "reason": "read_error",
+            "records": [],
+            "parse_errors": parse_errors,
+        }
+    if reason == "no_metrics_file" or records is None:
+        return {
+            "ok": False,
+            "run": run_name,
+            "reason": reason or "no_metrics_file",
+            "records": [],
+        }
+    out: dict[str, Any] = {
+        "ok": True,
+        "run": run_name,
+        "records": records,
+        "parse_errors": parse_errors,
+    }
+    if summary:
+        out["summary"] = _summarize_run_metrics(records)
+    return out
 
 
 @app.get("/api/runs/{run_name}/frames")

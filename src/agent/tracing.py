@@ -4,6 +4,8 @@ import datetime as dt
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
+
 from src.agent.schemas import AgentMode, AgentTrace, PersistedAiLog
 from src.agent.vm_shapes import as_dict
 
@@ -116,9 +118,139 @@ def build_ai_sidecar_path(state_log_path: Path) -> Path:
     return state_log_path.with_suffix(".ai.json")
 
 
+def build_vm_summary(
+    vm: dict[str, Any],
+    raw_envelope: dict[str, Any],
+    *,
+    state_id: str,
+    event_index: int,
+) -> dict[str, Any]:
+    """Compact snapshot for logging and metrics (from VM + raw CommunicationMod envelope)."""
+    inner = raw_envelope.get("state", raw_envelope)
+    game = inner.get("game_state") if isinstance(inner, dict) else None
+    if not isinstance(game, dict):
+        game = {}
+
+    screen = as_dict(vm.get("screen"))
+    header = as_dict(vm.get("header"))
+    combat_vm = vm.get("combat")
+    in_combat = bool(combat_vm and isinstance(combat_vm, dict))
+
+    floor = game.get("floor", header.get("floor"))
+    act = game.get("act", header.get("act"))
+
+    summary: dict[str, Any] = {
+        "state_id": state_id,
+        "event_index": event_index,
+        "screen_type": game.get("screen_type") or screen.get("type") or "NONE",
+        "floor": floor,
+        "act": act,
+        "in_combat": in_combat,
+        "turn_key": build_turn_key(vm),
+        "current_hp": game.get("current_hp"),
+        "max_hp": game.get("max_hp"),
+        "gold": game.get("gold"),
+    }
+
+    if in_combat and isinstance(combat_vm, dict):
+        player = combat_vm.get("player") or {}
+        if isinstance(player, dict):
+            summary["energy"] = player.get("energy")
+            summary["player_block"] = combat_vm.get("player_block", player.get("block", 0))
+        monsters_out: list[dict[str, Any]] = []
+        for m in combat_vm.get("monsters") or []:
+            if not isinstance(m, dict) or m.get("is_gone"):
+                continue
+            monsters_out.append(
+                {
+                    "name": m.get("name"),
+                    "current_hp": m.get("current_hp"),
+                    "max_hp": m.get("max_hp"),
+                }
+            )
+        summary["monsters"] = monsters_out
+        hand_out: list[dict[str, Any]] = []
+        for c in combat_vm.get("hand") or []:
+            if not isinstance(c, dict):
+                continue
+            hand_out.append(
+                {
+                    "name": c.get("name"),
+                    "card_uuid_token": (c.get("card_uuid_token") or "")[:6] or None,
+                }
+            )
+        summary["hand"] = hand_out
+
+    actions = vm.get("actions") or []
+    cmds = sorted(
+        str(a.get("command", "") or "").strip()
+        for a in actions
+        if isinstance(a, dict) and str(a.get("command", "") or "").strip()
+    )
+    summary["legal_action_count"] = len(cmds)
+    if cmds:
+        joined = "\n".join(cmds)
+        summary["legal_commands_fingerprint"] = hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
+
+    return summary
+
+
+def append_run_metric_line(run_dir: Path, record: dict[str, Any]) -> None:
+    """Append one JSON object to run_metrics.ndjson (append-only)."""
+    path = run_dir / "run_metrics.ndjson"
+    line = json.dumps(record, separators=(",", ":"), default=str) + "\n"
+    with path.open("a", encoding="utf-8") as f:
+        f.write(line)
+
+
+def append_state_run_metric(
+    run_dir: Path,
+    vm_summary: dict[str, Any],
+    *,
+    event_index: int,
+    state_id: str,
+) -> None:
+    rec = {
+        "type": "state",
+        "event_index": event_index,
+        "state_id": state_id,
+        "timestamp": utc_now_iso(),
+        "vm_summary": vm_summary,
+    }
+    append_run_metric_line(run_dir, rec)
+
+
+def append_ai_decision_run_metric(run_dir: Path, trace: AgentTrace, state_log_path: Path) -> None:
+    stem = state_log_path.stem
+    try:
+        event_index = int(stem)
+    except ValueError:
+        event_index = None
+    val_err = (trace.validation.error if trace.validation else "") or ""
+    err_body = (trace.error or "") or ""
+    rec: dict[str, Any] = {
+        "type": "ai_decision",
+        "state_id": trace.state_id,
+        "decision_id": trace.decision_id,
+        "event_index": event_index,
+        "timestamp": trace.timestamp or utc_now_iso(),
+        "input_tokens": trace.token_usage.input_tokens,
+        "output_tokens": trace.token_usage.output_tokens,
+        "total_tokens": trace.token_usage.total_tokens,
+        "latency_ms": trace.latency_ms,
+        "status": trace.status,
+        "validation_error": val_err[:500] if val_err else None,
+        "error": err_body[:500] if err_body else None,
+        "llm_model_used": trace.llm_model_used,
+        "llm_turn_model_key": trace.llm_turn_model_key,
+    }
+    append_run_metric_line(run_dir, rec)
+
+
 def write_ai_log(state_log_path: Path, trace: AgentTrace) -> None:
     payload = build_persisted_ai_log(trace)
     ai_log_path = build_ai_sidecar_path(state_log_path)
     with ai_log_path.open("w", encoding="utf-8") as f:
         json.dump(payload.model_dump(), f, indent=2)
+    append_ai_decision_run_metric(state_log_path.parent, trace, state_log_path)
 

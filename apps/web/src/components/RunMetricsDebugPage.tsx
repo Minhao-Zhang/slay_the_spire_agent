@@ -1,0 +1,255 @@
+import { useMemo, type ReactNode } from "react";
+import { Link } from "react-router-dom";
+import {
+  CartesianGrid,
+  ResponsiveContainer,
+  Scatter,
+  ScatterChart,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+
+import { useRunMetricsData } from "../hooks/useRunMetricsData";
+import { fmtIntEn, tickFmtIntEn } from "../lib/formatDisplayNumber";
+import { deriveAiRows } from "../lib/runMetricsDerive";
+
+const CHART_H = 220;
+const SLATE_AXIS = { stroke: "#64748b", fontSize: 11 };
+const GRID = { stroke: "#334155", strokeDasharray: "3 3" };
+const X_AXIS_EVENT_INDEX = {
+  ...SLATE_AXIS,
+  tickFormatter: tickFmtIntEn,
+};
+
+export function RunMetricsDebugPage() {
+  const {
+    runs,
+    archived,
+    run,
+    setRun,
+    loading,
+    payload,
+    frameCount,
+    records,
+    parseErrors,
+  } = useRunMetricsData();
+
+  const aiRows = useMemo(() => deriveAiRows(records), [records]);
+
+  const failureScatter = useMemo(() => {
+    return aiRows
+      .filter((r) => r.status !== "executed")
+      .filter((r) => typeof r.event_index === "number")
+      .map((r) => ({
+        event_index: r.event_index as number,
+        y: 1,
+        status: String(r.status ?? "—"),
+        decision_id: String(r.decision_id ?? "—"),
+        validation_error: String(r.validation_error ?? "—"),
+        error: String(r.error ?? "—"),
+      }));
+  }, [aiRows]);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-[#0a0d11] to-[#06080a] text-sm text-slate-300">
+      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-700/90 bg-slate-900/80 px-4 py-3 backdrop-blur-sm">
+        <Link
+          to="/"
+          className="font-console text-xs font-semibold uppercase tracking-wide text-sky-400 hover:text-sky-300"
+        >
+          ← Monitor
+        </Link>
+        <Link
+          to={run ? `/metrics?run=${encodeURIComponent(run)}` : "/metrics"}
+          className="font-console text-xs font-semibold uppercase tracking-wide text-sky-400 hover:text-sky-300"
+        >
+          ← Run metrics
+        </Link>
+        <span className="font-console text-sm font-bold tracking-[0.12em] text-slate-100">
+          METRICS DEBUG
+        </span>
+        <label className="flex items-center gap-2">
+          <span className="text-xs uppercase tracking-wide text-slate-500">
+            Run
+          </span>
+          <select
+            value={run}
+            onChange={(e) => setRun(e.target.value)}
+            className="font-console h-8 max-w-[18rem] rounded border border-slate-700 bg-slate-950/80 px-2 text-xs text-slate-200 outline-none"
+            aria-label="Log run"
+          >
+            <option value="">Select run…</option>
+            {runs.map((r) => (
+              <option key={r} value={r}>
+                {r}
+                {archived[r] ? " · zip" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        {loading ? (
+          <span className="text-xs text-slate-500">Loading…</span>
+        ) : null}
+        {payload?.ok && frameCount !== null ? (
+          <span className="font-telemetry text-xs tabular-nums text-slate-500">
+            Frames: {fmtIntEn(frameCount)} · Rows: {fmtIntEn(records.length)}
+          </span>
+        ) : null}
+      </header>
+
+      <main className="space-y-6 px-4 py-5">
+        {parseErrors.length > 0 ? (
+          <div
+            className="rounded border border-amber-800/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-100"
+            role="alert"
+          >
+            <span className="font-semibold">Parse warnings: </span>
+            {parseErrors.slice(0, 5).join(" · ")}
+            {parseErrors.length > 5
+              ? ` (+${fmtIntEn(parseErrors.length - 5)} more)`
+              : ""}
+          </div>
+        ) : null}
+
+        {!run ? (
+          <p className="text-sm text-slate-500">Select a run to inspect rows.</p>
+        ) : null}
+
+        {payload?.ok && records.length > 0 ? (
+          <>
+            <section>
+              <h2 className="mb-3 font-console text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Failures (non-executed)
+              </h2>
+              <ChartCard title="Failure events vs event_index">
+                <ResponsiveContainer width="100%" height={CHART_H}>
+                  <ScatterChart margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid {...GRID} />
+                    <XAxis
+                      dataKey="event_index"
+                      type="number"
+                      {...X_AXIS_EVENT_INDEX}
+                    />
+                    <YAxis dataKey="y" hide domain={[0, 2]} />
+                    <Tooltip
+                      content={({ active, payload: pl }) => {
+                        if (!active || !pl?.[0]) return null;
+                        const p = pl[0].payload as (typeof failureScatter)[0];
+                        return (
+                          <div className="max-w-xs rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+                            <div className="font-mono">
+                              event_index: {fmtIntEn(p.event_index)}
+                            </div>
+                            <div>status: {p.status}</div>
+                            <div>decision_id: {p.decision_id}</div>
+                            {p.validation_error !== "—" ? (
+                              <div className="mt-1 text-amber-200/90">
+                                validation: {p.validation_error}
+                              </div>
+                            ) : null}
+                            {p.error !== "—" ? (
+                              <div className="mt-1 text-red-300/90">error: {p.error}</div>
+                            ) : null}
+                          </div>
+                        );
+                      }}
+                    />
+                    <Scatter data={failureScatter} fill="#f87171" />
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </ChartCard>
+
+              <div className="mt-4 overflow-x-auto rounded border border-slate-700/80 bg-slate-950/50">
+                <table className="w-full min-w-[640px] border-collapse text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-700 text-slate-500">
+                      <th className="p-2 font-medium">event_index</th>
+                      <th className="p-2 font-medium">status</th>
+                      <th className="p-2 font-medium">decision_id</th>
+                      <th className="p-2 font-medium">validation_error</th>
+                      <th className="p-2 font-medium">error</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {failureScatter.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="p-3 text-slate-500">
+                          No non-executed AI rows.
+                        </td>
+                      </tr>
+                    ) : (
+                      failureScatter.map((row, i) => (
+                        <tr
+                          key={`${row.event_index}-${row.decision_id}-${i}`}
+                          className="border-b border-slate-800/80"
+                        >
+                          <td className="p-2 font-mono tabular-nums">
+                            {fmtIntEn(row.event_index)}
+                          </td>
+                          <td className="p-2">{row.status}</td>
+                          <td
+                            className="max-w-[12rem] truncate p-2 font-mono"
+                            title={row.decision_id}
+                          >
+                            {row.decision_id}
+                          </td>
+                          <td
+                            className="max-w-[18rem] truncate p-2"
+                            title={row.validation_error}
+                          >
+                            {row.validation_error}
+                          </td>
+                          <td
+                            className="max-w-[18rem] truncate p-2"
+                            title={row.error}
+                          >
+                            {row.error}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section>
+              <h2 className="mb-3 font-console text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Raw records
+              </h2>
+              <pre className="max-h-[min(70vh,48rem)] overflow-auto rounded border border-slate-700/80 bg-black/40 p-3 text-[10px] leading-relaxed text-slate-400">
+                {JSON.stringify(records, null, 2)}
+              </pre>
+            </section>
+          </>
+        ) : null}
+
+        {run && payload && !payload.ok ? (
+          <p className="text-sm text-amber-400/90">
+            {payload.reason === "no_metrics_file"
+              ? "No run_metrics.ndjson for this run."
+              : `Metrics: ${payload.reason}`}
+          </p>
+        ) : null}
+      </main>
+    </div>
+  );
+}
+
+function ChartCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded border border-slate-700/80 bg-slate-950/40 p-3">
+      <h3 className="mb-2 font-console text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}

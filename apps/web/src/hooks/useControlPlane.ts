@@ -98,6 +98,9 @@ export function useControlPlane() {
   );
 
   const [replayRuns, setReplayRuns] = useState<string[]>([]);
+  const [replayArchived, setReplayArchived] = useState<Record<string, boolean>>(
+    {},
+  );
   const [replayPickerRun, setReplayPickerRun] = useState("");
   const [replayRunName, setReplayRunName] = useState("");
   const [replayFiles, setReplayFiles] = useState<string[]>([]);
@@ -171,6 +174,13 @@ export function useControlPlane() {
     async (run: string) => {
       const trimmed = run.trim();
       if (!trimmed) {
+        return;
+      }
+      if (trimmed.toLowerCase().endsWith(".zip")) {
+        pushLog(
+          "SYSTEM",
+          `Run ${trimmed} is an archived zip — frame replay is not available. Open Run metrics (/metrics) to chart metrics if present.`,
+        );
         return;
       }
       replayActiveRef.current = true;
@@ -311,9 +321,14 @@ export function useControlPlane() {
       try {
         const r = await fetch("/api/runs");
         if (!r.ok) return;
-        const body = (await r.json()) as { runs?: string[]; status?: string };
+        const body = (await r.json()) as {
+          runs?: string[];
+          archived?: Record<string, boolean>;
+          status?: string;
+        };
         if (body.status === "error") return;
         setReplayRuns(body.runs ?? []);
+        setReplayArchived(body.archived ?? {});
       } catch {
         /* ignore */
       }
@@ -360,6 +375,7 @@ export function useControlPlane() {
     retryAgent,
     pushLog,
     replayRuns,
+    replayArchived,
     replayPickerRun,
     setReplayPickerRun,
     replayRunName,

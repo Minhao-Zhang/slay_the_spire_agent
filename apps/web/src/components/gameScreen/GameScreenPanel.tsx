@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 
 import { cardNameClass } from "../../lib/cardTypeStyle";
+import { fmtGameStatDisplay, fmtIntEn } from "../../lib/formatDisplayNumber";
 import type { GameScreenDTO, ViewModelDTO } from "../../types/viewModel";
 import { MapView, type MapVizData } from "./MapView";
 
@@ -38,7 +39,7 @@ function CardPickTile({
       className="relative flex min-h-[4.5rem] w-[9.5rem] shrink-0 flex-col rounded border border-slate-700 bg-slate-900/90 p-2 text-left shadow-sm transition hover:border-sky-600/80 hover:bg-slate-800/90"
     >
       <span className="absolute top-1.5 right-1.5 flex h-5 min-w-[1.25rem] items-center justify-center rounded bg-sky-700 px-1 font-console text-[10px] font-bold text-white">
-        {String(card.cost ?? "—")}
+        {fmtGameStatDisplay(card.cost ?? "—")}
       </span>
       <span className={`pr-6 text-sm leading-tight ${cardNameClass(card.type)}`}>
         {String(card.name ?? "?")}
@@ -245,7 +246,7 @@ export function GameScreenPanel({
               <p className="text-sm text-slate-400">{reason}</p>
             ) : null}
             <p className="font-semibold text-sky-400/95">
-              Pick {num} card(s)
+              Pick {fmtIntEn(num)} card(s)
             </p>
             <div className="flex flex-wrap gap-3">
               {cards.map((card, i) => (
@@ -300,7 +301,10 @@ export function GameScreenPanel({
         return (
           <div className="custom-scroll min-h-0 flex-1 space-y-5 overflow-y-auto p-3">
             <div className="font-telemetry text-sm font-semibold text-amber-200/95">
-              Gold: {String(gold ?? "?")}
+              Gold:{" "}
+              {gold === undefined || gold === null
+                ? "?"
+                : fmtGameStatDisplay(gold)}
             </div>
             <div>
               <h3 className="mb-2 font-console text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -314,7 +318,9 @@ export function GameScreenPanel({
                     onPick={() =>
                       onChoose(`choose ${asStr(card.name)}`)
                     }
-                    footer={<span>{asStr(card.price)} Gold</span>}
+                    footer={
+                      <span>{fmtGameStatDisplay(asStr(card.price) || "—")} Gold</span>
+                    }
                   />
                 ))}
               </div>
@@ -340,7 +346,7 @@ export function GameScreenPanel({
                         </div>
                       ) : null}
                       <div className="mt-1 font-mono text-sky-400">
-                        {asStr(r.price)} Gold
+                        {fmtGameStatDisplay(asStr(r.price) || "—")} Gold
                       </div>
                     </button>
                   );
@@ -361,7 +367,7 @@ export function GameScreenPanel({
                   >
                     <div className="font-semibold">{asStr(p.name)}</div>
                     <div className="mt-1 font-mono text-sky-400">
-                      {asStr(p.price)} Gold
+                      {fmtGameStatDisplay(asStr(p.price) || "—")} Gold
                     </div>
                   </button>
                 ))}
@@ -373,7 +379,11 @@ export function GameScreenPanel({
                 className="max-w-md rounded border border-red-800/80 bg-red-950/45 py-2 font-console text-sm font-semibold text-red-100 hover:bg-red-900/55"
                 onClick={() => onChoose("choose purge")}
               >
-                Remove Card ({String(purgeCost ?? "?")} Gold)
+                Remove Card (
+                {purgeCost === undefined || purgeCost === null
+                  ? "?"
+                  : fmtGameStatDisplay(purgeCost)}{" "}
+                Gold)
               </button>
             ) : null}
           </div>
@@ -429,7 +439,7 @@ export function GameScreenPanel({
               {content.victory ? "Victory!" : "Defeated"}
             </div>
             <div className="text-slate-500">
-              Score: {String(content.score ?? 0)}
+              Score: {fmtGameStatDisplay(content.score ?? 0)}
             </div>
           </div>
         );

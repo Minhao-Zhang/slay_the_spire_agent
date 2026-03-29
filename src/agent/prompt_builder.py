@@ -8,6 +8,7 @@ from typing import Any
 
 from src.agent.vm_shapes import as_dict, normalize_legal_actions, prompt_command_for_action
 from src.repo_paths import REPO_ROOT
+from src.ui.state_processor import event_option_choose_index
 
 # Lazy-loaded map of buff/power name -> description (from buff_descriptions.json + powers)
 _BUFF_DESCRIPTIONS: dict[str, str] | None = None
@@ -608,7 +609,12 @@ def _screen_content_lines(vm: dict[str, Any]) -> list[str]:
                 outcome = _compact_text(kb_choice.get("outcome", ""), limit=120)
             else:
                 outcome = ""
-            line = f"{i}. {label}"
+            # Match CommunicationMod ``choose N``: use choice_index for choosable rows; list row for disabled.
+            if disabled:
+                line = f"[row {i}] {label}"
+            else:
+                cmd_i = event_option_choose_index(opt, i)
+                line = f"{cmd_i}. {label}"
             if text:
                 line += f" — {text}"
             if outcome:

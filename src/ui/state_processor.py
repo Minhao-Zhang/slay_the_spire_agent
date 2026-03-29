@@ -249,7 +249,7 @@ def _build_screen(screen_type: str, s: dict, game: dict, combat: Optional[dict])
                     "label": o.get("label", f"Option {i}"),
                     "text": o.get("text", ""),
                     "disabled": o.get("disabled", False),
-                    "choice_index": i,
+                    "choice_index": event_option_choose_index(o, i),
                 }
                 for i, o in enumerate(s.get("options", []))
             ],
@@ -414,6 +414,23 @@ _COMMAND_BUTTONS = [
 ]
 
 
+def event_option_choose_index(option: dict, list_index: int) -> int:
+    """Index for ``choose N`` on EVENT screens.
+
+    CommunicationMod uses per-option ``choice_index`` (skipping disabled rows). Fall back
+    to the option's position in ``options`` when absent (legacy / simple events).
+    """
+    ci = option.get("choice_index")
+    if isinstance(ci, int):
+        return ci
+    if isinstance(ci, str):
+        try:
+            return int(ci.strip())
+        except ValueError:
+            pass
+    return list_index
+
+
 def _event_has_chooseable_data(screen_type: str, screen_state: dict, game: dict) -> bool:
     """True when EVENT has option rows or a non-empty game choice_list (Neow / mod skew)."""
     if screen_type != "EVENT":
@@ -518,12 +535,14 @@ def _build_choose_actions(screen_type: str, s: dict, game: dict) -> list[dict]:
 
     elif screen_type == "EVENT" and s.get("options"):
         for i, o in enumerate(s["options"]):
-            if not o.get("disabled"):
-                actions.append({
-                    "label": o.get("label", f"Select {i}"),
-                    "command": f"choose {i}",
-                    "style": "primary",
-                })
+            if o.get("disabled"):
+                continue
+            cmd_i = event_option_choose_index(o, i)
+            actions.append({
+                "label": o.get("label", f"Select {cmd_i}"),
+                "command": f"choose {cmd_i}",
+                "style": "primary",
+            })
 
     elif screen_type == "EVENT" and not s.get("options") and game.get("choice_list"):
         # Prefer screen_state.options when any rows exist (above), including all-disabled

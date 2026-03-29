@@ -217,6 +217,25 @@ def validate_final_decision(
         return ValidationResult(valid=False, error=end_err)
 
     chosen = str(commands[0]).strip()
+    if not chosen:
+        non_empty_cmds = [
+            str(a.get("command", "") or "").strip()
+            for a in legal_actions
+            if str(a.get("command", "") or "").strip()
+        ]
+        gridish = bool(non_empty_cmds) and all(
+            c.lower().startswith("choose ") for c in non_empty_cmds
+        )
+        hint = (
+            " On GRID / pick screens use a concrete `choose N` from LEGAL ACTIONS."
+            if gridish
+            else ""
+        )
+        return ValidationResult(
+            valid=False,
+            error=f"chosen_commands[0] is empty; pick a legal command.{hint}",
+        )
+
     by_command = {_norm(str(action.get("command", ""))): action for action in legal_actions}
     by_label = {_norm(str(action.get("label", ""))): action for action in legal_actions}
 
@@ -232,7 +251,10 @@ def validate_final_decision(
             )
         return ValidationResult(
             valid=False,
-            error=f"Token-based PLAY command could not be resolved against current hand: {chosen!r}",
+            error=(
+                f"Token-based PLAY command could not be resolved against current hand: {chosen!r}. "
+                "If the hand changed (e.g. stale proposal), wait for a fresh snapshot and re-propose."
+            ),
         )
 
     # 2) Strict command match (with whitespace/case normalization).
