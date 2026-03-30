@@ -176,6 +176,13 @@ const osdBtnBase =
 const osdBtnGhost =
   `${osdBtnBase} border-slate-600/90 bg-slate-800/80 text-slate-400 hover:border-slate-500 hover:bg-slate-700/75 hover:text-slate-200`;
 
+/** Replay toolbar — matches `h-7` replay `<select>` height. */
+const osdReplayBtn =
+  "font-console inline-flex h-7 shrink-0 items-center justify-center rounded border border-slate-600/90 bg-slate-800/80 px-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400 transition duration-150 hover:border-slate-500 hover:bg-slate-700/75 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-35";
+
+const osdReplayInput =
+  "font-console h-7 w-11 rounded border border-slate-700 bg-slate-950/80 px-1 text-center text-xs font-medium text-slate-200 outline-none ring-inset focus-visible:ring-2 focus-visible:ring-indigo-400/45 tabular-nums";
+
 /** Solid fill, same chrome family as Approve / CTA (no outline accent bar). */
 const osdBtnRetry =
   `${osdBtnBase} border-amber-800/80 bg-amber-900/75 text-amber-50 hover:bg-amber-800/85`;
@@ -195,6 +202,12 @@ const osdSectionLabel =
 
 const osdStatCaption =
   "font-console text-sm font-semibold uppercase tracking-[0.18em] text-slate-500";
+
+/** Tighter label for the HUD stats strip (label + value stack). */
+const osdHudLabel =
+  "font-console text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500 leading-none";
+const osdHudValue =
+  "font-telemetry text-[15px] font-semibold tabular-nums leading-none";
 
 function actionBtnClass(style: string): string {
   const map: Record<string, string> = {
@@ -226,7 +239,7 @@ function PileTelemetryBar({
 }) {
   const segments: {
     kind: PileKind;
-    abbr: string;
+    label: string;
     title: string;
     n: number;
     tint: string;
@@ -234,7 +247,7 @@ function PileTelemetryBar({
   }[] = [
     {
       kind: "draw",
-      abbr: "DRW",
+      label: "Draw",
       title: "Draw pile — click to inspect",
       n: drawN,
       tint: "text-cyan-200/95",
@@ -242,7 +255,7 @@ function PileTelemetryBar({
     },
     {
       kind: "discard",
-      abbr: "DIS",
+      label: "Discard",
       title: "Discard pile — click to inspect",
       n: discN,
       tint: "text-amber-200/90",
@@ -250,7 +263,7 @@ function PileTelemetryBar({
     },
     {
       kind: "exhaust",
-      abbr: "EXH",
+      label: "Exhaust",
       title: "Exhaust pile — click to inspect",
       n: exhN,
       tint: "text-rose-200/85",
@@ -262,7 +275,7 @@ function PileTelemetryBar({
     <div
       className="deck-telemetry flex shrink-0 overflow-hidden rounded-md border border-slate-700/90"
       role="group"
-      aria-label="Deck piles — click a zone to inspect"
+      aria-label="Draw, Discard, Exhaust piles — click to inspect"
     >
       {segments.map((s, i) => (
         <button
@@ -271,14 +284,14 @@ function PileTelemetryBar({
           onClick={() => onInspect(s.kind)}
           title={s.title}
           className={
-            "group relative flex min-h-[1.75rem] min-w-[3.75rem] flex-1 items-center justify-between gap-1.5 px-1.5 py-0.5 text-left transition-[background-color,box-shadow] duration-150 " +
+            "group relative flex min-h-[1.75rem] min-w-0 flex-1 items-center justify-between gap-2 px-2 py-0.5 text-left transition-[background-color,box-shadow] duration-150 " +
             "hover:bg-slate-800/40 active:bg-slate-800/65 " +
             "focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400/45 " +
             (i > 0 ? "border-l border-slate-700/55 " : "")
           }
         >
-          <span className="font-console text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 transition-colors group-hover:text-slate-400">
-            {s.abbr}
+          <span className="min-w-0 truncate font-console text-[11px] font-semibold uppercase tracking-wide text-slate-500 transition-colors group-hover:text-slate-400">
+            {s.label}
           </span>
           <span
             className={`font-telemetry text-base font-semibold leading-none tabular-nums tracking-tight transition-colors ${s.tint} ${s.glow}`}
@@ -298,6 +311,52 @@ function cardHash(uuid: unknown): string {
 
 function headerClass(h: HeaderDTO | null | undefined): string {
   return h?.["class"] ?? "?";
+}
+
+function ascensionDisplay(h: HeaderDTO | null | undefined): number {
+  const n = h?.ascension_level;
+  return typeof n === "number" && Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0;
+}
+
+function seedFirstSix(raw: string | null): string {
+  if (raw == null || raw === "") return "—";
+  return raw.length <= 6 ? raw : raw.slice(0, 6);
+}
+
+/** R · S · E = Ruby, Sapphire, Emerald — dim when missing, keyed colors when owned. */
+function KeysLetters({
+  keys,
+}: {
+  keys?: { ruby?: boolean; emerald?: boolean; sapphire?: boolean } | null;
+}) {
+  const ruby = keys?.ruby === true;
+  const sapphire = keys?.sapphire === true;
+  const emerald = keys?.emerald === true;
+  const tip = `Act 3 keys\nRuby: ${ruby ? "yes" : "no"}\nSapphire: ${sapphire ? "yes" : "no"}\nEmerald: ${emerald ? "yes" : "no"}`;
+  const cell = (letter: string, on: boolean, onClass: string) => (
+    <span
+      className={
+        "min-w-[0.65rem] text-center text-sm font-bold tabular-nums " +
+        (on ? onClass : "text-slate-600")
+      }
+    >
+      {letter}
+    </span>
+  );
+  return (
+    <HoverTip tip={tip} side="bottom" className="shrink-0">
+      <div
+        className="flex items-center gap-0.5 font-console tracking-tight"
+        aria-label="Act 3 keys: Ruby, Sapphire, Emerald"
+      >
+        {cell("R", ruby, "text-red-400")}
+        <span className="text-[10px] text-slate-600">·</span>
+        {cell("S", sapphire, "text-sky-400")}
+        <span className="text-[10px] text-slate-600">·</span>
+        {cell("E", emerald, "text-emerald-400")}
+      </div>
+    </HoverTip>
+  );
 }
 
 /** Enemy block: header row (name, HP, intent) + powers row — layout per IDE mock. */
@@ -535,7 +594,6 @@ export function MonitorDashboard() {
     retryAgent,
     pushLog,
     replayRuns,
-    replayArchived,
     replayPickerRun,
     setReplayPickerRun,
     replayFiles,
@@ -545,6 +603,7 @@ export function MonitorDashboard() {
     replayAiSidecar,
     loadReplayRun,
     replaySeek,
+    replayJumpToFrame,
     clearReplaySelection,
   } = useControlPlane();
 
@@ -566,6 +625,8 @@ export function MonitorDashboard() {
 
   const [editCmd, setEditCmd] = useState("");
   const [pileInspect, setPileInspect] = useState<PileKind | null>(null);
+  const [deckInspectOpen, setDeckInspectOpen] = useState(false);
+  const [replayJumpInput, setReplayJumpInput] = useState("");
 
   const vm: ViewModelDTO | null = snapshot?.view_model ?? null;
   const showScreenPanel = Boolean(vm?.screen);
@@ -641,6 +702,15 @@ export function MonitorDashboard() {
   const combat = vm?.combat as Record<string, unknown> | null | undefined;
   const inventory = vm?.inventory as Record<string, unknown> | null | undefined;
   const header = vm?.header;
+
+  useEffect(() => {
+    if (replayFiles.length === 0) {
+      setReplayJumpInput("");
+      return;
+    }
+    setReplayJumpInput(String(replayIndex + 1));
+  }, [replayIndex, replayFiles.length, replayRunName]);
+
   const screenVm = vm?.screen as Record<string, unknown> | undefined;
   const screenType =
     screenVm && typeof screenVm.type === "string"
@@ -699,6 +769,8 @@ export function MonitorDashboard() {
   const relics = (inventory?.relics as Record<string, unknown>[] | undefined) ?? [];
   const potions =
     (inventory?.potions as Record<string, unknown>[] | undefined) ?? [];
+  const masterDeck =
+    (inventory?.deck as Record<string, unknown>[] | undefined) ?? [];
 
   const potionSlots = useMemo(() => {
     const slots: (Record<string, unknown> | null)[] = [null, null, null];
@@ -1014,7 +1086,14 @@ export function MonitorDashboard() {
     String(snapshot.agent.run_seed).trim() !== ""
       ? String(snapshot.agent.run_seed).trim()
       : null;
-  const runSeedDisplay = runSeedRaw ?? "n/a";
+
+  const commitReplayJump = useCallback(() => {
+    const n = replayFiles.length;
+    if (n === 0) return;
+    const v = Number.parseInt(replayJumpInput.trim(), 10);
+    if (!Number.isFinite(v) || v < 1 || v > n) return;
+    replayJumpToFrame(v);
+  }, [replayFiles.length, replayJumpInput, replayJumpToFrame]);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-gradient-to-b from-slate-900 via-[#0a0d11] to-[#06080a] text-sm text-slate-300 select-none">
@@ -1061,30 +1140,6 @@ export function MonitorDashboard() {
             className="flex flex-wrap items-center gap-x-3 gap-y-1 border-l border-slate-600/70 pl-4"
             title="Replay loads frames from logs; live snapshots are paused until you clear the run."
           >
-            <div
-              className="flex min-w-0 items-center gap-1.5"
-              title="Run seed (click to copy when set)."
-            >
-              <span className={osdStatCaption}>Seed</span>
-              <button
-                type="button"
-                disabled={runSeedRaw == null}
-                className="border-0 bg-transparent p-0 font-telemetry max-w-[12rem] truncate text-left text-xs text-slate-400 hover:text-slate-200 disabled:cursor-default disabled:opacity-60 enabled:cursor-pointer enabled:underline-offset-2 enabled:hover:underline"
-                title={
-                  runSeedRaw
-                    ? "Click to copy seed (exact string, no formatting)"
-                    : undefined
-                }
-                onClick={() => {
-                  if (!runSeedRaw) return;
-                  void navigator.clipboard
-                    .writeText(runSeedRaw)
-                    .catch(() => {});
-                }}
-              >
-                {runSeedDisplay}
-              </button>
-            </div>
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
               <span className={osdStatCaption}>Replay</span>
               <select
@@ -1103,7 +1158,6 @@ export function MonitorDashboard() {
                 {replayRuns.map((run) => (
                   <option key={run} value={run}>
                     {run}
-                    {replayArchived[run] ? " · zip" : ""}
                   </option>
                 ))}
               </select>
@@ -1112,7 +1166,7 @@ export function MonitorDashboard() {
                   <button
                     type="button"
                     disabled={replayBusy || replayIndex <= 0}
-                    className={osdBtnGhost}
+                    className={osdReplayBtn}
                     onClick={() => replaySeek(-10)}
                     title="Back 10 frames"
                   >
@@ -1121,7 +1175,7 @@ export function MonitorDashboard() {
                   <button
                     type="button"
                     disabled={replayBusy || replayIndex <= 0}
-                    className={osdBtnGhost}
+                    className={osdReplayBtn}
                     onClick={() => replaySeek(-1)}
                   >
                     Prev
@@ -1129,12 +1183,34 @@ export function MonitorDashboard() {
                   <span className="font-telemetry min-w-[4.5rem] text-center text-xs tabular-nums text-slate-400">
                     {fmtIntEn(replayIndex + 1)}/{fmtIntEn(replayFiles.length)}
                   </span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={replayJumpInput}
+                    onChange={(e) => setReplayJumpInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitReplayJump();
+                    }}
+                    disabled={replayBusy}
+                    className={osdReplayInput}
+                    title="Frame index (1-based). Enter to jump."
+                    aria-label="Replay frame index"
+                  />
+                  <button
+                    type="button"
+                    disabled={replayBusy}
+                    className={osdReplayBtn}
+                    onClick={() => commitReplayJump()}
+                    title="Jump to frame in box (1-based)"
+                  >
+                    Go
+                  </button>
                   <button
                     type="button"
                     disabled={
                       replayBusy || replayIndex >= replayFiles.length - 1
                     }
-                    className={osdBtnGhost}
+                    className={osdReplayBtn}
                     onClick={() => replaySeek(1)}
                   >
                     Next
@@ -1144,7 +1220,7 @@ export function MonitorDashboard() {
                     disabled={
                       replayBusy || replayIndex >= replayFiles.length - 1
                     }
-                    className={osdBtnGhost}
+                    className={osdReplayBtn}
                     onClick={() => replaySeek(10)}
                     title="Forward 10 frames"
                   >
@@ -1180,59 +1256,127 @@ export function MonitorDashboard() {
         </div>
       ) : null}
 
-      {/* Stats + potions — left-aligned run readout */}
-      <div className="flex min-h-0 shrink-0 flex-wrap items-end gap-x-6 gap-y-1.5 border-b border-slate-700/85 bg-slate-800/75 px-3 py-2">
-        <div className="flex flex-wrap items-end gap-x-6 gap-y-1.5">
-          <div className="flex flex-col gap-px">
-            <span className={osdStatCaption}>Turn</span>
-            <span className="font-telemetry text-base font-semibold tabular-nums leading-none text-slate-50">
-              {fmtGameStatDisplay(header?.turn ?? "—")}
+      {/* Stats + potions — compact HUD row */}
+      <div className="flex min-h-0 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-700/85 bg-slate-800/75 px-3 py-1.5">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex min-h-[2.25rem] flex-col justify-center gap-1">
+            <span className={osdHudLabel}>Seed</span>
+            <button
+              type="button"
+              disabled={runSeedRaw == null}
+              onClick={() => {
+                if (runSeedRaw) void copyClipboard(runSeedRaw, "seed");
+              }}
+              className="max-w-[4.5rem] truncate rounded border border-slate-600/90 bg-slate-900/80 px-1.5 py-0.5 text-left font-mono text-[10px] font-medium tabular-nums text-slate-300 transition hover:border-slate-500 hover:bg-slate-800/90 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+              title={
+                runSeedRaw
+                  ? `Click to copy full seed (${runSeedRaw.length} chars)`
+                  : "No seed on this snapshot"
+              }
+            >
+              {seedFirstSix(runSeedRaw)}
+            </button>
+          </div>
+          <div className="flex min-h-[2.25rem] flex-col justify-center gap-1">
+            <span className={osdHudLabel}>Class</span>
+            <span className={`${osdHudValue} text-orange-300`}>
+              {fmtGameStatDisplay(headerClass(header))}
+              <span className="text-slate-500"> · </span>
+              <span className="tabular-nums">
+                A{fmtIntEn(ascensionDisplay(header))}
+              </span>
             </span>
           </div>
           {(
             [
-              ["Class", headerClass(header), "text-orange-300"],
               ["Floor", header?.floor ?? "—", "text-slate-200"],
               ["HP", header?.hp_display ?? "—", "text-red-400"],
               ["Gold", header?.gold ?? "—", "text-amber-400"],
-              ["Energy", header?.energy ?? "—", "text-cyan-400"],
             ] as const
           ).map(([label, val, col]) => (
-            <div key={label} className="flex flex-col gap-px">
-              <span className={osdStatCaption}>{label}</span>
-              <span
-                className={`font-telemetry text-base font-semibold tabular-nums leading-none ${col}`}
-              >
+            <div
+              key={label}
+              className="flex min-h-[2.25rem] flex-col justify-center gap-1"
+            >
+              <span className={osdHudLabel}>{label}</span>
+              <span className={`${osdHudValue} ${col}`}>
                 {fmtGameStatDisplay(val)}
               </span>
             </div>
           ))}
-          <div className="flex flex-wrap items-center gap-1.5 border-l border-slate-600/55 pl-5">
-            <span className={`${osdStatCaption} mr-0.5`}>Potions</span>
-            {potionSlots.map((p, i) =>
-              p ? (
-                <HoverTip
-                  key={i}
-                  tip={labeledTooltip(String(p.name ?? "Potion"), p)}
-                  side="bottom"
-                  className="w-auto shrink-0"
-                >
-                  <div className="font-console max-w-[7.5rem] truncate rounded border border-slate-600/90 bg-slate-800/80 px-1.5 py-0.5 text-xs font-medium text-slate-200">
-                    {String(p.name ?? "Potion")}
-                  </div>
-                </HoverTip>
-              ) : (
-                <div
-                  key={i}
-                  className="font-console rounded border border-dashed border-slate-600/70 px-1.5 py-0.5 text-xs text-slate-600"
-                >
-                  —
-                </div>
-              ),
-            )}
+          <div className="flex flex-wrap items-center gap-x-4 border-l border-slate-600/55 pl-4">
+            {(
+              [
+                ["Energy", header?.energy ?? "—", "text-cyan-400"],
+                ["Turn", header?.turn ?? "—", "text-slate-50"],
+              ] as const
+            ).map(([label, val, col]) => (
+              <div
+                key={label}
+                className="flex min-h-[2.25rem] flex-col justify-center gap-1"
+              >
+                <span className={osdHudLabel}>{label}</span>
+                <span className={`${osdHudValue} ${col}`}>
+                  {fmtGameStatDisplay(val)}
+                </span>
+              </div>
+            ))}
           </div>
+          <div className="flex min-h-[2.25rem] flex-col justify-center gap-1 border-l border-slate-600/55 pl-4">
+            <span className={osdHudLabel}>Keys</span>
+            <KeysLetters keys={vm?.keys} />
+          </div>
+          {vm?.in_game ? (
+            <div className="flex flex-wrap items-center gap-x-3 border-l border-slate-600/55 pl-4">
+              <div className="flex min-h-[2.25rem] flex-col justify-center gap-1">
+                <span className={osdHudLabel}>Deck</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPileInspect(null);
+                    setDeckInspectOpen(true);
+                  }}
+                  disabled={masterDeck.length === 0}
+                  title={
+                    masterDeck.length === 0
+                      ? "No master deck in this snapshot"
+                      : "View master deck (full run list)"
+                  }
+                  className="min-w-[2rem] rounded border border-slate-600/90 bg-slate-900/80 px-1.5 py-0.5 text-center font-mono text-[11px] font-semibold tabular-nums text-slate-300 transition hover:border-slate-500 hover:bg-slate-800/90 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {fmtIntEn(masterDeck.length)}
+                </button>
+              </div>
+              <div className="flex min-h-[2.25rem] flex-col justify-center gap-1">
+                <span className={`${osdHudLabel}`}>Potions</span>
+                <div className="flex flex-wrap items-center gap-1">
+                {potionSlots.map((p, i) =>
+                  p ? (
+                    <HoverTip
+                      key={i}
+                      tip={labeledTooltip(String(p.name ?? "Potion"), p)}
+                      side="bottom"
+                      className="w-auto shrink-0"
+                    >
+                      <div className="font-console max-w-[7.5rem] truncate rounded border border-slate-600/90 bg-slate-800/80 px-1.5 py-0.5 text-xs font-medium text-slate-200">
+                        {String(p.name ?? "Potion")}
+                      </div>
+                    </HoverTip>
+                  ) : (
+                    <div
+                      key={i}
+                      className="font-console rounded border border-dashed border-slate-600/70 px-1.5 py-0.5 text-xs text-slate-600"
+                    >
+                      —
+                    </div>
+                  ),
+                )}
+                </div>
+              </div>
+            </div>
+          ) : null}
           {showOrbStrip ? (
-            <div className="flex flex-wrap items-center gap-1.5 border-l border-slate-600/55 pl-5">
+            <div className="flex flex-wrap items-center gap-1.5 border-l border-slate-600/55 pl-4">
               <HoverTip
                 tip={orbStripHelpText()}
                 side="bottom"
@@ -1372,12 +1516,17 @@ export function MonitorDashboard() {
                   <span className="min-w-0 shrink-0 truncate">
                     Hand · {fmtIntEn(hand.length)}
                   </span>
-                  <PileTelemetryBar
-                    draw={draw}
-                    discard={disc}
-                    exhaust={exhaust}
-                    onInspect={setPileInspect}
-                  />
+                  <div className="flex min-w-0 shrink items-stretch gap-1.5">
+                    <PileTelemetryBar
+                      draw={draw}
+                      discard={disc}
+                      exhaust={exhaust}
+                      onInspect={(k) => {
+                        setDeckInspectOpen(false);
+                        setPileInspect(k);
+                      }}
+                    />
+                  </div>
                 </div>
                 <div className="custom-scroll min-h-0 flex-1 overflow-y-auto">
                   {hand.length === 0 ? (
@@ -1700,6 +1849,13 @@ export function MonitorDashboard() {
           title={pileModal.title}
           cards={pileModal.cards}
           onClose={() => setPileInspect(null)}
+        />
+      ) : null}
+      {deckInspectOpen ? (
+        <PileInspectModal
+          title="Master deck"
+          cards={masterDeck}
+          onClose={() => setDeckInspectOpen(false)}
         />
       ) : null}
     </div>

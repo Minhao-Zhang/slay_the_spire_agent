@@ -21,6 +21,8 @@ export type VmSummary = {
     max_hp?: number | null;
   }>;
   hand?: Array<{ name?: string | null }>;
+  deck_size?: number;
+  relic_count?: number;
 };
 
 export type StateRow = {
@@ -38,6 +40,8 @@ export type StateRow = {
   line_gold: number | null;
   line_floor: number | null;
   line_legal_action_count: number | null;
+  line_deck_size: number | null;
+  line_relic_count: number | null;
 };
 
 export type AiRow = JsonRecord & {
@@ -85,6 +89,8 @@ function asVmSummary(raw: unknown): VmSummary {
         : undefined,
     monsters: Array.isArray(o.monsters) ? (o.monsters as VmSummary["monsters"]) : undefined,
     hand: Array.isArray(o.hand) ? (o.hand as VmSummary["hand"]) : undefined,
+    deck_size: num(o.deck_size) ?? undefined,
+    relic_count: num(o.relic_count) ?? undefined,
   };
 }
 
@@ -134,6 +140,8 @@ export function deriveStateRows(records: JsonRecord[]): StateRow[] {
       line_gold: vm.gold ?? null,
       line_floor: vm.floor ?? null,
       line_legal_action_count: vm.legal_action_count ?? null,
+      line_deck_size: vm.deck_size ?? null,
+      line_relic_count: vm.relic_count ?? null,
     });
   }
   out.sort((a, b) => a.event_index - b.event_index);
@@ -224,6 +232,11 @@ function mean(nums: number[]): number {
   return nums.reduce((s, x) => s + x, 0) / nums.length;
 }
 
+function minOrNull(arr: number[]): number | null {
+  if (arr.length === 0) return null;
+  return Math.min(...arr);
+}
+
 /** One row per floor bucket: mean of state snapshots in that bucket (floor mode). */
 export type FloorStateAggRow = FloorBucketMeta & {
   mean_current_hp: number | null;
@@ -232,6 +245,10 @@ export type FloorStateAggRow = FloorBucketMeta & {
   mean_legal: number | null;
   mean_monster_hp_sum: number | null;
   mean_hand_size: number | null;
+  /** Minimum deck size among state snapshots in this floor bucket. */
+  min_deck_size: number | null;
+  /** Minimum relic count among state snapshots in this floor bucket. */
+  min_relic_count: number | null;
   x_rank: number;
 };
 
@@ -273,6 +290,12 @@ export function deriveFloorStateAggRows(stateRows: StateRow[]): FloorStateAggRow
       .map((r) => r.monster_hp_sum)
       .filter((x): x is number => x !== null && Number.isFinite(x));
     const hand = rows.map((r) => r.hand_size).filter((x) => Number.isFinite(x));
+    const decks = rows
+      .map((r) => r.line_deck_size)
+      .filter((x): x is number => x !== null && Number.isFinite(x));
+    const relics = rows
+      .map((r) => r.line_relic_count)
+      .filter((x): x is number => x !== null && Number.isFinite(x));
     const avgOrNull = (arr: number[]) => (arr.length === 0 ? null : mean(arr));
     out.push({
       ...meta,
@@ -282,6 +305,8 @@ export function deriveFloorStateAggRows(stateRows: StateRow[]): FloorStateAggRow
       mean_legal: avgOrNull(legal),
       mean_monster_hp_sum: avgOrNull(msum),
       mean_hand_size: avgOrNull(hand),
+      min_deck_size: minOrNull(decks),
+      min_relic_count: minOrNull(relics),
       x_rank: 0,
     });
   }
@@ -457,6 +482,14 @@ export function binNumeric(values: number[], binCount: number): BinnedNumeric[] 
   }));
 }
 
+/** Run terminal outcome from `run_end` metrics, `GAME_OVER` state rows, or `run_end_snapshot.json`. */
+export type RunOutcomeSummary = {
+  victory: boolean | null;
+  score: number | null;
+  screen_name: string | null;
+  recorded_at: string | null;
+};
+
 export type MetricsSummary = {
   state_row_count: number;
   ai_row_count: number;
@@ -473,4 +506,7 @@ export type MetricsSummary = {
   /** Deepest map floor / act from state `vm_summary` (omitted on older logs). */
   max_floor_reached?: number | null;
   max_act_reached?: number | null;
+  run_outcome?: RunOutcomeSummary | null;
+  /** True when `run_end_snapshot.json` exists on disk for this run. */
+  has_run_end_snapshot?: boolean;
 };

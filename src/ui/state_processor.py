@@ -14,6 +14,31 @@ from src.reference.knowledge_base import (
 )
 
 
+def _ascension_level(game: dict) -> int:
+    raw = game.get("ascension_level")
+    try:
+        if raw is None:
+            return 0
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _normalize_keys(game: dict) -> dict[str, bool]:
+    k = game.get("keys")
+    if not isinstance(k, dict):
+        return {"ruby": False, "emerald": False, "sapphire": False}
+
+    def as_bool(x: Any) -> bool:
+        return bool(x) if x is not None else False
+
+    return {
+        "ruby": as_bool(k.get("ruby")),
+        "emerald": as_bool(k.get("emerald")),
+        "sapphire": as_bool(k.get("sapphire")),
+    }
+
+
 def process_state(raw: dict) -> dict:
     """Top-level entry point. Accepts a raw state dict (possibly wrapped in
     ``{"state": ...}``) and returns the view model consumed by the frontend."""
@@ -33,8 +58,15 @@ def process_state(raw: dict) -> dict:
     }
 
     if not vm["in_game"]:
-        vm["header"] = {"class": "Main Menu", "floor": "-", "gold": "-",
-                        "hp_display": "-", "energy": "-", "turn": "-"}
+        vm["header"] = {
+            "class": "Main Menu",
+            "floor": "-",
+            "gold": "-",
+            "hp_display": "-",
+            "energy": "-",
+            "turn": "-",
+            "ascension_level": 0,
+        }
         return vm
 
     game = state.get("game_state", {})
@@ -54,7 +86,9 @@ def process_state(raw: dict) -> dict:
         "hp_display": hp_display,
         "energy": combat["player"]["energy"] if combat else "-",
         "turn": combat["turn"] if combat else "-",
+        "ascension_level": _ascension_level(game),
     }
+    vm["keys"] = _normalize_keys(game)
 
     # -- inventory (always present when in-game) --
     vm["inventory"] = {

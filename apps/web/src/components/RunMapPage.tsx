@@ -20,16 +20,14 @@ function asMapNodes(raw: unknown): MapNode[] {
 export function RunMapPage() {
   const {
     runs,
-    archived,
     run,
     setRun,
     loading: metricsLoading,
     frameCount,
   } = useRunMetricsData();
 
-  const isZip = run.toLowerCase().endsWith(".zip");
   const { payload: mapPayload, loading: mapLoading, errorLabel } =
-    useMapHistoryData(run, isZip);
+    useMapHistoryData(run);
 
   const acts = useMemo(() => {
     if (!mapPayload?.ok) return [];
@@ -69,7 +67,6 @@ export function RunMapPage() {
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-[#0a0d11] to-[#06080a] text-sm text-slate-300">
       <RunMetricsRunBar
         runs={runs}
-        archived={archived}
         run={run}
         onRunChange={setRun}
         loading={metricsLoading}
@@ -85,13 +82,7 @@ export function RunMapPage() {
           <p className="text-sm text-slate-500">Select a run to view maps.</p>
         ) : null}
 
-        {isZip ? (
-          <p className="text-sm text-slate-500">
-            Map history is not available for zip archives.
-          </p>
-        ) : null}
-
-        {run && !isZip && !mapLoading && mapPayload && !mapPayload.ok ? (
+        {run && !mapLoading && mapPayload && !mapPayload.ok ? (
           <p className="text-sm text-amber-400/90">
             {mapPayload.reason === "read_error"
               ? "Could not read run directory for map history."
@@ -99,7 +90,7 @@ export function RunMapPage() {
           </p>
         ) : null}
 
-        {run && !isZip && mapPayload?.ok && acts.length === 0 && !mapLoading ? (
+        {run && mapPayload?.ok && acts.length === 0 && !mapLoading ? (
           <p className="text-sm text-slate-500">
             No map data in captured frames yet.
           </p>

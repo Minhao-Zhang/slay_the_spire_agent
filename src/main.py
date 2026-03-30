@@ -15,12 +15,14 @@ from src.agent.policy import is_end_turn_command_token, resolve_token_play
 from src.agent.session_state import is_command_failure_state, mark_trace_command_failed
 from src.agent.schemas import AgentTrace
 from src.agent.tracing import (
+    append_run_end_metric,
     append_state_run_metric,
     build_state_id,
     build_turn_key,
     build_vm_summary,
     create_trace,
     write_ai_log,
+    write_run_end_snapshot,
 )
 from src.repo_paths import REPO_ROOT
 from src.ui.state_processor import process_state
@@ -153,6 +155,21 @@ def choose_combat_reward_gold_command(vm: dict) -> str | None:
         command = f"choose {idx}"
         if any((a.get("command") or "").strip() == command for a in actions):
             return command
+    return None
+
+
+def _is_game_over(vm: dict) -> bool:
+    screen = vm.get("screen") or {}
+    return str(screen.get("type") or "").strip().upper() == "GAME_OVER"
+
+
+def _game_over_proceed_command(vm: dict) -> str | None:
+    for a in vm.get("actions") or []:
+        if not isinstance(a, dict):
+            continue
+        raw = str(a.get("command", "") or "").strip()
+        if raw.upper() == "PROCEED":
+            return raw
     return None
 
 
@@ -475,6 +492,7 @@ def main():
     last_state_snapshot = None
     last_log_signature = None
     duplicate_run_length = 0
+    run_end_persisted = False
 
     def clear_queued_sequence(reason: str = ""):
         queued_sequence["commands"] = []
@@ -571,6 +589,9 @@ def main():
             last_ai_execution = {"trace": None, "state_id": None, "action": None, "source": None}
         vm = process_state(state)
         notify_dashboard("/update_state", {"state": state, "meta": {"state_id": state_id}})
+
+        if not state.get("in_game", True):
+            run_end_persisted = False
 
         refresh_proposal_state()
         drain_orphan_proposal_futures()
@@ -691,6 +712,16 @@ def main():
         if not agent.ai_enabled:
             agent_mode = "manual"
 
+        if (
+            ready_for_command
+            and state.get("in_game", True)
+            and _is_game_over(vm)
+            and not run_end_persisted
+        ):
+            _, der = write_run_end_snapshot(Path(run_dir), state, state_id=state_id)
+            append_run_end_metric(Path(run_dir), state_id=state_id, derived=der)
+            run_end_persisted = True
+
         pending_trace = trace_cache.get(state_id)
         command_to_send: str | None = None
         command_source = "idle"
@@ -764,6 +795,7 @@ def main():
             and bool(vm.get("actions"))
             and state_id != last_proposed_state_id
             and proposal_state.get("future") is None
+            and not _is_game_over(vm)
         )
         actions_list = vm.get("actions") or []
         non_potion_actions = [
@@ -823,6 +855,90 @@ def main():
         elif should_start_proposal:
             start_proposal(vm, state_id, agent_mode)
             last_proposed_state_id = state_id
+
+        go_proceed = None
+        if (
+            ready_for_command
+            and _is_game_over(vm)
+            and state.get("in_game", True)
+            and agent.ai_enabled
+            and agent_mode != "manual"
+            and not manual_action
+        ):
+            go_proceed = _game_over_proceed_command(vm)
+
+        if go_proceed:
+            command_for_sig = go_proceed
+            log_signature_go = (
+                state_id,
+                ready_for_command,
+                agent_mode,
+                agent.ai_enabled,
+                command_for_sig,
+                "run-end",
+                proposal_state.get("future") is not None,
+                manual_action,
+            )
+            is_dup_go = state == last_state_snapshot and log_signature_go == last_log_signature
+            if is_dup_go:
+                duplicate_run_length += 1
+            else:
+                duplicate_run_length = 0
+            should_write_log_go = (state.get("in_game", True)) and (not is_dup_go)
+            if should_write_log_go:
+                write_state_log(
+                    state,
+                    vm=vm,
+                    state_id=state_id,
+                    manual_action=manual_action,
+                    agent_mode=agent_mode,
+                    is_duplicate=is_dup_go,
+                    duplicate_run_length=duplicate_run_length,
+                    heartbeat=is_dup_go,
+                    command_sent=command_for_sig,
+                    command_source="run-end",
+                    ready_for_command=ready_for_command,
+                )
+            last_state_snapshot = state
+            last_log_signature = log_signature_go
+
+            if agent_mode == "auto":
+                if not is_dup_go:
+                    trace_go = create_trace(vm, state_id, agent_mode, "", "")
+                    trace_go.status = "awaiting_approval"
+                    trace_go.final_decision = go_proceed
+                    trace_go.response_text = "(Game over screen; proceed.)"
+                    trace_cache[state_id] = trace_go
+                    notify_dashboard("/agent_trace", trace_go.model_dump(mode="json"))
+                    finalize_ai_execution(
+                        trace_go,
+                        state_id,
+                        go_proceed,
+                        "auto_approved",
+                        "run-end",
+                        vm.get("actions", []),
+                        remaining_commands=None,
+                    )
+                    last_proposed_state_id = None
+                    last_state_snapshot = None
+                    last_log_signature = None
+                    duplicate_run_length = 0
+                    notify_dashboard(
+                        "/log",
+                        {"message": f"Run end: auto {go_proceed!r} for state {state_id}."},
+                    )
+                    continue
+            if state_id != last_proposed_state_id and proposal_state.get("future") is None:
+                trace_go = create_trace(vm, state_id, agent_mode, "", "")
+                trace_go.status = "awaiting_approval"
+                trace_go.final_decision = go_proceed
+                trace_go.response_text = "(Game over screen; approve PROCEED.)"
+                trace_cache[state_id] = trace_go
+                notify_dashboard("/agent_trace", trace_go.model_dump(mode="json"))
+                last_proposed_state_id = state_id
+            idle_go = choose_idle_command(state) or "state"
+            print(idle_go, flush=True)
+            continue
 
         if not command_to_send:
             command_to_send = choose_idle_command(state)

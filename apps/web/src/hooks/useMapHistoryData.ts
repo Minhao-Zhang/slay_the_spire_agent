@@ -31,22 +31,22 @@ function fingerprintMapHistory(data: MapHistoryResponse): string {
   return `ok|${data.run}|${parts.join(";")}`;
 }
 
-export function useMapHistoryData(run: string, isZip: boolean) {
+export function useMapHistoryData(run: string) {
   const [payload, setPayload] = useState<MapHistoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const lastFpRef = useRef<string | null>(null);
   const reqGen = useRef(0);
 
   useEffect(() => {
-    if (!run || isZip) {
+    if (!run) {
       lastFpRef.current = null;
       setPayload(null);
       setLoading(false);
     }
-  }, [run, isZip]);
+  }, [run]);
 
   const load = useCallback(async (silent: boolean) => {
-    if (!run || isZip) {
+    if (!run) {
       lastFpRef.current = null;
       setPayload(null);
       return;
@@ -84,28 +84,26 @@ export function useMapHistoryData(run: string, isZip: boolean) {
         setLoading(false);
       }
     }
-  }, [run, isZip]);
+  }, [run]);
 
   useEffect(() => {
     void load(false);
   }, [load]);
 
   useEffect(() => {
-    if (!run || isZip) return;
+    if (!run) return;
     const id = window.setInterval(() => {
       if (document.visibilityState === "hidden") return;
       void load(true);
     }, MAP_POLL_MS);
     return () => window.clearInterval(id);
-  }, [run, isZip, load]);
+  }, [run, load]);
 
   const errorLabel =
     payload && !payload.ok
-      ? payload.reason === "zip_archive"
-        ? "Map history unavailable for zip archives."
-        : payload.reason === "fetch_error"
-          ? "Could not load map history."
-          : `Map: ${payload.reason}`
+      ? payload.reason === "fetch_error"
+        ? "Could not load map history."
+        : `Map: ${payload.reason}`
       : null;
 
   return { payload, loading, errorLabel, reload: () => void load(false) };

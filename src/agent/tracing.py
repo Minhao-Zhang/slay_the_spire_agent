@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import copy
 import datetime as dt
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any
+
+RUN_END_SNAPSHOT_FILENAME = "run_end_snapshot.json"
 
 from src.agent.schemas import AgentMode, AgentTrace, PersistedAiLog
 from src.agent.vm_shapes import as_dict
@@ -192,7 +196,96 @@ def build_vm_summary(
         joined = "\n".join(cmds)
         summary["legal_commands_fingerprint"] = hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
 
+    deck = game.get("deck") if isinstance(game.get("deck"), list) else []
+    relics = game.get("relics") if isinstance(game.get("relics"), list) else []
+    summary["deck_size"] = len(deck)
+    summary["relic_count"] = len(relics)
+
+    stype = str(summary.get("screen_type") or "").upper()
+    if stype == "GAME_OVER":
+        summary["screen_name"] = game.get("screen_name")
+        ss = game.get("screen_state") if isinstance(game.get("screen_state"), dict) else {}
+        v = ss.get("victory")
+        summary["victory"] = v if isinstance(v, bool) else False
+        sc = ss.get("score", 0)
+        try:
+            summary["score"] = int(sc) if sc is not None else 0
+        except (TypeError, ValueError):
+            summary["score"] = 0
+
     return summary
+
+
+def build_run_end_derived(game: dict[str, Any], *, state_id: str) -> dict[str, Any]:
+    """Compact terminal-run fields for snapshot + run_metrics ``run_end`` row."""
+    ss = game.get("screen_state") if isinstance(game.get("screen_state"), dict) else {}
+    v = ss.get("victory")
+    victory = v if isinstance(v, bool) else False
+    sc = ss.get("score", 0)
+    try:
+        score = int(sc) if sc is not None else 0
+    except (TypeError, ValueError):
+        score = 0
+    deck = game.get("deck") if isinstance(game.get("deck"), list) else []
+    relics = game.get("relics") if isinstance(game.get("relics"), list) else []
+    potions = game.get("potions") if isinstance(game.get("potions"), list) else []
+    return {
+        "state_id": state_id,
+        "victory": victory,
+        "score": score,
+        "screen_name": game.get("screen_name"),
+        "screen_type": game.get("screen_type"),
+        "floor": game.get("floor"),
+        "act": game.get("act"),
+        "gold": game.get("gold"),
+        "current_hp": game.get("current_hp"),
+        "max_hp": game.get("max_hp"),
+        "seed": game.get("seed"),
+        "class": game.get("class"),
+        "ascension_level": game.get("ascension_level"),
+        "deck_size": len(deck),
+        "relic_count": len(relics),
+        "potion_slots": len(potions),
+    }
+
+
+def write_run_end_snapshot(run_dir: Path, raw_envelope: dict[str, Any], *, state_id: str) -> tuple[Path, dict[str, Any]]:
+    """Write ``run_end_snapshot.json``: ``raw`` envelope first, full ``game_state`` copy, then ``derived``.
+
+    Returns ``(path, derived)`` so callers can append matching ``run_end`` metrics.
+    """
+    recorded_at = utc_now_iso()
+    raw_copy = copy.deepcopy(raw_envelope)
+    inner = raw_envelope.get("state", raw_envelope)
+    game = inner.get("game_state") if isinstance(inner, dict) else None
+    game_copy = copy.deepcopy(game) if isinstance(game, dict) else {}
+    derived = build_run_end_derived(game if isinstance(game, dict) else {}, state_id=state_id)
+    derived["recorded_at"] = recorded_at
+    payload: dict[str, Any] = {
+        "recorded_at": recorded_at,
+        "state_id": state_id,
+        "raw": raw_copy,
+        "game_state": game_copy,
+        "derived": derived,
+    }
+    path = run_dir / RUN_END_SNAPSHOT_FILENAME
+    tmp = path.with_suffix(".json.tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, default=str)
+    os.replace(tmp, path)
+    return path, derived
+
+
+def append_run_end_metric(run_dir: Path, *, state_id: str, derived: dict[str, Any]) -> None:
+    """Append a compact ``type: run_end`` line to ``run_metrics.ndjson``."""
+    rec: dict[str, Any] = {
+        "type": "run_end",
+        "state_id": state_id,
+        "timestamp": utc_now_iso(),
+        "snapshot_path": RUN_END_SNAPSHOT_FILENAME,
+        "derived": dict(derived),
+    }
+    append_run_metric_line(run_dir, rec)
 
 
 def append_run_metric_line(run_dir: Path, record: dict[str, Any]) -> None:

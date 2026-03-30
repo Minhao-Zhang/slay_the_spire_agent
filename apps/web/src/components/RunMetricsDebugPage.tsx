@@ -60,7 +60,6 @@ function TooltipFailureScatter(tp: TooltipLite) {
 export function RunMetricsDebugPage() {
   const {
     runs,
-    archived,
     run,
     setRun,
     loading,
@@ -90,7 +89,6 @@ export function RunMetricsDebugPage() {
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-[#0a0d11] to-[#06080a] text-sm text-slate-300">
       <RunMetricsRunBar
         runs={runs}
-        archived={archived}
         run={run}
         onRunChange={setRun}
         loading={loading}

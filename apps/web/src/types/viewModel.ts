@@ -18,6 +18,8 @@ export interface HeaderDTO {
   hp_display?: string;
   energy?: string;
   turn?: string;
+  /** In-game ascension; missing on old payloads — treat as 0 in UI. */
+  ascension_level?: number;
 }
 
 /** Non-combat UI: ``state_processor._build_screen`` → ``{ type, title, content }``. */
@@ -41,6 +43,8 @@ export interface ViewModelDTO {
   inventory?: Record<string, unknown> | null;
   map?: Record<string, unknown> | null;
   sidebar?: Record<string, unknown> | null;
+  /** Act 3 keys from game_state (ruby / emerald / sapphire). */
+  keys?: { ruby?: boolean; emerald?: boolean; sapphire?: boolean };
   last_action?: unknown;
 }
 

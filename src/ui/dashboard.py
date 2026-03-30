@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from src.agent.config import get_agent_config, load_system_prompt
 from src.agent.policy import parse_agent_output
 from src.agent.prompt_builder import build_user_prompt
-from src.agent.tracing import build_state_id
+from src.agent.tracing import RUN_END_SNAPSHOT_FILENAME, build_state_id
 from src.repo_paths import REPO_ROOT
 from src.ui.state_processor import process_state
 
@@ -696,7 +696,68 @@ def _parse_run_metrics_ndjson_text(text: str) -> tuple[list[dict[str, Any]], lis
     return records, errors
 
 
-def _summarize_run_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
+def _read_run_end_snapshot_derived(run_name: str) -> dict[str, Any] | None:
+    """Load ``derived`` from ``run_end_snapshot.json`` (directory or zip under ``logs/``)."""
+    if not run_name or "/" in run_name or "\\" in run_name or ".." in run_name:
+        return None
+    base = os.path.abspath(LOGS_DIR)
+    if run_name.lower().endswith(".zip"):
+        zip_path = os.path.abspath(os.path.join(LOGS_DIR, run_name))
+        if not zip_path.startswith(base + os.sep) or not os.path.isfile(zip_path):
+            return None
+        stem = os.path.splitext(os.path.basename(run_name))[0]
+        inner = f"{stem}/{RUN_END_SNAPSHOT_FILENAME}".replace("\\", "/")
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                raw = zf.read(inner)
+        except (KeyError, OSError, zipfile.BadZipFile):
+            return None
+        try:
+            obj = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None
+    else:
+        run_dir = _safe_run_dir(run_name)
+        if not run_dir:
+            return None
+        path = os.path.join(run_dir, RUN_END_SNAPSHOT_FILENAME)
+        if not os.path.isfile(path):
+            return None
+        try:
+            with open(path, encoding="utf-8") as f:
+                obj = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return None
+    der = obj.get("derived")
+    return der if isinstance(der, dict) else None
+
+
+def _run_outcome_from_derived(d: dict[str, Any]) -> dict[str, Any]:
+    v = d.get("victory")
+    victory = v if isinstance(v, bool) else None
+    sc = d.get("score")
+    score: int | None
+    if isinstance(sc, bool):
+        score = None
+    elif isinstance(sc, (int, float)):
+        score = int(sc)
+    else:
+        score = None
+    sn = d.get("screen_name")
+    screen_name = str(sn) if sn is not None else None
+    ra = d.get("recorded_at")
+    recorded_at = str(ra) if ra is not None else None
+    return {
+        "victory": victory,
+        "score": score,
+        "screen_name": screen_name,
+        "recorded_at": recorded_at,
+    }
+
+
+def _summarize_run_metrics(
+    records: list[dict[str, Any]], *, run_name: str | None = None
+) -> dict[str, Any]:
     states = [r for r in records if r.get("type") == "state"]
     ais = [r for r in records if r.get("type") == "ai_decision"]
     executed = [r for r in ais if r.get("status") == "executed"]
@@ -742,6 +803,40 @@ def _summarize_run_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
             ac = vm.get("act")
             if isinstance(ac, (int, float)):
                 acts.append(int(ac))
+    run_ends = [r for r in records if r.get("type") == "run_end"]
+    run_outcome: dict[str, Any] | None = None
+    if run_ends:
+        last_re = max(run_ends, key=lambda r: str(r.get("timestamp") or ""))
+        der = last_re.get("derived")
+        if isinstance(der, dict):
+            run_outcome = _run_outcome_from_derived(der)
+    if run_outcome is None:
+        for r in reversed(states):
+            vm = r.get("vm_summary")
+            if not isinstance(vm, dict):
+                continue
+            if str(vm.get("screen_type", "")).upper() != "GAME_OVER":
+                continue
+            if "victory" not in vm and "score" not in vm:
+                continue
+            vv = vm.get("victory")
+            victory = vv if isinstance(vv, bool) else None
+            sc = vm.get("score")
+            score = int(sc) if isinstance(sc, (int, float)) else None
+            sn = vm.get("screen_name")
+            run_outcome = {
+                "victory": victory,
+                "score": score,
+                "screen_name": str(sn) if sn is not None else None,
+                "recorded_at": str(r.get("timestamp") or "") or None,
+            }
+            break
+    snapshot_derived: dict[str, Any] | None = None
+    if run_name:
+        snapshot_derived = _read_run_end_snapshot_derived(run_name)
+    if run_outcome is None and isinstance(snapshot_derived, dict):
+        run_outcome = _run_outcome_from_derived(snapshot_derived)
+    has_run_end_snapshot = bool(snapshot_derived)
     return {
         "state_row_count": len(states),
         "ai_row_count": len(ais),
@@ -756,6 +851,8 @@ def _summarize_run_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
         "event_index_max": max(event_indices) if event_indices else None,
         "max_floor_reached": max(floors) if floors else None,
         "max_act_reached": max(acts) if acts else None,
+        "run_outcome": run_outcome,
+        "has_run_end_snapshot": has_run_end_snapshot,
     }
 
 
@@ -805,23 +902,19 @@ def _load_run_metrics_records(run_name: str) -> tuple[list[dict[str, Any]] | Non
 
 @app.get("/api/runs")
 async def get_runs():
+    """List replay/metrics run **directories** under ``logs/``. ``*.zip`` archives are omitted."""
     try:
         if not os.path.exists(LOGS_DIR):
             return {"runs": [], "archived": {}}
         runs: list[str] = []
-        archived: dict[str, bool] = {}
         for entry in os.listdir(LOGS_DIR):
             if entry.startswith("."):
                 continue
             p = os.path.join(LOGS_DIR, entry)
             if os.path.isdir(p):
                 runs.append(entry)
-                archived[entry] = False
-            elif os.path.isfile(p) and entry.lower().endswith(".zip"):
-                runs.append(entry)
-                archived[entry] = True
         runs.sort(reverse=True)
-        return {"runs": runs, "archived": archived}
+        return {"runs": runs, "archived": {}}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -875,7 +968,7 @@ async def get_run_metrics(
         "parse_errors": parse_errors,
     }
     if summary:
-        out["summary"] = _summarize_run_metrics(records)
+        out["summary"] = _summarize_run_metrics(records, run_name=run_name)
     return out
 
 

@@ -4,7 +4,6 @@ import { fmtIntEn } from "../lib/formatDisplayNumber";
 
 export type RunMetricsRunBarProps = {
   runs: string[];
-  archived: Record<string, boolean>;
   run: string;
   onRunChange: (run: string) => void;
   loading: boolean;
@@ -26,7 +25,6 @@ function metricsReasonLabel(reason: string): string {
 
 export function RunMetricsRunBar({
   runs,
-  archived,
   run,
   onRunChange,
   loading,
@@ -126,7 +124,6 @@ export function RunMetricsRunBar({
           {runs.map((r) => (
             <option key={r} value={r}>
               {r}
-              {archived[r] ? " · zip" : ""}
             </option>
           ))}
         </select>
@@ -157,21 +154,10 @@ export function RunMetricsRunBar({
         </span>
       ) : null}
 
-      {variant !== "map" &&
-      run.endsWith(".zip") &&
-      frameCount === null &&
-      !loading ? (
-        <span className="text-xs text-slate-500">Zip · metrics only</span>
-      ) : null}
-
-      {variant === "map" && run && !run.toLowerCase().endsWith(".zip") && frameCount !== null ? (
+      {variant === "map" && run && frameCount !== null ? (
         <span className="font-telemetry text-xs tabular-nums text-slate-500">
           Frames: {fmtIntEn(frameCount)}
         </span>
-      ) : null}
-
-      {variant === "map" && run.toLowerCase().endsWith(".zip") ? (
-        <span className="text-xs text-slate-500">Zip · no map frames</span>
       ) : null}
     </header>
   );

@@ -32,13 +32,8 @@ function fingerprintMetricsResponse(data: MetricsResponse): string {
   return `err|${data.reason}|${recs.length}|${tail}|${pe}`;
 }
 
-function fingerprintRunsPayload(body: {
-  runs?: string[];
-  archived?: Record<string, boolean>;
-}): string {
-  const runs = body.runs ?? [];
-  const arch = body.archived ?? {};
-  return JSON.stringify({ runs, archived: arch });
+function fingerprintRunsPayload(body: { runs?: string[] }): string {
+  return JSON.stringify({ runs: body.runs ?? [] });
 }
 
 export function useRunMetricsData() {
@@ -62,7 +57,6 @@ export function useRunMetricsData() {
   );
 
   const [runs, setRuns] = useState<string[]>([]);
-  const [archived, setArchived] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [payload, setPayload] = useState<MetricsResponse | null>(null);
   const [frameCount, setFrameCount] = useState<number | null>(null);
@@ -79,7 +73,6 @@ export function useRunMetricsData() {
       if (!r.ok) return;
       const body = (await r.json()) as {
         runs?: string[];
-        archived?: Record<string, boolean>;
         status?: string;
       };
       if (body.status === "error") return;
@@ -87,7 +80,6 @@ export function useRunMetricsData() {
       if (silent && fp === lastRunsFpRef.current) return;
       lastRunsFpRef.current = fp;
       setRuns(body.runs ?? []);
-      setArchived(body.archived ?? {});
     } catch {
       /* ignore */
     }
@@ -131,20 +123,16 @@ export function useRunMetricsData() {
       lastMetricsFpRef.current = fp;
       setPayload(data);
 
-      if (!runName.toLowerCase().endsWith(".zip")) {
-        const fr = await fetch(
-          `/api/runs/${encodeURIComponent(runName)}/frames`,
-        );
-        if (gen !== metricsRequestGen.current) return;
-        if (fr.ok) {
-          const fb = (await fr.json()) as { count?: number };
-          const n = fb.count;
-          if (typeof n === "number") {
-            setFrameCount((prev) => (prev === n ? prev : n));
-          }
+      const fr = await fetch(
+        `/api/runs/${encodeURIComponent(runName)}/frames`,
+      );
+      if (gen !== metricsRequestGen.current) return;
+      if (fr.ok) {
+        const fb = (await fr.json()) as { count?: number };
+        const n = fb.count;
+        if (typeof n === "number") {
+          setFrameCount((prev) => (prev === n ? prev : n));
         }
-      } else if (!silent) {
-        setFrameCount(null);
       }
     } catch {
       if (gen !== metricsRequestGen.current) return;
@@ -169,6 +157,13 @@ export function useRunMetricsData() {
     void loadMetrics(run, false);
   }, [run, loadMetrics]);
 
+  /** Zip archives are not listed; clear stale `?run=…zip` bookmarks. */
+  useEffect(() => {
+    if (run.toLowerCase().endsWith(".zip")) {
+      setRun("");
+    }
+  }, [run, setRun]);
+
   useEffect(() => {
     if (!run) return;
     const id = window.setInterval(() => {
@@ -185,7 +180,6 @@ export function useRunMetricsData() {
 
   return {
     runs,
-    archived,
     run,
     setRun,
     loading,

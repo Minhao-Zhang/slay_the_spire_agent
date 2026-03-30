@@ -159,7 +159,14 @@ function FloorLevelTooltipHeader(props: {
 }
 
 type StateTooltipKeys = Array<
-  "hp" | "gold" | "floor" | "legal" | "monsters" | "hand"
+  | "hp"
+  | "gold"
+  | "floor"
+  | "legal"
+  | "monsters"
+  | "hand"
+  | "deck"
+  | "relic"
 >;
 
 const STATE_KEYS_HP: StateTooltipKeys = ["hp"];
@@ -168,6 +175,8 @@ const STATE_KEYS_FLOOR: StateTooltipKeys = ["floor"];
 const STATE_KEYS_LEGAL: StateTooltipKeys = ["legal"];
 const STATE_KEYS_MONSTERS: StateTooltipKeys = ["monsters"];
 const STATE_KEYS_HAND: StateTooltipKeys = ["hand"];
+const STATE_KEYS_DECK: StateTooltipKeys = ["deck"];
+const STATE_KEYS_RELIC: StateTooltipKeys = ["relic"];
 
 type TooltipLite = {
   active?: boolean;
@@ -213,7 +222,6 @@ export function RunMetricsPage() {
   const [levelMode, setLevelMode] = useState<"event" | "floor">("event");
   const {
     runs,
-    archived,
     run,
     setRun,
     loading,
@@ -399,7 +407,6 @@ export function RunMetricsPage() {
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-[#0a0d11] to-[#06080a] text-sm text-slate-300">
       <RunMetricsRunBar
         runs={runs}
-        archived={archived}
         run={run}
         onRunChange={setRun}
         loading={loading}
@@ -460,11 +467,7 @@ export function RunMetricsPage() {
         ) : null}
 
         {summary ? (
-          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Kpi
-              label="Snapshots"
-              value={fmtNumEn(summary.state_row_count)}
-            />
+          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <Kpi
               label="Tokens (executed)"
               value={`in ${fmtNumEn(executedInOutTokens.input)} · out ${fmtNumEn(executedInOutTokens.output)}`}
@@ -478,7 +481,17 @@ export function RunMetricsPage() {
             <Kpi
               label="Levels reached"
               value={levelsReachedKpi(summary)}
-              title="Highest act and floor in any snapshot."
+              title="Highest act and floor in recorded progression."
+            />
+            <Kpi
+              label="Run outcome"
+              value={runOutcomeKpi(summary)}
+              title={runOutcomeTitle(summary)}
+            />
+            <Kpi
+              label="Final score"
+              value={runScoreKpi(summary)}
+              title="From game-over screen (run_metrics run_end row, GAME_OVER snapshot, or run_end_snapshot.json)."
             />
           </section>
         ) : null}
@@ -638,6 +651,52 @@ export function RunMetricsPage() {
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>
+                <ChartCard title="Deck size">
+                  <ResponsiveContainer width="100%" height={CHART_H}>
+                    <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
+                      <CartesianGrid {...GRID} />
+                      <XAxis dataKey="event_index" type="number" {...X_AXIS_EVENT_INDEX} />
+                      <YAxis {...Y_AXIS_DEFAULT} />
+                      <Tooltip
+                        content={TooltipStateDeck}
+                        isAnimationActive={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="line_deck_size"
+                        name="deck_size"
+                        stroke="#38bdf8"
+                        dot={false}
+                        strokeWidth={2}
+                        connectNulls
+                        isAnimationActive={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+                <ChartCard title="Relics">
+                  <ResponsiveContainer width="100%" height={CHART_H}>
+                    <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
+                      <CartesianGrid {...GRID} />
+                      <XAxis dataKey="event_index" type="number" {...X_AXIS_EVENT_INDEX} />
+                      <YAxis {...Y_AXIS_DEFAULT} />
+                      <Tooltip
+                        content={TooltipStateRelic}
+                        isAnimationActive={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="line_relic_count"
+                        name="relic_count"
+                        stroke="#c084fc"
+                        dot={false}
+                        strokeWidth={2}
+                        connectNulls
+                        isAnimationActive={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </ChartCard>
               </div>
             ) : (
               <div className="grid gap-6 lg:grid-cols-2">
@@ -710,7 +769,7 @@ export function RunMetricsPage() {
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>
-                <ChartCard title="Legal (mean)">
+                <ChartCard title="Legal Actions (mean)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={floorStateChartRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -764,6 +823,48 @@ export function RunMetricsPage() {
                         dataKey="mean_hand_size"
                         name="mean_hand_size"
                         stroke="#34d399"
+                        dot={false}
+                        strokeWidth={2}
+                        connectNulls
+                        isAnimationActive={false}
+                      />
+                      <FloorActDividerLines xs={floorStateActDividers} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+                <ChartCard title="Deck size (min)">
+                  <ResponsiveContainer width="100%" height={CHART_H}>
+                    <LineChart data={floorStateChartRows} margin={CHART_MARGIN_TIGHT}>
+                      <CartesianGrid {...GRID} />
+                      <XAxis {...X_AXIS_FLOOR_LEVEL} />
+                      <YAxis {...Y_AXIS_DEFAULT} />
+                      <Tooltip content={TooltipFloorStateDeck} isAnimationActive={false} />
+                      <Line
+                        type="monotone"
+                        dataKey="min_deck_size"
+                        name="min_deck_size"
+                        stroke="#38bdf8"
+                        dot={false}
+                        strokeWidth={2}
+                        connectNulls
+                        isAnimationActive={false}
+                      />
+                      <FloorActDividerLines xs={floorStateActDividers} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+                <ChartCard title="Relics (min)">
+                  <ResponsiveContainer width="100%" height={CHART_H}>
+                    <LineChart data={floorStateChartRows} margin={CHART_MARGIN_TIGHT}>
+                      <CartesianGrid {...GRID} />
+                      <XAxis {...X_AXIS_FLOOR_LEVEL} />
+                      <YAxis {...Y_AXIS_DEFAULT} />
+                      <Tooltip content={TooltipFloorStateRelic} isAnimationActive={false} />
+                      <Line
+                        type="monotone"
+                        dataKey="min_relic_count"
+                        name="min_relic_count"
+                        stroke="#c084fc"
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -1104,6 +1205,29 @@ function levelsReachedKpi(summary: {
   return "—";
 }
 
+function runOutcomeKpi(summary: MetricsSummary): string {
+  const ro = summary.run_outcome;
+  if (!ro) return "—";
+  if (ro.victory === true) return "Victory";
+  if (ro.victory === false) return "Defeated";
+  return "Unknown";
+}
+
+function runScoreKpi(summary: MetricsSummary): string {
+  const sc = summary.run_outcome?.score;
+  if (typeof sc === "number" && Number.isFinite(sc)) return fmtNumEn(sc);
+  return "—";
+}
+
+function runOutcomeTitle(summary: MetricsSummary): string | undefined {
+  const parts: string[] = [];
+  const ro = summary.run_outcome;
+  if (ro?.screen_name) parts.push(`screen_name: ${ro.screen_name}`);
+  if (ro?.recorded_at) parts.push(`recorded_at: ${ro.recorded_at}`);
+  if (summary.has_run_end_snapshot) parts.push("run_end_snapshot.json on disk");
+  return parts.length ? parts.join(" · ") : undefined;
+}
+
 function Kpi({
   label,
   value,
@@ -1154,7 +1278,7 @@ function StateTooltip({
 }: {
   active?: boolean;
   payload?: ReadonlyArray<{ payload?: unknown }> | undefined;
-  keys: Array<"hp" | "gold" | "floor" | "legal" | "monsters" | "hand">;
+  keys: StateTooltipKeys;
 }) {
   if (!active || !payload?.[0]) return null;
   const row = payload[0].payload as StateRow | undefined;
@@ -1223,6 +1347,12 @@ function StateTooltip({
           </div>
           <div className="text-[10px] text-slate-400">{row.hand_names_preview}</div>
         </>
+      ) : null}
+      {keys.includes("deck") ? (
+        <div>Deck size: {fmtNumEn(row.line_deck_size)}</div>
+      ) : null}
+      {keys.includes("relic") ? (
+        <div>Relics: {fmtNumEn(row.line_relic_count)}</div>
       ) : null}
     </div>
   );
@@ -1405,7 +1535,9 @@ function TooltipFloorStateLegal(tp: TooltipLite) {
         act={row.act}
         floor_label={row.floor_label}
       />
-      <div className="tabular-nums">Legal (mean): {fmtNumEn(row.mean_legal)}</div>
+      <div className="tabular-nums">
+        Legal Actions (mean): {fmtNumEn(row.mean_legal)}
+      </div>
     </div>
   );
 }
@@ -1439,6 +1571,40 @@ function TooltipFloorStateHand(tp: TooltipLite) {
       />
       <div className="tabular-nums">
         Hand (mean): {fmtNumEn(row.mean_hand_size, 2)}
+      </div>
+    </div>
+  );
+}
+
+function TooltipFloorStateDeck(tp: TooltipLite) {
+  if (!tp.active || !tp.payload?.[0]) return null;
+  const row = tp.payload[0].payload as FloorStateAggRow;
+  return (
+    <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+      <FloorLevelTooltipHeader
+        floor={row.floor}
+        act={row.act}
+        floor_label={row.floor_label}
+      />
+      <div className="tabular-nums">
+        Deck size (min): {fmtNumEn(row.min_deck_size)}
+      </div>
+    </div>
+  );
+}
+
+function TooltipFloorStateRelic(tp: TooltipLite) {
+  if (!tp.active || !tp.payload?.[0]) return null;
+  const row = tp.payload[0].payload as FloorStateAggRow;
+  return (
+    <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+      <FloorLevelTooltipHeader
+        floor={row.floor}
+        act={row.act}
+        floor_label={row.floor_label}
+      />
+      <div className="tabular-nums">
+        Relics (min): {fmtNumEn(row.min_relic_count)}
       </div>
     </div>
   );
@@ -1558,6 +1724,18 @@ function TooltipStateMonsters(tp: TooltipLite) {
 function TooltipStateHand(tp: TooltipLite) {
   return (
     <StateTooltip active={tp.active} payload={tp.payload} keys={STATE_KEYS_HAND} />
+  );
+}
+
+function TooltipStateDeck(tp: TooltipLite) {
+  return (
+    <StateTooltip active={tp.active} payload={tp.payload} keys={STATE_KEYS_DECK} />
+  );
+}
+
+function TooltipStateRelic(tp: TooltipLite) {
+  return (
+    <StateTooltip active={tp.active} payload={tp.payload} keys={STATE_KEYS_RELIC} />
   );
 }
 

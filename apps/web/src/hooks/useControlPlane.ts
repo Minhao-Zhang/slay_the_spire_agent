@@ -98,9 +98,6 @@ export function useControlPlane() {
   );
 
   const [replayRuns, setReplayRuns] = useState<string[]>([]);
-  const [replayArchived, setReplayArchived] = useState<Record<string, boolean>>(
-    {},
-  );
   const [replayPickerRun, setReplayPickerRun] = useState("");
   const [replayRunName, setReplayRunName] = useState("");
   const [replayFiles, setReplayFiles] = useState<string[]>([]);
@@ -179,7 +176,7 @@ export function useControlPlane() {
       if (trimmed.toLowerCase().endsWith(".zip")) {
         pushLog(
           "SYSTEM",
-          `Run ${trimmed} is an archived zip — frame replay is not available. Open Run metrics (/metrics) to chart metrics if present.`,
+          `Run ${trimmed} is a zip archive — not listed for replay. Use an unzipped log folder under logs/.`,
         );
         return;
       }
@@ -231,6 +228,21 @@ export function useControlPlane() {
       replayIndex,
       replayRunName,
     ],
+  );
+
+  /** 1-based frame index in `[1, replayFiles.length]`. No-op if out of range or not replaying. */
+  const replayJumpToFrame = useCallback(
+    (oneBased: number) => {
+      if (!replayRunName || replayFiles.length === 0 || replayBusy) return;
+      const n = replayFiles.length;
+      const i0 = Math.trunc(oneBased) - 1;
+      if (!Number.isFinite(i0) || i0 < 0 || i0 > n - 1) return;
+      setReplayBusy(true);
+      void loadReplayFrameAt(replayRunName, replayFiles, i0).finally(() =>
+        setReplayBusy(false),
+      );
+    },
+    [loadReplayFrameAt, replayBusy, replayFiles, replayRunName],
   );
 
   const queueManualCommand = useCallback(
@@ -323,12 +335,10 @@ export function useControlPlane() {
         if (!r.ok) return;
         const body = (await r.json()) as {
           runs?: string[];
-          archived?: Record<string, boolean>;
           status?: string;
         };
         if (body.status === "error") return;
         setReplayRuns(body.runs ?? []);
-        setReplayArchived(body.archived ?? {});
       } catch {
         /* ignore */
       }
@@ -375,7 +385,6 @@ export function useControlPlane() {
     retryAgent,
     pushLog,
     replayRuns,
-    replayArchived,
     replayPickerRun,
     setReplayPickerRun,
     replayRunName,
@@ -384,6 +393,7 @@ export function useControlPlane() {
     replayBusy,
     loadReplayRun,
     replaySeek,
+    replayJumpToFrame,
     clearReplaySelection,
     replayAiSidecar,
   };
