@@ -148,17 +148,273 @@ export function aiExecutedForSeries(rows: AiRow[]): AiRow[] {
   return rows.filter((r) => r.status === "executed");
 }
 
-export function screenTypeOrder(states: StateRow[]): string[] {
-  const seen = new Set<string>();
-  const order: string[] = [];
-  for (const s of states) {
-    const k = s.vm.screen_type?.trim() || "unknown";
-    if (!seen.has(k)) {
-      seen.add(k);
-      order.push(k);
+/** Stable bucket id for grouping state + AI rows by act+floor. */
+export type FloorBucketMeta = {
+  floor_key: string;
+  floor_label: string;
+  act: number | null;
+  floor: number | null;
+  /** Minimum event_index in this bucket (run order). */
+  first_event_index: number;
+};
+
+export function floorBucketForStateRow(row: StateRow): FloorBucketMeta {
+  const act = row.vm.act ?? null;
+  const floor = row.vm.floor ?? null;
+  const hasAct = typeof act === "number" && Number.isFinite(act);
+  const hasFloor = typeof floor === "number" && Number.isFinite(floor);
+  const floor_key =
+    hasAct || hasFloor
+      ? `${hasAct ? act : "?"}\u200f:\u200f${hasFloor ? floor : "?"}`
+      : "__unknown__";
+  const floor_label =
+    hasAct && hasFloor
+      ? `A${act}·F${floor}`
+      : hasFloor
+        ? `F${floor}`
+        : hasAct
+          ? `A${act}`
+          : "—";
+  return {
+    floor_key,
+    floor_label,
+    act: hasAct ? act : null,
+    floor: hasFloor ? floor : null,
+    first_event_index: row.event_index,
+  };
+}
+
+/** Sort floor buckets for charts: by map level (`floor`), unknown/missing floor last. */
+export function sortFloorBucketsByLevel<
+  T extends FloorBucketMeta & { first_event_index: number },
+>(rows: T[]): void {
+  rows.sort((a, b) => {
+    const unkA = a.floor_key === "__unknown__" || a.floor == null;
+    const unkB = b.floor_key === "__unknown__" || b.floor == null;
+    if (unkA !== unkB) return unkA ? 1 : -1;
+    if (unkA && unkB) return a.first_event_index - b.first_event_index;
+    return (a.floor! - b.floor!) || a.first_event_index - b.first_event_index;
+  });
+}
+
+/**
+ * X positions (midpoints between floor levels) where `act` changes — for vertical
+ * reference lines on floor-level charts.
+ */
+export function actTransitionMidXs(
+  rows: ReadonlyArray<{ act: number | null; floor: number | null }>,
+): number[] {
+  const xs: number[] = [];
+  const withFloor = rows.filter(
+    (r): r is { act: number | null; floor: number } =>
+      typeof r.floor === "number" && Number.isFinite(r.floor),
+  );
+  for (let i = 1; i < withFloor.length; i++) {
+    const p = withFloor[i - 1];
+    const c = withFloor[i];
+    if (p.act != null && c.act != null && p.act !== c.act) {
+      xs.push((p.floor + c.floor) / 2);
     }
   }
-  return order;
+  return xs;
+}
+
+function mean(nums: number[]): number {
+  if (nums.length === 0) return NaN;
+  return nums.reduce((s, x) => s + x, 0) / nums.length;
+}
+
+/** One row per floor bucket: mean of state snapshots in that bucket (floor mode). */
+export type FloorStateAggRow = FloorBucketMeta & {
+  mean_current_hp: number | null;
+  mean_max_hp: number | null;
+  mean_gold: number | null;
+  mean_legal: number | null;
+  mean_monster_hp_sum: number | null;
+  mean_hand_size: number | null;
+  x_rank: number;
+};
+
+export function deriveFloorStateAggRows(stateRows: StateRow[]): FloorStateAggRow[] {
+  const groups = new Map<
+    string,
+    { meta: FloorBucketMeta; rows: StateRow[] }
+  >();
+  for (const row of stateRows) {
+    const meta = floorBucketForStateRow(row);
+    const prev = groups.get(meta.floor_key);
+    if (!prev) {
+      groups.set(meta.floor_key, {
+        meta: { ...meta, first_event_index: row.event_index },
+        rows: [row],
+      });
+    } else {
+      prev.rows.push(row);
+      if (row.event_index < prev.meta.first_event_index) {
+        prev.meta.first_event_index = row.event_index;
+      }
+    }
+  }
+  const out: FloorStateAggRow[] = [];
+  for (const { meta, rows } of groups.values()) {
+    const hp = rows
+      .map((r) => r.line_current_hp)
+      .filter((x): x is number => x !== null && Number.isFinite(x));
+    const mxhp = rows
+      .map((r) => r.line_max_hp)
+      .filter((x): x is number => x !== null && Number.isFinite(x));
+    const gold = rows
+      .map((r) => r.line_gold)
+      .filter((x): x is number => x !== null && Number.isFinite(x));
+    const legal = rows
+      .map((r) => r.line_legal_action_count)
+      .filter((x): x is number => x !== null && Number.isFinite(x));
+    const msum = rows
+      .map((r) => r.monster_hp_sum)
+      .filter((x): x is number => x !== null && Number.isFinite(x));
+    const hand = rows.map((r) => r.hand_size).filter((x) => Number.isFinite(x));
+    const avgOrNull = (arr: number[]) => (arr.length === 0 ? null : mean(arr));
+    out.push({
+      ...meta,
+      mean_current_hp: avgOrNull(hp),
+      mean_max_hp: avgOrNull(mxhp),
+      mean_gold: avgOrNull(gold),
+      mean_legal: avgOrNull(legal),
+      mean_monster_hp_sum: avgOrNull(msum),
+      mean_hand_size: avgOrNull(hand),
+      x_rank: 0,
+    });
+  }
+  sortFloorBucketsByLevel(out);
+  out.forEach((r, i) => {
+    r.x_rank = i;
+  });
+  return out;
+}
+
+/** event_index -> floor_key for joining AI rows to floor buckets. */
+export function buildEventIndexToFloorKey(stateRows: StateRow[]): Map<number, string> {
+  const m = new Map<number, string>();
+  for (const row of stateRows) {
+    m.set(row.event_index, floorBucketForStateRow(row).floor_key);
+  }
+  return m;
+}
+
+export type FloorAiAggRow = FloorBucketMeta & {
+  x_rank: number;
+  decision_count: number;
+  sum_input_tokens: number;
+  sum_output_tokens: number;
+  sum_total_tokens: number;
+  mean_latency_ms: number | null;
+};
+
+export function deriveFloorAiAggRows(
+  aiExec: AiRow[],
+  eventToFloorKey: Map<number, string>,
+  floorOrder: FloorStateAggRow[],
+): FloorAiAggRow[] {
+  const keyToMeta = new Map<string, FloorBucketMeta>();
+  const unknownMeta: FloorBucketMeta = {
+    floor_key: "__unknown__",
+    floor_label: "—",
+    act: null,
+    floor: null,
+    first_event_index: 1e15,
+  };
+  keyToMeta.set("__unknown__", { ...unknownMeta });
+  for (const f of floorOrder) {
+    keyToMeta.set(f.floor_key, {
+      floor_key: f.floor_key,
+      floor_label: f.floor_label,
+      act: f.act,
+      floor: f.floor,
+      first_event_index: f.first_event_index,
+    });
+  }
+  const fkMinEi = new Map<string, number>();
+  const groups = new Map<
+    string,
+    {
+      inputs: number[];
+      outputs: number[];
+      totals: number[];
+      lats: number[];
+    }
+  >();
+  for (const r of aiExec) {
+    const ei = r.event_index;
+    if (typeof ei !== "number" || !Number.isFinite(ei)) continue;
+    const fk = eventToFloorKey.get(ei) ?? "__unknown__";
+    const prevMin = fkMinEi.get(fk);
+    if (prevMin === undefined || ei < prevMin) fkMinEi.set(fk, ei);
+    if (!keyToMeta.has(fk)) {
+      keyToMeta.set(fk, {
+        ...unknownMeta,
+        floor_key: fk,
+        floor_label: fk,
+        first_event_index: ei,
+      });
+    }
+    let g = groups.get(fk);
+    if (!g) {
+      g = { inputs: [], outputs: [], totals: [], lats: [] };
+      groups.set(fk, g);
+    }
+    const ti = r.input_tokens;
+    const to = r.output_tokens;
+    const tt = r.total_tokens;
+    const lat = r.latency_ms;
+    if (typeof ti === "number" && Number.isFinite(ti)) g.inputs.push(ti);
+    if (typeof to === "number" && Number.isFinite(to)) g.outputs.push(to);
+    if (typeof tt === "number" && Number.isFinite(tt)) g.totals.push(tt);
+    if (typeof lat === "number" && Number.isFinite(lat)) g.lats.push(lat);
+  }
+  const rows: FloorAiAggRow[] = [];
+  for (const [fk, g] of groups) {
+    const base = keyToMeta.get(fk);
+    if (!base) continue;
+    const meta: FloorBucketMeta = {
+      ...base,
+      first_event_index: Math.min(
+        base.first_event_index,
+        fkMinEi.get(fk) ?? base.first_event_index,
+      ),
+    };
+    rows.push({
+      ...meta,
+      x_rank: 0,
+      decision_count: g.totals.length || g.inputs.length,
+      sum_input_tokens: g.inputs.reduce((s, x) => s + x, 0),
+      sum_output_tokens: g.outputs.reduce((s, x) => s + x, 0),
+      sum_total_tokens: g.totals.reduce((s, x) => s + x, 0),
+      mean_latency_ms: g.lats.length ? mean(g.lats) : null,
+    });
+  }
+  sortFloorBucketsByLevel(rows);
+  rows.forEach((r, i) => {
+    r.x_rank = i;
+  });
+  return rows;
+}
+
+/** Cumulative tokens by floor order (sum of totals up through each bucket). */
+export function deriveFloorCumulativeTokens(floorAi: FloorAiAggRow[]): Array<
+  FloorAiAggRow & {
+    cumulative_total: number;
+    cumulative_total_k: number;
+  }
+> {
+  let cum = 0;
+  return floorAi.map((row) => {
+    cum += row.sum_total_tokens;
+    return {
+      ...row,
+      cumulative_total: cum,
+      cumulative_total_k: cum / 1000,
+    };
+  });
 }
 
 export type BinnedNumeric = {

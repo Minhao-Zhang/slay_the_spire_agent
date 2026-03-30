@@ -879,6 +879,104 @@ async def get_run_metrics(
     return out
 
 
+def _game_state_from_frame_envelope(envelope: dict[str, Any]) -> dict[str, Any] | None:
+    st = envelope.get("state")
+    if isinstance(st, dict):
+        gs = st.get("game_state")
+        if isinstance(gs, dict):
+            return gs
+    return None
+
+
+def _build_map_history_for_run_dir(run_dir: str) -> dict[str, Any]:
+    """Derive per-act map layout and MAP-screen visited path from state frame JSON."""
+    try:
+        files = sorted(
+            f
+            for f in os.listdir(run_dir)
+            if f.endswith(".json") and not f.endswith(".ai.json")
+        )
+    except OSError:
+        return {"ok": False, "reason": "read_error", "acts": []}
+
+    per_act: dict[int, dict[str, Any]] = {}
+    for fname in files:
+        path = os.path.join(run_dir, fname)
+        try:
+            with open(path, encoding="utf-8") as fp:
+                envelope = json.load(fp)
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if not isinstance(envelope, dict):
+            continue
+        game = _game_state_from_frame_envelope(envelope)
+        if not game:
+            continue
+        act_raw = game.get("act")
+        if isinstance(act_raw, float) and act_raw.is_integer():
+            act_raw = int(act_raw)
+        if not isinstance(act_raw, int):
+            continue
+        act = int(act_raw)
+        entry = per_act.setdefault(
+            act,
+            {"nodes": None, "boss_name": None, "visited_path": []},
+        )
+        boss = game.get("act_boss")
+        if isinstance(boss, str) and boss.strip():
+            entry["boss_name"] = boss.strip()
+        m = game.get("map")
+        if isinstance(m, list) and len(m) > 0:
+            entry["nodes"] = m
+        stype = game.get("screen_type")
+        if stype == "MAP":
+            ss = game.get("screen_state")
+            if isinstance(ss, dict):
+                cn = ss.get("current_node")
+                if isinstance(cn, dict):
+                    x, y = cn.get("x"), cn.get("y")
+                    if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+                        xi, yi = int(x), int(y)
+                        sym = cn.get("symbol")
+                        vpath: list[dict[str, Any]] = entry["visited_path"]
+                        if not vpath or vpath[-1]["x"] != xi or vpath[-1]["y"] != yi:
+                            pt: dict[str, Any] = {"x": xi, "y": yi}
+                            if isinstance(sym, str):
+                                pt["symbol"] = sym
+                            vpath.append(pt)
+
+    acts_out: list[dict[str, Any]] = []
+    for act_key in sorted(per_act.keys()):
+        e = per_act[act_key]
+        nodes = e.get("nodes")
+        if not isinstance(nodes, list) or len(nodes) == 0:
+            continue
+        acts_out.append(
+            {
+                "act": act_key,
+                "nodes": nodes,
+                "visited_path": e.get("visited_path") or [],
+                "boss_name": e.get("boss_name"),
+            }
+        )
+    return {"ok": True, "acts": acts_out}
+
+
+@app.get("/api/runs/{run_name}/map_history")
+async def get_run_map_history(run_name: str) -> dict[str, Any]:
+    """Per-act Spire map nodes + visited path on MAP screens (from frame JSON)."""
+    if run_name.lower().endswith(".zip"):
+        return {"ok": False, "run": run_name, "reason": "zip_archive", "acts": []}
+    run_dir = _safe_run_dir(run_name)
+    if run_dir is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    data = _build_map_history_for_run_dir(run_dir)
+    data["run"] = run_name
+    if not data.get("ok"):
+        data.setdefault("acts", [])
+    return data
+
+
 @app.get("/api/runs/{run_name}/frames")
 async def get_run_frame_list(run_name: str) -> dict[str, Any]:
     """Sorted state JSON filenames (excludes ``*.ai.json``) for React replay."""

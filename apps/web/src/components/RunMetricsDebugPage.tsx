@@ -1,5 +1,4 @@
 import { useMemo, type ReactNode } from "react";
-import { Link } from "react-router-dom";
 import {
   CartesianGrid,
   ResponsiveContainer,
@@ -13,6 +12,7 @@ import {
 import { useRunMetricsData } from "../hooks/useRunMetricsData";
 import { fmtIntEn, tickFmtIntEn } from "../lib/formatDisplayNumber";
 import { deriveAiRows } from "../lib/runMetricsDerive";
+import { RunMetricsRunBar } from "./RunMetricsRunBar";
 
 const CHART_H = 220;
 const SLATE_AXIS = { stroke: "#64748b", fontSize: 11 };
@@ -44,9 +44,9 @@ function TooltipFailureScatter(tp: TooltipLite) {
   const p = tp.payload[0].payload as FailureScatterPoint;
   return (
     <div className="max-w-xs rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
-      <div className="font-mono">event_index: {fmtIntEn(p.event_index)}</div>
-      <div>status: {p.status}</div>
-      <div>decision_id: {p.decision_id}</div>
+      <div className="font-mono">Event {fmtIntEn(p.event_index)}</div>
+      <div>Status: {p.status}</div>
+      <div>Decision: {p.decision_id}</div>
       {p.validation_error !== "—" ? (
         <div className="mt-1 text-amber-200/90">validation: {p.validation_error}</div>
       ) : null}
@@ -88,50 +88,19 @@ export function RunMetricsDebugPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-[#0a0d11] to-[#06080a] text-sm text-slate-300">
-      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-700/90 bg-slate-900/80 px-4 py-3 backdrop-blur-sm">
-        <Link
-          to="/"
-          className="font-console text-xs font-semibold uppercase tracking-wide text-sky-400 hover:text-sky-300"
-        >
-          ← Monitor
-        </Link>
-        <Link
-          to={run ? `/metrics?run=${encodeURIComponent(run)}` : "/metrics"}
-          className="font-console text-xs font-semibold uppercase tracking-wide text-sky-400 hover:text-sky-300"
-        >
-          ← Run metrics
-        </Link>
-        <span className="font-console text-sm font-bold tracking-[0.12em] text-slate-100">
-          METRICS DEBUG
-        </span>
-        <label className="flex items-center gap-2">
-          <span className="text-xs uppercase tracking-wide text-slate-500">
-            Run
-          </span>
-          <select
-            value={run}
-            onChange={(e) => setRun(e.target.value)}
-            className="font-console h-8 max-w-[18rem] rounded border border-slate-700 bg-slate-950/80 px-2 text-xs text-slate-200 outline-none"
-            aria-label="Log run"
-          >
-            <option value="">Select run…</option>
-            {runs.map((r) => (
-              <option key={r} value={r}>
-                {r}
-                {archived[r] ? " · zip" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        {loading ? (
-          <span className="text-xs text-slate-500">Loading…</span>
-        ) : null}
-        {payload?.ok && frameCount !== null ? (
-          <span className="font-telemetry text-xs tabular-nums text-slate-500">
-            Frames: {fmtIntEn(frameCount)} · Rows: {fmtIntEn(records.length)}
-          </span>
-        ) : null}
-      </header>
+      <RunMetricsRunBar
+        runs={runs}
+        archived={archived}
+        run={run}
+        onRunChange={setRun}
+        loading={loading}
+        frameCount={frameCount}
+        recordsLength={records.length}
+        metricsReason={
+          payload && !payload.ok ? payload.reason : null
+        }
+        variant="debug"
+      />
 
       <main className="space-y-6 px-4 py-5">
         {parseErrors.length > 0 ? (
@@ -157,7 +126,7 @@ export function RunMetricsDebugPage() {
               <h2 className="mb-3 font-console text-xs font-semibold uppercase tracking-wide text-slate-400">
                 Failures (non-executed)
               </h2>
-              <ChartCard title="Failure events vs event_index">
+              <ChartCard title="Failures">
                 <ResponsiveContainer width="100%" height={CHART_H}>
                   <ScatterChart margin={CHART_MARGIN_SCATTER}>
                     <CartesianGrid {...GRID} />
@@ -184,11 +153,11 @@ export function RunMetricsDebugPage() {
                 <table className="w-full min-w-[640px] border-collapse text-left text-xs">
                   <thead>
                     <tr className="border-b border-slate-700 text-slate-500">
-                      <th className="p-2 font-medium">event_index</th>
-                      <th className="p-2 font-medium">status</th>
-                      <th className="p-2 font-medium">decision_id</th>
-                      <th className="p-2 font-medium">validation_error</th>
-                      <th className="p-2 font-medium">error</th>
+                      <th className="p-2 font-medium">Event</th>
+                      <th className="p-2 font-medium">Status</th>
+                      <th className="p-2 font-medium">Decision</th>
+                      <th className="p-2 font-medium">Validation</th>
+                      <th className="p-2 font-medium">Error</th>
                     </tr>
                   </thead>
                   <tbody>

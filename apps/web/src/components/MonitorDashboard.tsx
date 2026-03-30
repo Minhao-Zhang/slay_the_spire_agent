@@ -18,6 +18,7 @@ import {
 import {
   labeledTooltip,
   monsterTooltip,
+  powerChipLabel,
 } from "../lib/entityKb";
 import { cardNameClass } from "../lib/cardTypeStyle";
 import {
@@ -334,26 +335,14 @@ function EnemyCard({ m }: { m: Record<string, unknown> }) {
             powers.map((p, i) => (
               <HoverTip
                 key={i}
-                tip={labeledTooltip(
-                  `${String(p.name ?? "?")}${
-                    p.stacks != null
-                      ? ` (${typeof p.stacks === "number" ? fmtIntEn(p.stacks) : String(p.stacks)})`
-                      : ""
-                  }`,
-                  p,
-                )}
+                tip={labeledTooltip(powerChipLabel(p), p, {
+                  skipPowerAmountLead: true,
+                })}
                 side="bottom"
                 className="inline-flex"
               >
                 <span className="inline-flex cursor-help rounded border border-purple-700/50 bg-purple-900/40 px-1.5 py-0.5 text-xs text-purple-300">
-                  {String(p.name ?? "?")}
-                  {p.stacks != null
-                    ? ` (${
-                        typeof p.stacks === "number"
-                          ? fmtIntEn(p.stacks)
-                          : String(p.stacks)
-                      })`
-                    : ""}
+                  {powerChipLabel(p)}
                 </span>
               </HoverTip>
             ))
@@ -1019,12 +1008,13 @@ export function MonitorDashboard() {
       "— User prompt not available (wait for agent trace or check dashboard logs). —";
 
   const aiRailTitle =
-    "LLM / replay backend for this row. Legacy dashboard snapshot does not populate thread_id; state is the current frame id. Run seed comes from game_state.seed on the current ingress frame.";
-  const runSeedDisplay =
+    "LLM backend and current frame id for this snapshot.";
+  const runSeedRaw =
     snapshot?.agent?.run_seed != null &&
     String(snapshot.agent.run_seed).trim() !== ""
-      ? fmtGameStatDisplay(snapshot.agent.run_seed)
-      : "n/a";
+      ? String(snapshot.agent.run_seed).trim()
+      : null;
+  const runSeedDisplay = runSeedRaw ?? "n/a";
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-gradient-to-b from-slate-900 via-[#0a0d11] to-[#06080a] text-sm text-slate-300 select-none">
@@ -1033,9 +1023,6 @@ export function MonitorDashboard() {
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
           <span className="font-console text-sm font-bold tracking-[0.14em] text-slate-100">
             SPIRE AGENT
-            <span className="ml-1.5 font-medium tracking-normal text-slate-500">
-              · operator
-            </span>
           </span>
           <Link
             to="/metrics"
@@ -1051,10 +1038,10 @@ export function MonitorDashboard() {
             }`}
             title={
               gameFeedLive
-                ? "Live: the game bridge has sent state recently (CommunicationMod + main.py)."
+                ? "Fresh game state is arriving."
                 : !connected
-                  ? "WebSocket to the dashboard is disconnected."
-                  : "Offline: dashboard is connected but there is no fresh game feed (stop the game, or wait past DASHBOARD_INGRESS_MAX_AGE_SECONDS)."
+                  ? "Dashboard WebSocket disconnected."
+                  : "No fresh game state (game stopped or stale)."
             }
           >
             <span className="relative flex h-1.5 w-1.5">
@@ -1072,16 +1059,31 @@ export function MonitorDashboard() {
 
           <div
             className="flex flex-wrap items-center gap-x-3 gap-y-1 border-l border-slate-600/70 pl-4"
-            title="Choosing a run loads its first frame automatically. Prev/Next POST each JSON to /api/debug/ingress. While a run is selected, WebSocket snapshots are ignored so replay is not overwritten. Clear the run to resume live updates."
+            title="Replay loads frames from logs; live snapshots are paused until you clear the run."
           >
             <div
               className="flex min-w-0 items-center gap-1.5"
-              title="Run seed from agent snapshot (reproducibility). Shows n/a when the backend does not set it."
+              title="Run seed (click to copy when set)."
             >
               <span className={osdStatCaption}>Seed</span>
-              <span className="font-telemetry max-w-[12rem] truncate text-xs tabular-nums text-slate-400">
+              <button
+                type="button"
+                disabled={runSeedRaw == null}
+                className="border-0 bg-transparent p-0 font-telemetry max-w-[12rem] truncate text-left text-xs text-slate-400 hover:text-slate-200 disabled:cursor-default disabled:opacity-60 enabled:cursor-pointer enabled:underline-offset-2 enabled:hover:underline"
+                title={
+                  runSeedRaw
+                    ? "Click to copy seed (exact string, no formatting)"
+                    : undefined
+                }
+                onClick={() => {
+                  if (!runSeedRaw) return;
+                  void navigator.clipboard
+                    .writeText(runSeedRaw)
+                    .catch(() => {});
+                }}
+              >
                 {runSeedDisplay}
-              </span>
+              </button>
             </div>
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
               <span className={osdStatCaption}>Replay</span>
@@ -1165,15 +1167,13 @@ export function MonitorDashboard() {
           </span>
           <span className="text-amber-100/85">
             {" "}
-            — the monitor hides stale snapshots when CommunicationMod has not sent a
-            state for a while. Start the game +{" "}
-            <code className="rounded bg-black/25 px-1">src.main</code>, or choose a
-            run under <span className="font-medium">Replay</span>.
+            — stale feed; start the game bridge or use{" "}
+            <span className="font-medium">Replay</span>.
             {typeof snapshot.ingress_age_seconds === "number" ? (
               <span className="text-amber-200/80">
                 {" "}
-                Last packet was ~{fmtIntEn(Math.round(snapshot.ingress_age_seconds))}
-                s ago.
+                Last state ~{fmtIntEn(Math.round(snapshot.ingress_age_seconds))}s
+                ago.
               </span>
             ) : null}
           </span>
@@ -1314,12 +1314,14 @@ export function MonitorDashboard() {
                   {playerPowers.map((p, i) => (
                     <HoverTip
                       key={i}
-                      tip={labeledTooltip(String(p.name ?? "?"), p)}
+                      tip={labeledTooltip(powerChipLabel(p), p, {
+                        skipPowerAmountLead: true,
+                      })}
                       side="right"
                       className="w-full min-w-0"
                     >
                       <div className="cursor-help truncate rounded border border-slate-700 bg-slate-800/50 px-1.5 py-0.5 text-sm">
-                        {String(p.name ?? "?")}
+                        {powerChipLabel(p)}
                       </div>
                     </HoverTip>
                   ))}
@@ -1354,9 +1356,7 @@ export function MonitorDashboard() {
                           {nonCombatBoardHint}
                         </p>
                       ) : (
-                        <p className="text-xs text-slate-600">
-                          In combat but no living foes, or snapshot incomplete.
-                        </p>
+                        <p className="text-xs text-slate-600">No enemies.</p>
                       )}
                     </div>
                   ) : (
@@ -1390,9 +1390,7 @@ export function MonitorDashboard() {
                           {nonCombatBoardHint}
                         </p>
                       ) : (
-                        <p className="text-xs text-slate-600">
-                          Empty hand this turn, or combat not loaded.
-                        </p>
+                        <p className="text-xs text-slate-600">No cards in hand.</p>
                       )}
                     </div>
                   ) : (
@@ -1436,7 +1434,7 @@ export function MonitorDashboard() {
             <div className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-slate-700 bg-slate-950">
               <div
                 className={osdPanelStrip}
-                title="Same tactical user message as build_user_prompt in Python: from the live trace when state matches, otherwise a server preview (strategy memory may appear only after the agent builds the turn)."
+                title="Tactical user message for this state (live trace or server preview)."
               >
                 <span className="min-w-0 shrink truncate">LLM user prompt</span>
                 <button
@@ -1510,7 +1508,7 @@ export function MonitorDashboard() {
                   .toLowerCase()
                   .trim() === "manual"
               }
-              title="Propose/auto: clears the stuck trace, cancels any in-flight LLM proposal for this state, and allows the game loop to start a fresh proposal on the next tick. Disabled in manual mode (server no-op)."
+              title="Clear stuck trace and allow a fresh proposal on the next tick (no-op in manual mode)."
               className={osdBtnRetry}
               onClick={() => void retryAgent()}
             >
@@ -1611,8 +1609,8 @@ export function MonitorDashboard() {
                 </div>
                 <p className="font-telemetry text-xs leading-snug text-slate-500">
                   {hitlReadOnly
-                    ? "Replay: logged proposal only — approve/reject/edit do not apply."
-                    : "Approve runs the first command and leaves further steps to the game process queue when the model proposed a sequence. Reject cancels this proposal."}
+                    ? "Replay: view only (approve/reject/edit inactive)."
+                    : "Approve runs the first queued command; reject cancels this proposal."}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   <button
@@ -1620,9 +1618,7 @@ export function MonitorDashboard() {
                     className={osdBtnApprove}
                     disabled={hitlReadOnly}
                     title={
-                      hitlReadOnly
-                        ? "Replay: not connected to live agent"
-                        : undefined
+                      hitlReadOnly ? "Replay: actions disabled" : undefined
                     }
                     onClick={() => void resumeAgent("approve")}
                   >
@@ -1633,9 +1629,7 @@ export function MonitorDashboard() {
                     className={osdBtnReject}
                     disabled={hitlReadOnly}
                     title={
-                      hitlReadOnly
-                        ? "Replay: not connected to live agent"
-                        : undefined
+                      hitlReadOnly ? "Replay: actions disabled" : undefined
                     }
                     onClick={() => void resumeAgent("reject")}
                   >

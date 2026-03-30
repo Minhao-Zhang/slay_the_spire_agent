@@ -118,18 +118,11 @@ export function GameScreenPanel({
 
       case "EVENT": {
         const opts = (content.options as Record<string, unknown>[]) ?? [];
-        const eventKb = content.event_kb as Record<string, unknown> | undefined;
         return (
           <div className="custom-scroll min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300">
               {asStr(content.body_text)}
             </p>
-            {eventKb ? (
-              <p className="text-xs italic text-purple-400/95">
-                KB: {asStr(eventKb.name)}
-                {eventKb.is_shrine ? " (Shrine)" : ""}
-              </p>
-            ) : null}
             <div className="font-console text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               Options
             </div>

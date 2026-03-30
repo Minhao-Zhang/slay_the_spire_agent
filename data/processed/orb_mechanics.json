@@ -2,13 +2,8 @@
   "schema_version": 1,
   "global": {
     "bullets": [
-      "Orbs (Defect): each orb has a Passive that repeats and an Evoke when the orb is removed.",
-      "Channel places an orb in the right-most empty slot; if all slots are full, the right-most orb is Evoked first, then the new orb is placed.",
-      "Ingress order: array index 0 is the right-most slot (first for channel/evoke resolution in this ordering); higher indices are to the left.",
-      "Lightning, Frost, Dark passives trigger at end of turn; Plasma passive triggers at start of turn.",
-      "Focus improves Lightning, Frost, and Dark orb numbers shown below; Plasma is unaffected by Focus.",
-      "Dark: passive_amount/evoke_amount from the mod reflect scaled damage; Dark grows each end of turn and Evoke hits the lowest-current-HP enemy (leftmost on ties).",
-      "Lock-On (e.g. Bullseye): affected enemy takes 50% more damage from Lightning and Dark orbs."
+      "Ingress: slot index 0 is the rightmost orb (channel / evoke order for this UI).",
+      "Hover a chip for passive and evoke text from the current fight."
     ]
   },
   "types": {
@@ -45,7 +40,7 @@
   },
   "ui": {
     "strip_label": "Orbs",
-    "strip_help_title": "Orb mechanics",
+    "strip_help_title": "Orbs",
     "empty_chip": "Empty"
   }
 }

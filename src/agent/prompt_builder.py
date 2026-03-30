@@ -575,6 +575,12 @@ def _screen_content_lines(vm: dict[str, Any]) -> list[str]:
 
     elif screen_type == "CARD_REWARD":
         cards = content.get("cards") or []
+        lines.append(
+            "YOU DO NOT NEED TO TAKE A CARD ON THIS SCREEN. SKIP IS ALWAYS VALID AND OFTEN THE RIGHT CHOICE."
+        )
+        lines.append(
+            "TAKING A CARD IS OPTIONAL — IT ONLY HELPS YOU BUILD A STRONGER DECK WHEN A PICK FITS YOUR PLAN."
+        )
         lines.append("Choose one card to add to your deck (or skip):")
         for i, card in enumerate(cards):
             lines.append(_card_line(card, i, show_token=False))
@@ -700,6 +706,13 @@ def _screen_content_lines(vm: dict[str, Any]) -> list[str]:
         lines.append(f"{'Victory' if victory else 'Defeat'} — score: {score}")
 
     return lines
+
+
+# Shown next to HAND in combat prompts (engine behavior).
+HAND_SIZE_ENGINE_NOTE = (
+    "Maximum hand size is 10. Any cards you would get beyond that are just gone—"
+    "they never enter HAND; the rest of your deck stays in the draw pile."
+)
 
 
 # Guidance injected into the user prompt when making card/combat decisions.
@@ -854,6 +867,9 @@ def build_prompt_groups(
             sit_subs.append(PromptSubsection("MONSTERS", _fmt_list(monster_lines)))
         if hand_lines:
             sit_subs.append(PromptSubsection("HAND", _fmt_list(hand_lines)))
+        sit_subs.append(
+            PromptSubsection("Hand capacity", _fmt_list([HAND_SIZE_ENGINE_NOTE])),
+        )
         if power_lines:
             sit_subs.append(PromptSubsection("PLAYER POWERS", _fmt_list(power_lines)))
         if _combat_screen_context_worth_showing(screen_lines):
