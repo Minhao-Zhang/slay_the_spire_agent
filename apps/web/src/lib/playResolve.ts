@@ -1,5 +1,5 @@
 /**
- * Token PLAY resolution for the operator UI (aligned with legacy `state_processor`:
+ * Token PLAY resolution for the operator UI (aligned with `state_processor`:
  * `card_uuid_token` = first 6 hex chars of card UUID).
  */
 

@@ -452,7 +452,7 @@ def event_option_choose_index(option: dict, list_index: int) -> int:
     """Index for ``choose N`` on EVENT screens.
 
     CommunicationMod uses per-option ``choice_index`` (skipping disabled rows). Fall back
-    to the option's position in ``options`` when absent (legacy / simple events).
+    to the option's position in ``options`` when absent (simple events).
     """
     ci = option.get("choice_index")
     if isinstance(ci, int):

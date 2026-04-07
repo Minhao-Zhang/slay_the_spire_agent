@@ -4,8 +4,6 @@ from pathlib import Path
 
 # This file: <repo>/src/repo_paths.py
 PACKAGE_ROOT = Path(__file__).resolve().parent
-# Backward-compatible alias (prompts live under PACKAGE_ROOT / "agent" / "prompts")
-LEGACY_SRC_ROOT = PACKAGE_ROOT
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-__all__ = ["REPO_ROOT", "LEGACY_SRC_ROOT", "PACKAGE_ROOT"]
+__all__ = ["REPO_ROOT", "PACKAGE_ROOT"]

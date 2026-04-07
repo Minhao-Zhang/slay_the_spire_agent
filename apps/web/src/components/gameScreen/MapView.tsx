@@ -81,7 +81,7 @@ function sanitizeVisitedPath(
   return out;
 }
 
-/** Port of the legacy dashboard map view (dark theme). */
+/** Dashboard-style map view (dark theme). */
 export function MapView({
   mapData,
   onChoose = () => {},

@@ -446,7 +446,7 @@ class SpireDecisionAgent:
         state["previous_response_id"] = None
         state["tool_roundtrips"] = state.get("tool_roundtrips", 0) + 1
         state["trace"].response_text = (
-            state["trace"].response_text + f"\n\n[Legacy tool used: {parsed.tool_request.tool_name}]"
+            state["trace"].response_text + f"\n\n[Tool used: {parsed.tool_request.tool_name}]"
         ).strip()
         self._emit_trace(state["trace"])
         return state

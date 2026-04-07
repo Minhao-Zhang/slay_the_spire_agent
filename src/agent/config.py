@@ -8,9 +8,9 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 
-from src.repo_paths import LEGACY_SRC_ROOT, REPO_ROOT
+from src.repo_paths import PACKAGE_ROOT, REPO_ROOT
 
-DEFAULT_PROMPT_PATH = LEGACY_SRC_ROOT / "agent" / "prompts" / "system_prompt.md"
+DEFAULT_PROMPT_PATH = PACKAGE_ROOT / "agent" / "prompts" / "system_prompt.md"
 DEFAULT_STRATEGY_CORPUS_PATH = REPO_ROOT / "data" / "strategy" / "curated_strategy.md"
 
 

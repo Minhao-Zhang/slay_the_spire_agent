@@ -11,7 +11,7 @@ function compactSnippet(text: string, limit: number): string {
   return `${cleaned.slice(0, limit - 3).trimEnd()}...`;
 }
 
-/** In-run stack / intensity from CommunicationMod (`amount`); optional legacy top-level `stacks` number. */
+/** In-run stack / intensity from CommunicationMod (`amount`); optional top-level `stacks` number. */
 export function powerRuntimeAmount(
   p: Record<string, unknown> | null | undefined,
 ): number | null {

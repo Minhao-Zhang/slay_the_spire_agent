@@ -1,6 +1,6 @@
 # Operator UI (`@slay/web`)
 
-Vite + React + TypeScript + Tailwind. In development, **`/api`** and **`/ws`** are proxied to the **legacy** Python dashboard at **`127.0.0.1:8000`** (`uvicorn src.ui.dashboard:app`; see `vite.config.ts`).
+Vite + React + TypeScript + Tailwind. In development, **`/api`** and **`/ws`** are proxied to the Python dashboard at **`127.0.0.1:8000`** (`uvicorn src.ui.dashboard:app`; see `vite.config.ts`).
 
 **Routes:** **`/`** — monitor (projection + HITL). Start the dashboard on port 8000 before `npm run dev:web`.
 

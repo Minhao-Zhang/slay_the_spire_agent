@@ -1832,9 +1832,9 @@ export function MonitorDashboard() {
                         : "Raw output from the logged *.ai.json sidecar.";
                     }
                     if (b === "off" || b === "") {
-                      return "AI disabled or no API — enable LLM in legacy config for raw output here.";
+                      return "AI disabled or no API — enable LLM in agent config for raw output here.";
                     }
-                    return "Raw model output from legacy trace when available.";
+                    return "Raw model output from agent trace when available.";
                   })()}
                   spellCheck={false}
                 />

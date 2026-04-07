@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "slay-the-spire-agent"
 version = "0.1.0"
-description = "Slay the Spire LLM agent (legacy stack in src/; greenfield archived under archive/greenfield_src)"
+description = "Slay the Spire LLM agent — CommunicationMod bridge, FastAPI dashboard, and React operator UI"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

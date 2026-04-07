@@ -244,7 +244,7 @@ def _trace_to_proposal(trace: dict[str, Any] | None) -> dict[str, Any] | None:
             "rationale": None,
             "status": "stale",
             "error_reason": None,
-            "resolve_tag": "legacy:stale",
+            "resolve_tag": "agent:stale",
             "for_state_id": trace.get("state_id"),
             "user_prompt": None,
         }
@@ -274,12 +274,12 @@ def _trace_to_proposal(trace: dict[str, Any] | None) -> dict[str, Any] | None:
 
     command: str | None = final_cmd if final_cmd else None
     parsed_model: Any = parsed_prop
-    resolve_tag = "legacy:trace"
+    resolve_tag = "agent:trace"
 
     if st == "awaiting_approval" and command:
-        resolve_tag = "legacy:awaiting_approval"
+        resolve_tag = "agent:awaiting_approval"
     elif st == "invalid":
-        resolve_tag = "legacy:invalid"
+        resolve_tag = "agent:invalid"
         if not command and isinstance(parsed_prop, dict):
             cmds = parsed_prop.get("chosen_commands") or []
             if cmds:
@@ -291,7 +291,7 @@ def _trace_to_proposal(trace: dict[str, Any] | None) -> dict[str, Any] | None:
             if parsed_model is None:
                 parsed_model = live.final_decision.model_dump(mode="json")
     elif st == "error":
-        resolve_tag = "legacy:error"
+        resolve_tag = "agent:error"
 
     # In-flight: no validated canonical command on the trace yet
     if not command and live:
@@ -300,7 +300,7 @@ def _trace_to_proposal(trace: dict[str, Any] | None) -> dict[str, Any] | None:
             if parsed_model is None:
                 parsed_model = live.final_decision.model_dump(mode="json")
             if st in {"running", "building_prompt"}:
-                resolve_tag = "legacy:interim_parse"
+                resolve_tag = "agent:interim_parse"
         elif live.tool_request:
             command = f"[tool] {live.tool_request.tool_name}"
             parsed_model = {
@@ -308,7 +308,7 @@ def _trace_to_proposal(trace: dict[str, Any] | None) -> dict[str, Any] | None:
                 "interim": True,
             }
             if st in {"running", "building_prompt"}:
-                resolve_tag = "legacy:tool_request"
+                resolve_tag = "agent:tool_request"
 
     # Model continued after native/API tool execution (trace append markers)
     if not command and trace.get("tool_names"):
@@ -322,12 +322,12 @@ def _trace_to_proposal(trace: dict[str, Any] | None) -> dict[str, Any] | None:
                 "note": "Waiting for model after tool; check model output below.",
             }
             if st in {"running", "building_prompt"}:
-                resolve_tag = "legacy:post_tool"
+                resolve_tag = "agent:post_tool"
 
     if st == "building_prompt" and not command:
         command = "(preparing prompt)"
         parsed_model = parsed_model or {"interim": True}
-        resolve_tag = "legacy:building_prompt"
+        resolve_tag = "agent:building_prompt"
 
     if isinstance(parsed_prop, dict) and parsed_prop:
         parsed_model = parsed_prop
@@ -419,7 +419,7 @@ def _build_agent_snapshot() -> dict[str, Any]:
         "run_seed": run_seed,
         "ingress_derived_thread_id": None,
         "pending_graph_thread_id": None,
-        "proposer": "legacy",
+        "proposer": "graph",
         "llm_backend": llm_backend,
         "agent_error": agent_err,
         "ai_enabled": bool(ai_runtime.get("ai_enabled")),
@@ -1363,7 +1363,7 @@ async def post_proposal_state(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# React monitor compatibility (greenfield-shaped control plane)
+# React monitor compatibility (operator control plane API)
 # ---------------------------------------------------------------------------
 
 
