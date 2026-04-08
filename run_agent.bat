@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0"
-echo Starting Slay the Spire Agent via uv...
-uv run python -m src.main
+echo Starting Slay the Spire Agent...
+.venv\Scripts\python.exe -m src.main
