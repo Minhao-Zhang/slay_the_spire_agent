@@ -293,12 +293,18 @@ export function RunMetricsPage() {
           const input = numOrZero(r.input_tokens);
           const output = numOrZero(r.output_tokens);
           const total = numOrZero(r.total_tokens);
+          const cachedIn =
+            typeof r.cached_input_tokens === "number" &&
+            Number.isFinite(r.cached_input_tokens)
+              ? r.cached_input_tokens
+              : 0;
           const latMs = numOrZero(r.latency_ms);
           return {
             event_index: r.event_index as number,
             total_tokens: total,
             input_tokens: input,
             output_tokens: output,
+            cached_input_tokens: cachedIn,
             input_k: input / 1000,
             output_k: output / 1000,
             total_k: total / 1000,
@@ -389,18 +395,33 @@ export function RunMetricsPage() {
   const executedInOutTokens = useMemo(() => {
     const sIn = summary?.input_tokens_executed;
     const sOut = summary?.output_tokens_executed;
+    const sCached = summary?.cached_input_tokens_executed;
     if (typeof sIn === "number" && typeof sOut === "number") {
-      return { input: sIn, output: sOut };
+      let cachedSum = typeof sCached === "number" ? sCached : 0;
+      if (typeof sCached !== "number") {
+        for (const r of aiExec) {
+          const tc = r.cached_input_tokens;
+          if (typeof tc === "number" && Number.isFinite(tc)) cachedSum += tc;
+        }
+      }
+      return {
+        input: sIn,
+        output: sOut,
+        cached: cachedSum > 0 ? cachedSum : null,
+      };
     }
     let input = 0;
     let output = 0;
+    let cached = 0;
     for (const r of aiExec) {
       const ti = r.input_tokens;
       const to = r.output_tokens;
+      const tc = r.cached_input_tokens;
       if (typeof ti === "number" && Number.isFinite(ti)) input += ti;
       if (typeof to === "number" && Number.isFinite(to)) output += to;
+      if (typeof tc === "number" && Number.isFinite(tc)) cached += tc;
     }
-    return { input, output };
+    return { input, output, cached: cached > 0 ? cached : null };
   }, [summary, aiExec]);
 
   return (
@@ -470,8 +491,13 @@ export function RunMetricsPage() {
           <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <Kpi
               label="Tokens (executed)"
-              value={`in ${fmtNumEn(executedInOutTokens.input)} · out ${fmtNumEn(executedInOutTokens.output)}`}
-              title="Input and output tokens, executed calls only."
+              value={
+                executedInOutTokens.cached != null &&
+                executedInOutTokens.cached > 0
+                  ? `in ${fmtNumEn(executedInOutTokens.input)} · out ${fmtNumEn(executedInOutTokens.output)} · cache in ${fmtNumEn(executedInOutTokens.cached)}`
+                  : `in ${fmtNumEn(executedInOutTokens.input)} · out ${fmtNumEn(executedInOutTokens.output)}`
+              }
+              title="Input and output tokens on executed calls; cache in = prompt tokens billed as cache hits (OpenAI-style), when logged."
             />
             <Kpi
               label="Latency mean / median (s)"
@@ -1371,6 +1397,7 @@ function AiTokenTooltip({
   const rawIn = Number(p.input_tokens) || 0;
   const rawOut = Number(p.output_tokens) || 0;
   const rawTot = Number(p.total_tokens) || 0;
+  const rawCached = Number(p.cached_input_tokens) || 0;
   return (
     <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
       <div className="font-mono">
@@ -1381,6 +1408,11 @@ function AiTokenTooltip({
       <div className="tabular-nums text-slate-100">
         input: {fmtTokensCommas(rawIn)} tokens
       </div>
+      {rawCached > 0 ? (
+        <div className="tabular-nums text-slate-100">
+          cache in: {fmtTokensCommas(rawCached)} tokens
+        </div>
+      ) : null}
       <div className="tabular-nums text-slate-100">
         output: {fmtTokensCommas(rawOut)} tokens
       </div>
@@ -1459,6 +1491,11 @@ function CumulativeTokenTooltip({
         {fmtTokensCommas(Number(p.output_tokens) || 0)} /{" "}
         {fmtTokensCommas(Number(p.total_tokens) || 0)}
       </div>
+      {Number(p.cached_input_tokens) > 0 ? (
+        <div className="tabular-nums text-slate-100">
+          cache in: {fmtTokensCommas(Number(p.cached_input_tokens) || 0)}
+        </div>
+      ) : null}
       <div className="mt-1 border-t border-slate-700 pt-1 text-slate-400">
         Run cumulative
       </div>

@@ -1,4 +1,7 @@
 logs/
+
+# Learned memory (NDJSON); keep directory via data/memory/.gitkeep
+data/memory/*.ndjson
 .DS_Store
 .cursor/
 

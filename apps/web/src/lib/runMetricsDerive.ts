@@ -52,6 +52,8 @@ export type AiRow = JsonRecord & {
   input_tokens?: number | null;
   output_tokens?: number | null;
   total_tokens?: number | null;
+  /** OpenAI-style cache hits (prompt_tokens_details.cached_tokens), when present. */
+  cached_input_tokens?: number | null;
   latency_ms?: number | null;
   status?: string;
   validation_error?: string | null;
@@ -499,6 +501,8 @@ export type MetricsSummary = {
   /** Sum over executed AI rows; may be absent on older API responses. */
   input_tokens_executed?: number;
   output_tokens_executed?: number;
+  /** Sum of cached prompt tokens on executed rows (newer logs / OpenAI cache). */
+  cached_input_tokens_executed?: number;
   latency_ms_mean: number | null;
   latency_ms_median: number | null;
   event_index_min: number | null;

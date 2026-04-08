@@ -20,6 +20,16 @@ function metricsReasonLabel(reason: string): string {
   if (reason === "no_metrics_file") {
     return "No run_metrics.ndjson for this run.";
   }
+  if (reason === "internal_error") {
+    return "Metrics server error; check API logs.";
+  }
+  if (reason.startsWith("http_")) {
+    const code = reason.slice("http_".length);
+    return `Metrics request failed (HTTP ${code}). Is the dashboard API running on the Vite proxy target?`;
+  }
+  if (reason === "invalid_response") {
+    return "Metrics response was not in the expected shape.";
+  }
   return `Metrics: ${reason}`;
 }
 

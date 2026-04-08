@@ -62,24 +62,28 @@ def _run_deck_summary_tool(vm: dict[str, Any], _arguments: dict[str, Any]) -> st
 TOOL_SPECS: dict[str, dict[str, Any]] = {
     "inspect_draw_pile": {
         "description": "Inspect hidden draw pile details to support this turn's decision.",
+        "contexts": ["combat"],
         "executor": lambda vm, arguments: _run_pile_tool(
             vm, arguments, "draw_pile", "inspect_draw_pile"
         ),
     },
     "inspect_discard_pile": {
         "description": "Inspect discard pile composition for near-future planning.",
+        "contexts": ["combat"],
         "executor": lambda vm, arguments: _run_pile_tool(
             vm, arguments, "discard_pile", "inspect_discard_pile"
         ),
     },
     "inspect_exhaust_pile": {
         "description": "Inspect exhaust pile to reason about remaining scaling and key cards.",
+        "contexts": ["combat"],
         "executor": lambda vm, arguments: _run_pile_tool(
             vm, arguments, "exhaust_pile", "inspect_exhaust_pile"
         ),
     },
     "inspect_deck_summary": {
         "description": "Inspect deck-level aggregate stats (size, upgrades, type mix, average cost).",
+        "contexts": ["combat", "reward", "shop", "event", "map"],
         "executor": _run_deck_summary_tool,
     },
 }
@@ -95,31 +99,40 @@ def canonical_tool_name(name: str) -> str:
     return TOOL_ALIASES.get(name, name)
 
 
+def _function_tool_schema(name: str, spec: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "function",
+        "name": name,
+        "description": spec["description"],
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "Why this tool is needed for the current decision.",
+                }
+            },
+            "required": ["question"],
+            "additionalProperties": False,
+        },
+        "strict": False,
+    }
+
+
 def list_function_tools() -> list[dict[str, Any]]:
-    tools: list[dict[str, Any]] = []
+    return [_function_tool_schema(name, spec) for name, spec in TOOL_SPECS.items()]
+
+
+def list_function_tools_for_context(tool_filter: str | None) -> list[dict[str, Any]]:
+    """Return OpenAI function tool dicts matching ``tool_filter`` (``None`` = all tools)."""
+    if tool_filter is None:
+        return list_function_tools()
+    out: list[dict[str, Any]] = []
     for name, spec in TOOL_SPECS.items():
-        tools.append(
-            {
-                "type": "function",
-                "name": name,
-                "description": spec["description"],
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "question": {
-                            "type": "string",
-                            "description": "Why this tool is needed for the current decision.",
-                        }
-                    },
-                    "required": ["question"],
-                    "additionalProperties": False,
-                },
-                # Avoid OpenAI SDK strict tool-argument parsing edge cases with the Responses API
-                # (can raise e.g. AttributeError: 'str' object has no attribute 'get' during stream finalize).
-                "strict": False,
-            }
-        )
-    return tools
+        ctx = spec.get("contexts") or []
+        if "any" in ctx or tool_filter in ctx:
+            out.append(_function_tool_schema(name, spec))
+    return out
 
 
 def execute_tool(name: str, vm: dict[str, Any], arguments: dict[str, Any] | None = None) -> str:

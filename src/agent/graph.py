@@ -1,20 +1,27 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
 from src.agent.config import get_agent_config, load_system_prompt
+from src.agent.memory import MemoryStore, build_context_tags
+from src.agent.memory.types import RetrievalHit
 from src.agent.llm_client import LLMClient
+from src.agent.planning import resolve_planning
+from src.agent.reasoning_budget import ReasoningBudgetRouter
 from src.agent.policy import parse_agent_output, validate_final_decision
-from src.agent.vm_shapes import as_dict, normalize_legal_actions
-from src.agent.prompt_builder import COMBAT_PLAN_SYSTEM, build_combat_planning_prompt, build_user_prompt
+from src.agent.prompt_builder import build_user_prompt
 from src.agent.schemas import AgentMode, AgentTrace, ParsedAgentTurn, TraceLlmCall, TraceTokenUsage
 from src.agent.session_state import TurnConversation, format_executed_action
-from src.agent.tool_registry import execute_tool
-from src.agent.tracing import combat_encounter_fingerprint, create_trace
+from src.agent.tool_registry import execute_tool, list_function_tools_for_context
+from src.agent.tracing import create_trace
+from src.agent.vm_shapes import as_dict
+from src.repo_paths import PACKAGE_ROOT
 
 
 class GraphState(TypedDict, total=False):
@@ -31,6 +38,11 @@ class GraphState(TypedDict, total=False):
     plan_text: str
     error: str
     turn_model_key: str | None
+    turn_reasoning_effort: str | None
+    tool_filter: str | None
+    memory_hits: list[RetrievalHit] | None
+    non_combat_plan_block: str | None
+    planning_context_block: str | None
 
 
 class SpireDecisionAgent:
@@ -54,6 +66,14 @@ class SpireDecisionAgent:
         else:
             self.ai_disabled_reason = "LLM is not configured."
             self.ai_status = "disabled"
+        self.memory_store = MemoryStore(
+            memory_dir=self.config.resolved_memory_dir(),
+            strategy_dir=self.config.resolved_strategy_dir(),
+            expert_guides_dir=self.config.resolved_expert_guides_dir(),
+        )
+        self.budget_router = ReasoningBudgetRouter(self.config)
+        self._cached_memory_hits: list[RetrievalHit] | None = None
+        self._cached_planning_block: str | None = None
         self.graph = self._build_graph()
 
     def set_ai_unavailable(self, status: str, reason: str) -> None:
@@ -96,21 +116,16 @@ class SpireDecisionAgent:
 
     def _build_graph(self):
         graph = StateGraph(GraphState)
-        graph.add_node("build_prompt", self._build_prompt)
-        graph.add_node("plan_turn", self._plan_turn)
+        graph.add_node("retrieve_memory", self._retrieve_memory)
+        graph.add_node("resolve_planning", self._resolve_planning_node)
+        graph.add_node("assemble_prompt", self._assemble_prompt)
         graph.add_node("run_agent", self._run_agent)
         graph.add_node("run_tool", self._run_tool)
         graph.add_node("validate_decision", self._validate_decision)
-        graph.add_edge(START, "build_prompt")
-        graph.add_conditional_edges(
-            "build_prompt",
-            self._after_build_prompt,
-            {
-                "plan_turn": "plan_turn",
-                "run_agent": "run_agent",
-            },
-        )
-        graph.add_edge("plan_turn", "run_agent")
+        graph.add_edge(START, "retrieve_memory")
+        graph.add_edge("retrieve_memory", "resolve_planning")
+        graph.add_edge("resolve_planning", "assemble_prompt")
+        graph.add_edge("assemble_prompt", "run_agent")
         graph.add_conditional_edges(
             "run_agent",
             self._after_agent,
@@ -130,107 +145,217 @@ class SpireDecisionAgent:
             self.trace_callback(trace)
 
     @staticmethod
-    def _header_combat_turn(header: dict) -> int | None:
-        t = header.get("turn")
-        if isinstance(t, int):
-            return t
-        if isinstance(t, str) and t.strip().isdigit():
-            return int(t.strip())
-        return None
-
-    @staticmethod
-    def _merge_token_usage(target: TraceTokenUsage, extra: TraceTokenUsage) -> None:
-        for name in ("input_tokens", "output_tokens", "total_tokens"):
+    def _merge_token_usage(target: TraceTokenUsage, extra: TraceTokenUsage | None) -> None:
+        if not extra:
+            return
+        for name in (
+            "input_tokens",
+            "output_tokens",
+            "total_tokens",
+            "cached_input_tokens",
+        ):
             cur = getattr(target, name)
             new = getattr(extra, name, None)
             if new is not None:
-                setattr(target, name, (cur or 0) + new)
+                setattr(target, name, (cur or 0) + int(new))
 
-    def _resolve_turn_model_key(self, vm: dict) -> str:
-        if vm.get("combat"):
-            return self.config.combat_turn_llm
-        return self.config.non_combat_turn_llm
+    @staticmethod
+    def _hit_stable_id(hit: RetrievalHit) -> str:
+        if hit.layer == "strategy":
+            return f"strategy:{Path(hit.source_ref).name}"
+        if hit.layer == "expert":
+            return f"expert:{Path(hit.source_ref).name}"
+        if hit.layer == "procedural":
+            return f"procedural:{hit.source_ref}"
+        return f"episodic:{hit.source_ref}"
 
-    def _ensure_combat_plan(self, vm: dict, trace: AgentTrace) -> None:
-        trace.combat_plan_generated = False
-        trace.combat_plan_text_preview = ""
-        trace.combat_plan_error = ""
-        trace.combat_plan_latency_ms = None
-        trace.combat_plan_model_used = ""
-        # Force combat planning sessions to use the reasoning model slot.
-        plan_key = "reasoning"
-        self.session.sync_combat_plan_for_vm(vm)
-        if not vm.get("combat"):
-            return
-        if self.session.combat_plan_guide:
-            trace.combat_plan_text_preview = self.session.combat_plan_guide[:800]
-        if not self.config.planner_enabled:
-            return
-        if not self.ai_enabled or not self.llm:
-            if not self.session.combat_plan_guide:
-                trace.combat_plan_error = "Combat plan skipped: AI unavailable."
-            return
-        fp = combat_encounter_fingerprint(vm)
-        if not fp:
-            return
-        turn_n = self._header_combat_turn(as_dict(vm.get("header")))
-        should_generate = False
-        if turn_n is None:
-            should_generate = not bool(self.session.combat_plan_guide)
-        else:
-            should_generate = turn_n == 1 or ((turn_n - 1) % 5 == 0)
-            # Repeated snapshots can arrive for the same turn; avoid duplicate replans.
-            if self.session.combat_plan_last_turn == turn_n:
-                should_generate = False
-        if not should_generate:
-            return
+    @staticmethod
+    def _parse_retrieval_json(text: str) -> dict[str, Any] | None:
+        s = text.strip()
+        start = s.find("{")
+        end = s.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        try:
+            obj = json.loads(s[start : end + 1])
+        except json.JSONDecodeError:
+            return None
+        return obj if isinstance(obj, dict) else None
 
-        planning_user = build_combat_planning_prompt(
-            vm, max_cards_per_section=self.config.combat_plan_max_cards_per_section
-        )
-        input_messages = [
-            {"role": "system", "content": COMBAT_PLAN_SYSTEM},
-            {"role": "user", "content": planning_user},
-        ]
+    @staticmethod
+    def _compact_vm_for_retrieval(vm: dict[str, Any]) -> dict[str, Any]:
+        header = as_dict(vm.get("header"))
+        screen = as_dict(vm.get("screen"))
+        inv = as_dict(vm.get("inventory"))
+        deck = inv.get("deck") if isinstance(inv.get("deck"), list) else []
+        combat = vm.get("combat") if isinstance(vm.get("combat"), dict) else None
+        enemies: list[str] = []
+        if combat:
+            for m in combat.get("monsters") or []:
+                if isinstance(m, dict) and not m.get("is_gone"):
+                    enemies.append(str(m.get("name", "")))
+        return {
+            "floor": header.get("floor"),
+            "act": header.get("act"),
+            "turn": header.get("turn"),
+            "class": header.get("class"),
+            "screen": screen.get("type"),
+            "hp": header.get("current_hp"),
+            "max_hp": header.get("max_hp"),
+            "gold": header.get("gold"),
+            "deck_size": len(deck),
+            "enemies": enemies[:8],
+        }
+
+    def _retrieval_planning_filter(
+        self,
+        vm: dict[str, Any],
+        trace: AgentTrace,
+        pool_hits: list[RetrievalHit],
+    ) -> tuple[list[RetrievalHit], str | None]:
+        prompt_path = PACKAGE_ROOT / "agent" / "prompts" / "retrieval_agent_prompt.md"
+        try:
+            system = prompt_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            system = (
+                "You select knowledge entry IDs and return JSON "
+                'with selected_entry_ids, situation_note, planning_note.'
+            )
+        index = self.memory_store.knowledge_index_entries()[:220]
+        payload = {
+            "vm_summary": self._compact_vm_for_retrieval(vm),
+            "knowledge_index": index,
+        }
+        user_msg = json.dumps(payload, ensure_ascii=False, default=str)
         trace.llm_calls.append(
             TraceLlmCall(
                 round_index=len(trace.llm_calls) + 1,
-                stage="combat_plan",
-                input_messages=deepcopy(input_messages),
+                stage="retrieval_planning",
+                input_messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_msg},
+                ],
             )
         )
         self._emit_trace(trace)
-        trace.combat_plan_model_used = (
-            self.config.fast_model if plan_key == "fast" else self.config.reasoning_model
+        if not self.llm:
+            return pool_hits[: self.config.max_memory_hits], None
+        result = self.llm.generate_plain_completion(
+            system_prompt=system,
+            user_content=user_msg,
+            model_key="fast",
+            max_output_tokens=1200,
+            reasoning_effort="low",
         )
-        try:
-            result = self.llm.generate_combat_plan(
-                system_prompt=COMBAT_PLAN_SYSTEM,
-                user_content=planning_user,
-                max_output_tokens=self.config.combat_plan_max_output_tokens,
-                model_key=plan_key,
-            )
-        except Exception as exc:  # noqa: BLE001
-            trace.combat_plan_error = f"Combat plan failed: {exc}"
-            self._emit_trace(trace)
-            return
-
-        text = (result.get("raw_output") or "").strip()
         usage = result.get("token_usage")
         if isinstance(usage, TraceTokenUsage):
             self._merge_token_usage(trace.token_usage, usage)
-        trace.combat_plan_latency_ms = result.get("latency_ms")
-        if not text:
-            trace.combat_plan_error = "Combat plan returned empty text."
-            self._emit_trace(trace)
-            return
+        raw = str(result.get("raw_output") or "")
+        data = self._parse_retrieval_json(raw)
+        ids_raw = data.get("selected_entry_ids") if data else None
+        situation = str((data or {}).get("situation_note") or "").strip()
+        planning = str((data or {}).get("planning_note") or "").strip()
+        if not isinstance(ids_raw, list):
+            return pool_hits[: self.config.max_memory_hits], None
+        want = {str(x).strip() for x in ids_raw if str(x).strip()}
+        by_id = {self._hit_stable_id(h): h for h in pool_hits}
+        filtered = [by_id[i] for i in want if i in by_id]
+        if not filtered:
+            filtered = pool_hits[: self.config.max_memory_hits]
+        else:
+            filtered = filtered[: self.config.max_memory_hits]
+        block: str | None = None
+        if situation or planning:
+            parts = []
+            if situation:
+                parts.append(f"**Situation:** {situation}")
+            if planning:
+                parts.append(f"**Planning note:** {planning}")
+            block = "## Context from planning agent\n" + "\n".join(parts)
+        return filtered, block
 
-        self.session.set_combat_plan(text, fp, turn_n)
-        trace.combat_plan_generated = True
-        trace.combat_plan_text_preview = text[:800]
-        self._emit_trace(trace)
+    def _retrieve_memory(self, state: GraphState) -> GraphState:
+        vm = state["vm"]
+        trace = state["trace"]
+        profile = self.budget_router.resolve(vm)
+        state["turn_model_key"] = profile.model_key
+        state["turn_reasoning_effort"] = profile.reasoning_effort
+        state["tool_filter"] = profile.tool_filter
+        trace.reasoning_profile_name = profile.name
+        trace.reasoning_effort_used = profile.reasoning_effort
+        trace.retrieval_mode_used = profile.retrieval_mode
 
-    def _build_prompt(self, state: GraphState) -> GraphState:
+        if not self.config.memory_retrieval_enabled or profile.retrieval_mode == "skip":
+            state["memory_hits"] = None
+            trace.lessons_retrieved = 0
+            state["planning_context_block"] = None
+            return state
+
+        if profile.retrieval_mode == "reuse":
+            if self._cached_memory_hits is None:
+                tags = build_context_tags(vm)
+                self._cached_memory_hits = self.memory_store.retrieve(
+                    tags,
+                    max_results=self.config.max_memory_hits,
+                    char_budget=self.config.memory_char_budget,
+                    min_procedural_confidence=self.config.min_procedural_confidence,
+                )
+                self._cached_planning_block = None
+            state["memory_hits"] = self._cached_memory_hits
+            state["planning_context_block"] = self._cached_planning_block
+            trace.lessons_retrieved = len(state["memory_hits"] or [])
+            return state
+
+        tags = build_context_tags(vm)
+        pool_max = (
+            max(self.config.max_memory_hits * 3, 24)
+            if profile.retrieval_mode == "full"
+            else self.config.max_memory_hits
+        )
+        pool_budget = (
+            max(self.config.memory_char_budget, 12_000)
+            if profile.retrieval_mode == "full"
+            else self.config.memory_char_budget
+        )
+        hits = self.memory_store.retrieve(
+            tags,
+            max_results=pool_max,
+            char_budget=pool_budget,
+            min_procedural_confidence=self.config.min_procedural_confidence,
+        )
+        planning_block: str | None = None
+        if profile.retrieval_mode == "full" and self.llm and self.ai_enabled and hits:
+            try:
+                hits, planning_block = self._retrieval_planning_filter(vm, trace, hits)
+            except Exception:  # noqa: BLE001
+                hits = hits[: self.config.max_memory_hits]
+                planning_block = None
+        else:
+            hits = hits[: self.config.max_memory_hits]
+
+        self._cached_memory_hits = hits
+        self._cached_planning_block = planning_block
+        state["memory_hits"] = hits
+        state["planning_context_block"] = planning_block
+        trace.lessons_retrieved = len(hits)
+        return state
+
+    def _resolve_planning_node(self, state: GraphState) -> GraphState:
+        trace = state["trace"]
+        outcome = resolve_planning(
+            state["vm"],
+            trace,
+            self.session,
+            self.config,
+            self.llm,
+            self.ai_enabled,
+            emit_trace=lambda: self._emit_trace(trace),
+        )
+        state["non_combat_plan_block"] = outcome.non_combat_plan_block
+        state["plan_text"] = outcome.planner_summary
+        return state
+
+    def _assemble_prompt(self, state: GraphState) -> GraphState:
         vm = state["vm"]
         turn_key = state["trace"].turn_key
         self.session.set_scene(turn_key)
@@ -263,7 +388,8 @@ class SpireDecisionAgent:
                 self.session.compact_history(summary, keep_recent)
             elif older_messages:
                 self.session.compact_history_fallback(keep_recent)
-        self._ensure_combat_plan(vm, state["trace"])
+
+        memory_hits = state.get("memory_hits")
         user_prompt = build_user_prompt(
             vm,
             state["state_id"],
@@ -271,52 +397,23 @@ class SpireDecisionAgent:
             strategy_memory=self.session.strategy_memory_lines(),
             combat_plan_guide=self.session.combat_plan_guide or None,
             prompt_profile=self.config.prompt_profile,
+            memory_hits=memory_hits,
         )
+        prefix_parts: list[str] = []
+        plan_ctx = state.get("planning_context_block")
+        if plan_ctx:
+            prefix_parts.append(plan_ctx)
+        nc = state.get("non_combat_plan_block")
+        if nc:
+            prefix_parts.append(nc)
+        if prefix_parts:
+            user_prompt = "\n\n".join(prefix_parts) + "\n\n" + user_prompt.strip() + "\n"
+
         state["trace"].status = "running"
         state["trace"].user_prompt = user_prompt
         state["messages"] = self.session.messages + [{"role": "user", "content": user_prompt}]
         state["user_prompt"] = user_prompt
         state["previous_response_id"] = None
-        return state
-
-    def _after_build_prompt(self, state: GraphState) -> str:
-        if not self.config.planner_enabled:
-            return "run_agent"
-        vm = state["vm"]
-        if self.config.planner_enabled and vm.get("combat"):
-            return "run_agent"
-        return "plan_turn"
-
-    def _plan_turn(self, state: GraphState) -> GraphState:
-        vm = state["vm"]
-        legal_actions = normalize_legal_actions(vm.get("actions") or [])
-        header = as_dict(vm.get("header"))
-        screen = as_dict(vm.get("screen"))
-        combat = vm.get("combat") or {}
-
-        priorities: list[str] = []
-        if combat:
-            priorities.append("Survive this turn first (minimize avoidable incoming damage).")
-            if any(str(a.get("command", "")).startswith("END") for a in legal_actions):
-                priorities.append("Spend available energy efficiently before ending turn.")
-            if any(str(a.get("command", "")).startswith("PLAY ") for a in legal_actions):
-                priorities.append("Prefer lines that improve near-term lethal or stabilize scaling.")
-        if screen.get("type") == "MAP":
-            priorities.append("Balance risk vs reward on pathing using HP, deck strength, and upcoming boss.")
-        if not priorities:
-            priorities.append("Select the highest-value legal action for the current screen context.")
-
-        planning_summary = (
-            f"floor={header.get('floor', '?')} screen={screen.get('type', 'NONE')} "
-            f"legal_actions={len(legal_actions)}"
-        )
-        plan_lines = "\n".join(f"- {line}" for line in priorities[:3])
-        plan_text = f"## TURN PLAN\n{plan_lines}\n"
-        state["user_prompt"] = f"{plan_text}\n{state['user_prompt']}".strip() + "\n"
-        state["messages"] = self.session.messages + [{"role": "user", "content": state["user_prompt"]}]
-        state["plan_text"] = planning_summary
-        state["trace"].planner_summary = planning_summary
-        self._emit_trace(state["trace"])
         return state
 
     def _run_agent(self, state: GraphState) -> GraphState:
@@ -327,8 +424,16 @@ class SpireDecisionAgent:
 
         trace = state["trace"]
         if state.get("turn_model_key") is None:
-            state["turn_model_key"] = self._resolve_turn_model_key(state["vm"])
+            profile = self.budget_router.resolve(state["vm"])
+            state["turn_model_key"] = profile.model_key
+            state["turn_reasoning_effort"] = profile.reasoning_effort
+            state["tool_filter"] = profile.tool_filter
+            trace.reasoning_profile_name = profile.name
+            trace.reasoning_effort_used = profile.reasoning_effort
+            trace.retrieval_mode_used = profile.retrieval_mode
         model_key = state["turn_model_key"] or "reasoning"
+        func_tools = list_function_tools_for_context(state.get("tool_filter"))
+        tools_arg = func_tools if func_tools else None
         trace.llm_turn_model_key = model_key
         trace.llm_model_used = (
             self.llm.model_name_for_key(model_key)
@@ -374,6 +479,8 @@ class SpireDecisionAgent:
                 on_delta=on_delta,
                 on_tool=on_tool,
                 model_key=model_key,
+                reasoning_effort=state.get("turn_reasoning_effort"),
+                function_tools=tools_arg,
             )
         except Exception as exc:  # noqa: BLE001
             trace.status = "error"
@@ -484,6 +591,8 @@ class SpireDecisionAgent:
         self.trace_callback = trace_callback
         trace = create_trace(vm, state_id, agent_mode, self.system_prompt, "")
         trace.prompt_profile = self.config.prompt_profile
+        self._cached_memory_hits = None
+        self._cached_planning_block = None
         graph_state: GraphState = {
             "vm": vm,
             "state_id": state_id,
@@ -491,6 +600,9 @@ class SpireDecisionAgent:
             "trace": trace,
             "tool_roundtrips": 0,
             "turn_model_key": None,
+            "turn_reasoning_effort": None,
+            "tool_filter": None,
+            "planning_context_block": None,
         }
         result = self.graph.invoke(graph_state)
         if result["trace"].raw_output:

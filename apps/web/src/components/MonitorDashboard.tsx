@@ -590,6 +590,7 @@ export function MonitorDashboard() {
     logLines,
     queueManualCommand,
     setAgentMode,
+    setAutoStartNextGame,
     resumeAgent,
     retryAgent,
     pushLog,
@@ -1674,6 +1675,20 @@ export function MonitorDashboard() {
                 disabled={snapshot == null}
                 onSelect={(m) => void setAgentMode(m)}
               />
+              <label className="mt-2 flex cursor-pointer items-center gap-2 font-telemetry text-xs text-slate-400">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-emerald-600 focus:ring-emerald-500"
+                  checked={Boolean(agentForRail?.auto_start_next_game)}
+                  disabled={snapshot == null}
+                  onChange={(e) =>
+                    void setAutoStartNextGame(e.target.checked)
+                  }
+                />
+                <span title="When enabled, the bridge sends `start` on the title screen so a new run begins without clicking Continue in-game.">
+                  Auto-start next game
+                </span>
+              </label>
               <div className="mt-2 truncate font-mono text-[10px] leading-tight text-slate-500">
                 <span className="text-slate-600">llm</span>{" "}
                 {agentForRail?.llm_backend ?? "—"}{" "}

@@ -113,7 +113,38 @@ export function useRunMetricsData() {
       const mr = await fetch(
         `/api/runs/${encodeURIComponent(runName)}/metrics${q}`,
       );
-      const data = (await mr.json()) as MetricsResponse;
+      const raw: unknown = await mr.json().catch(() => null);
+      let data: MetricsResponse;
+      if (!mr.ok) {
+        const detail =
+          raw &&
+          typeof raw === "object" &&
+          "detail" in raw &&
+          typeof (raw as { detail: unknown }).detail === "string"
+            ? (raw as { detail: string }).detail
+            : null;
+        data = {
+          ok: false,
+          run: runName,
+          reason: `http_${mr.status}`,
+          records: [],
+          parse_errors: detail ? [detail] : undefined,
+        };
+      } else if (
+        raw &&
+        typeof raw === "object" &&
+        typeof (raw as { ok?: unknown }).ok === "boolean" &&
+        Array.isArray((raw as { records?: unknown }).records)
+      ) {
+        data = raw as MetricsResponse;
+      } else {
+        data = {
+          ok: false,
+          run: runName,
+          reason: "invalid_response",
+          records: [],
+        };
+      }
       if (gen !== metricsRequestGen.current) return;
 
       const fp = fingerprintMetricsResponse(data);

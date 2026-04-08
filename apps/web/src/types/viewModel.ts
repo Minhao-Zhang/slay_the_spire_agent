@@ -98,6 +98,8 @@ export interface AgentSnapshotDTO {
   /** True while ``main.py`` has a running ``agent.propose`` future (before final trace lands). */
   proposal_in_flight?: boolean;
   proposal_for_state_id?: string | null;
+  /** When true, bridge sends ``start`` on the title screen (between runs). */
+  auto_start_next_game?: boolean;
   /** Server-built tactical user message (trace when state matches, else ``build_user_prompt`` preview). */
   llm_user_prompt?: string | null;
 }

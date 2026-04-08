@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.agent.memory.types import RetrievalHit
 from src.agent.vm_shapes import as_dict, normalize_legal_actions, prompt_command_for_action
 from src.repo_paths import REPO_ROOT
 from src.ui.state_processor import event_option_choose_index
@@ -14,6 +16,9 @@ from src.ui.state_processor import event_option_choose_index
 _BUFF_DESCRIPTIONS: dict[str, str] | None = None
 _ORB_MECHANICS: dict[str, Any] | None = None
 _TOKEN_PATTERN = re.compile(r"\[([^\]]+)\]")
+
+log = logging.getLogger(__name__)
+_legacy_strategy_corpus_warned = False
 
 
 def _get_buff_descriptions() -> dict[str, str]:
@@ -236,7 +241,7 @@ def _apply_prompt_profile(groups: list[PromptGroup], profile: str) -> list[Promp
     p = (profile or "default").strip().lower()
     if p != "minimal":
         return groups
-    drop_keys = {"buff_glossary", "map_scene", "card_choice_guidance"}
+    drop_keys = {"buff_glossary", "map_scene", "card_choice_guidance", "memory_context"}
     thin_tooling = (
         "- Pile tools only if hidden information is required.\n"
         "- inspect_deck_summary for deck stats.\n"
@@ -740,12 +745,29 @@ Use markdown with these headings (keep each section brief):
 Do not emit game commands or <final_decision> tags. Plain markdown only."""
 
 
+def _format_memory_hits(hits: list[RetrievalHit]) -> str:
+    layer_label = {
+        "procedural": "Procedural lesson",
+        "strategy": "Strategy reference",
+        "expert": "Expert guide",
+        "episodic": "Past run",
+    }
+    parts: list[str] = []
+    for i, h in enumerate(hits, start=1):
+        label = layer_label[h.layer]
+        parts.append(
+            f"### {i}. [{label}] {h.title} (score={h.score:.2f}; ref={h.source_ref})\n{h.body}"
+        )
+    return "\n\n".join(parts)
+
+
 def build_prompt_groups(
     vm: dict[str, Any],
     recent_actions: list[str],
     strategy_memory: list[str] | None = None,
     combat_plan_guide: str | None = None,
     prompt_profile: str = "default",
+    memory_hits: list[RetrievalHit] | None = None,
 ) -> list[PromptGroup]:
     header = as_dict(vm.get("header"))
     inventory = as_dict(vm.get("inventory"))
@@ -932,6 +954,20 @@ def build_prompt_groups(
         ),
     )
 
+    if memory_hits:
+        groups.append(
+            PromptGroup(
+                "Reference & past lessons",
+                [
+                    PromptSubsection(
+                        "RETRIEVED KNOWLEDGE (L2 procedural, then L1 strategy & expert guides, then L3 episodic)",
+                        _format_memory_hits(memory_hits),
+                        profile_key="memory_context",
+                    ),
+                ],
+            ),
+        )
+
     groups.append(
         PromptGroup(
             "What you can do",
@@ -949,8 +985,25 @@ def build_user_prompt(
     strategy_memory: list[str] | None = None,
     combat_plan_guide: str | None = None,
     prompt_profile: str = "default",
+    memory_hits: list[RetrievalHit] | None = None,
 ) -> str:
     from src.agent.config import get_agent_config
+
+    global _legacy_strategy_corpus_warned
+    cfg = get_agent_config()
+    if (
+        not _legacy_strategy_corpus_warned
+        and (
+            cfg.include_strategy_corpus
+            or bool((cfg.strategy_corpus_path or "").strip())
+        )
+    ):
+        _legacy_strategy_corpus_warned = True
+        log.warning(
+            "LLM_INCLUDE_STRATEGY_CORPUS / LLM_STRATEGY_CORPUS_PATH are deprecated: "
+            "strategy context is loaded from tagged markdown under AGENT_STRATEGY_DIR (MemoryStore L1). "
+            "The monolithic corpus prepend is no longer applied."
+        )
 
     groups = build_prompt_groups(
         vm,
@@ -958,18 +1011,9 @@ def build_user_prompt(
         strategy_memory=strategy_memory,
         combat_plan_guide=combat_plan_guide,
         prompt_profile=prompt_profile,
+        memory_hits=memory_hits,
     )
-    main = _render_hierarchical(groups)
-    cfg = get_agent_config()
-    path = cfg.resolved_strategy_corpus_path()
-    if path and path.is_file():
-        corpus = path.read_text(encoding="utf-8").strip()
-        if corpus:
-            header = (
-                "## COMMUNITY STRATEGY NOTES (synthesized reference; see corpus file header for attribution)\n"
-            )
-            return header + corpus + "\n\n" + main
-    return main
+    return _render_hierarchical(groups)
 
 
 def build_combat_planning_prompt(vm: dict[str, Any], *, max_cards_per_section: int = 80) -> str:

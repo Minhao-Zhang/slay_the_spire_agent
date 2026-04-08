@@ -103,6 +103,7 @@ def build_persisted_ai_log(trace: AgentTrace) -> PersistedAiLog:
         input_tokens=trace.token_usage.input_tokens,
         output_tokens=trace.token_usage.output_tokens,
         total_tokens=trace.token_usage.total_tokens,
+        cached_input_tokens=trace.token_usage.cached_input_tokens,
         tool_names=list(trace.tool_names),
         planner_summary=trace.planner_summary,
         combat_plan_generated=trace.combat_plan_generated,
@@ -115,6 +116,10 @@ def build_persisted_ai_log(trace: AgentTrace) -> PersistedAiLog:
         prompt_profile=trace.prompt_profile,
         llm_model_used=trace.llm_model_used,
         llm_turn_model_key=trace.llm_turn_model_key,
+        reasoning_profile_name=trace.reasoning_profile_name,
+        reasoning_effort_used=trace.reasoning_effort_used,
+        lessons_retrieved=trace.lessons_retrieved,
+        retrieval_mode_used=trace.retrieval_mode_used,
     )
 
 
@@ -330,6 +335,7 @@ def append_ai_decision_run_metric(run_dir: Path, trace: AgentTrace, state_log_pa
         "input_tokens": trace.token_usage.input_tokens,
         "output_tokens": trace.token_usage.output_tokens,
         "total_tokens": trace.token_usage.total_tokens,
+        "cached_input_tokens": trace.token_usage.cached_input_tokens,
         "latency_ms": trace.latency_ms,
         "status": trace.status,
         "validation_error": val_err[:500] if val_err else None,

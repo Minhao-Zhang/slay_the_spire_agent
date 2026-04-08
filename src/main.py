@@ -12,7 +12,7 @@ import requests
 
 from src.agent.graph import SpireDecisionAgent
 from src.agent.policy import is_end_turn_command_token, resolve_token_play
-from src.agent.session_state import is_command_failure_state, mark_trace_command_failed
+from src.agent.session_state import TurnConversation, is_command_failure_state, mark_trace_command_failed
 from src.agent.schemas import AgentTrace
 from src.agent.tracing import (
     append_run_end_metric,
@@ -24,13 +24,22 @@ from src.agent.tracing import (
     write_ai_log,
     write_run_end_snapshot,
 )
+from src.bridge.game_session import (
+    GameLifecycle,
+    GameSession,
+    build_game_dir_name,
+    extract_game_state,
+)
 from src.repo_paths import REPO_ROOT
 from src.ui.state_processor import process_state
 
 BASE_DIR = str(REPO_ROOT)
 LOG_DIR = os.path.join(BASE_DIR, "logs")
+LOG_GAMES_ROOT = os.path.join(LOG_DIR, "games")
 DASHBOARD_URL = "http://localhost:8000"
 MAX_LOG_RUNS = 10
+MENU_STATE_INTERVAL_SECONDS = 4.0
+MENU_IDLE_SLEEP_SECONDS = 0.05
 
 
 def prune_old_log_runs(log_dir: str, keep: int = MAX_LOG_RUNS) -> None:
@@ -52,6 +61,65 @@ def prune_old_log_runs(log_dir: str, keep: int = MAX_LOG_RUNS) -> None:
             continue
         try:
             shutil.rmtree(old_dir)
+        except OSError:
+            pass
+
+
+def _schedule_post_run_consolidation() -> None:
+    """Increment run counter; periodically archive low-confidence procedural memory."""
+
+    def job() -> None:
+        try:
+            from src.agent.config import get_agent_config
+            from src.agent.memory import MemoryStore
+            from src.agent.reflection.consolidator import consolidate_procedural_memory
+
+            cfg = get_agent_config()
+            if not cfg.reflection_enabled:
+                return
+            mem_dir = cfg.resolved_memory_dir()
+            mem_dir.mkdir(parents=True, exist_ok=True)
+            ctr_path = mem_dir / "consolidation_run_counter.txt"
+            n = 0
+            if ctr_path.is_file():
+                try:
+                    n = int(ctr_path.read_text(encoding="utf-8").strip() or "0")
+                except ValueError:
+                    n = 0
+            n += 1
+            ctr_path.write_text(str(n), encoding="utf-8")
+            every = cfg.consolidation_every_n_runs
+            if every <= 0 or n % every != 0:
+                return
+            store = MemoryStore(
+                memory_dir=mem_dir,
+                strategy_dir=cfg.resolved_strategy_dir(),
+                expert_guides_dir=cfg.resolved_expert_guides_dir(),
+            )
+            consolidate_procedural_memory(store, cfg)
+        except OSError:
+            pass
+
+    threading.Thread(target=job, daemon=True).start()
+
+
+def reflection_stub(game_dir_str: str | None) -> None:
+    """Placeholder until the reflection pipeline exists.
+
+    Full flow (Phase A): RunAnalyzer -> LLM Reflector -> ``persist_reflection_to_memory``
+    in ``src.agent.reflection`` (Step 3). Do not append fake lessons from this stub.
+    """
+    notify_dashboard(
+        "/log",
+        {"message": f"Reflection stub for game_dir={game_dir_str!r} (full pipeline not implemented)."},
+    )
+    if game_dir_str:
+        marker = Path(game_dir_str) / "reflection_pending.json"
+        try:
+            marker.write_text(
+                '{"status":"stub","note":"Full reflection pipeline not implemented."}\n',
+                encoding="utf-8",
+            )
         except OSError:
             pass
 
@@ -199,10 +267,8 @@ def combat_reward_proceed_when_empty(vm: dict) -> str | None:
 
 def main():
     os.makedirs(LOG_DIR, exist_ok=True)
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
-    run_dir = os.path.join(LOG_DIR, timestamp)
-    os.makedirs(run_dir, exist_ok=True)
-    prune_old_log_runs(LOG_DIR, keep=MAX_LOG_RUNS)
+    os.makedirs(LOG_GAMES_ROOT, exist_ok=True)
+    prune_old_log_runs(LOG_GAMES_ROOT, keep=MAX_LOG_RUNS)
     agent = SpireDecisionAgent()
     print("ready", flush=True)
 
@@ -224,11 +290,13 @@ def main():
 
     threading.Thread(target=initialize_ai_status, daemon=True).start()
 
-    event_index = 0
+    lifecycle = GameLifecycle.WAITING_FOR_GAME
+    session: GameSession | None = None
+    consecutive_out_of_game = 0
+    menu_last_emit = 0.0
+
     last_proposed_state_id = None
     current_agent_mode: str = agent.config.default_mode
-    trace_cache: dict[str, AgentTrace] = {}
-    state_log_paths: dict[str, Path] = {}
     last_ai_execution: dict[str, object | None] = {
         "trace": None,
         "state_id": None,
@@ -316,7 +384,7 @@ def main():
                     "update_seq": trace.update_seq + 1,
                 }
             )
-            path = state_log_paths.get(sid)
+            path = session.state_log_paths.get(sid) if session else None
             if path:
                 write_ai_log(path, stale)
             notify_dashboard("/agent_trace", stale.model_dump(mode="json"))
@@ -431,8 +499,9 @@ def main():
             return
 
         note_proposal_success()
-        trace_cache[completed_state_id] = trace
-        state_log_path = state_log_paths.get(completed_state_id)
+        if session:
+            session.trace_cache[completed_state_id] = trace
+        state_log_path = session.state_log_paths.get(completed_state_id) if session else None
         if state_log_path:
             write_ai_log(state_log_path, trace)
 
@@ -456,11 +525,12 @@ def main():
         command_sent: str | None,
         command_source: str,
         ready_for_command: bool,
-    ) -> Path:
-        nonlocal event_index
-        ei = event_index
+    ) -> Path | None:
+        if not session or not session.logging_enabled or not session.game_dir:
+            return None
+        ei = session.event_index
         vm_summary = build_vm_summary(vm, state, state_id=state_id, event_index=ei)
-        path = Path(run_dir) / f"{ei:04d}.json"
+        path = session.game_dir / f"{ei:04d}.json"
         with path.open("w", encoding="utf-8") as f:
             json.dump(
                 {
@@ -484,15 +554,14 @@ def main():
                 f,
                 indent=2,
             )
-        append_state_run_metric(Path(run_dir), vm_summary, event_index=ei, state_id=state_id)
-        event_index += 1
-        state_log_paths[state_id] = path
+        append_state_run_metric(session.game_dir, vm_summary, event_index=ei, state_id=state_id)
+        session.event_index += 1
+        session.state_log_paths[state_id] = path
         return path
 
     last_state_snapshot = None
     last_log_signature = None
     duplicate_run_length = 0
-    run_end_persisted = False
 
     def clear_queued_sequence(reason: str = ""):
         queued_sequence["commands"] = []
@@ -510,6 +579,8 @@ def main():
         source: str,
         legal_actions: list[dict] | None = None,
         remaining_commands: list[str] | None = None,
+        *,
+        vm_for_turn: dict | None = None,
     ):
         trace.status = "executed"
         trace.approval_status = approval_status
@@ -517,7 +588,7 @@ def main():
         trace.execution_outcome = "executed"
         trace.update_seq += 1
         notify_dashboard("/agent_trace", trace.model_dump(mode="json"))
-        state_log_path = state_log_paths.get(state_id)
+        state_log_path = session.state_log_paths.get(state_id) if session else None
         if state_log_path:
             write_ai_log(state_log_path, trace)
         agent.remember_executed_action(trace, action, legal_actions)
@@ -530,7 +601,8 @@ def main():
             queued_sequence["commands"] = list(remaining_commands)
             queued_sequence["trace"] = trace
             queued_sequence["source"] = source
-            queued_sequence["turn_key"] = build_turn_key(vm)
+            vm_t = vm_for_turn if vm_for_turn is not None else vm
+            queued_sequence["turn_key"] = build_turn_key(vm_t)
             notify_dashboard(
                 "/log",
                 {"message": f"Queued {len(remaining_commands)} more command(s) from approved sequence."},
@@ -538,6 +610,76 @@ def main():
         else:
             clear_queued_sequence()
         execute_action(action, source)
+
+    def _run_reflection_background(game_dir: Path | None) -> None:
+        try:
+            from src.agent.config import get_agent_config
+            from src.agent.reflection.runner import run_reflection_pipeline
+
+            cfg = get_agent_config()
+            if not cfg.reflection_enabled or not game_dir or not game_dir.is_dir():
+                reflection_stub(str(game_dir) if game_dir else None)
+                return
+            if not agent.llm:
+                notify_dashboard(
+                    "/log",
+                    {"message": "Reflection skipped: LLM unavailable."},
+                )
+                return
+            run_reflection_pipeline(game_dir, agent.memory_store, agent.llm, cfg)
+        except Exception as exc:  # noqa: BLE001
+            notify_dashboard(
+                "/log",
+                {"message": f"Reflection pipeline failed: {exc!r}"},
+            )
+
+    def _finish_game_session(reason: str) -> None:
+        nonlocal session, lifecycle, consecutive_out_of_game, last_proposed_state_id
+        nonlocal last_state_snapshot, last_log_signature, duplicate_run_length
+        gd_path = session.game_dir.resolve() if session and session.game_dir else None
+        lifecycle = GameLifecycle.REFLECTING
+        notify_dashboard(
+            "/log",
+            {"message": f"{reason} Starting background reflection."},
+        )
+        threading.Thread(target=_run_reflection_background, args=(gd_path,), daemon=True).start()
+        if proposal_state.get("future"):
+            old_fut = proposal_state.get("future")
+            old_sid = str(proposal_state.get("state_id") or "")
+            clear_active_proposal(reason)
+            enqueue_orphan_proposal_future(old_fut, old_sid)
+        else:
+            clear_active_proposal(reason)
+        session = None
+        lifecycle = GameLifecycle.WAITING_FOR_GAME
+        consecutive_out_of_game = 0
+        last_proposed_state_id = None
+        last_state_snapshot = None
+        last_log_signature = None
+        duplicate_run_length = 0
+        clear_queued_sequence(reason)
+        proposal_failures["streak"] = 0
+
+    def _scan_retry_pending_reflection() -> None:
+        """Retry runs with run_report.json but no reflection_output.json (startup)."""
+        try:
+            from src.agent.config import get_agent_config
+            from src.agent.reflection.runner import pending_reflection_dirs
+
+            cfg = get_agent_config()
+            if not cfg.reflection_enabled or not agent.llm:
+                return
+            root = Path(LOG_GAMES_ROOT)
+            for d in pending_reflection_dirs(root, limit=3):
+                threading.Thread(
+                    target=_run_reflection_background,
+                    args=(d,),
+                    daemon=True,
+                ).start()
+        except Exception:  # noqa: BLE001
+            pass
+
+    threading.Thread(target=_scan_retry_pending_reflection, daemon=True).start()
 
     while True:
         line = sys.stdin.readline()
@@ -562,7 +704,7 @@ def main():
             )
             notify_dashboard("/agent_trace", failed_trace.model_dump(mode="json"))
             failed_state_id = str(last_ai_execution.get("state_id") or "")
-            failed_state_log_path = state_log_paths.get(failed_state_id)
+            failed_state_log_path = session.state_log_paths.get(failed_state_id) if session else None
             if failed_state_log_path:
                 write_ai_log(failed_state_log_path, failed_trace)
             notify_dashboard(
@@ -574,7 +716,8 @@ def main():
                     )
                 },
             )
-            trace_cache[failed_state_id] = failed_trace
+            if session:
+                session.trace_cache[failed_state_id] = failed_trace
             last_proposed_state_id = None
             last_ai_execution = {"trace": None, "state_id": None, "action": None, "source": None}
             clear_queued_sequence("Cleared queued sequence due to command failure.")
@@ -590,8 +733,81 @@ def main():
         vm = process_state(state)
         notify_dashboard("/update_state", {"state": state, "meta": {"state_id": state_id}})
 
-        if not state.get("in_game", True):
-            run_end_persisted = False
+        in_game = bool(state.get("in_game", True))
+
+        if session is not None and lifecycle in (
+            GameLifecycle.GAME_ACTIVE,
+            GameLifecycle.GAME_ENDING,
+        ):
+            if in_game:
+                consecutive_out_of_game = 0
+                if lifecycle == GameLifecycle.GAME_ACTIVE and _is_game_over(vm):
+                    session.saw_game_over = True
+                    lifecycle = GameLifecycle.GAME_ENDING
+            else:
+                consecutive_out_of_game += 1
+                should_end = (consecutive_out_of_game >= 2) or (
+                    consecutive_out_of_game >= 1 and session.saw_game_over
+                )
+                if should_end:
+                    _finish_game_session("Game session ended.")
+
+        if lifecycle == GameLifecycle.WAITING_FOR_GAME and in_game:
+            session = GameSession()
+            gs = extract_game_state(state)
+            dirname = build_game_dir_name(gs)
+            if dirname:
+                session.game_dir = Path(LOG_GAMES_ROOT) / dirname
+                session.game_dir.mkdir(parents=True, exist_ok=True)
+                session.logging_enabled = True
+                session.identity = {
+                    "seed": gs.get("seed"),
+                    "class": gs.get("class"),
+                    "ascension_level": gs.get("ascension_level"),
+                }
+            else:
+                session.logging_enabled = False
+                notify_dashboard(
+                    "/log",
+                    {
+                        "message": (
+                            "No seed in game_state; disk logging disabled for this run "
+                            "(per bridge policy)."
+                        ),
+                    },
+                )
+            agent.session = TurnConversation()
+            if proposal_state.get("future"):
+                old_fut = proposal_state.get("future")
+                old_sid = str(proposal_state.get("state_id") or "")
+                clear_active_proposal("New game: cancelled in-flight proposal from prior session.")
+                enqueue_orphan_proposal_future(old_fut, old_sid)
+            lifecycle = GameLifecycle.GAME_ACTIVE
+            consecutive_out_of_game = 0
+            last_proposed_state_id = None
+            last_state_snapshot = None
+            last_log_signature = None
+            duplicate_run_length = 0
+            clear_queued_sequence()
+            proposal_failures["streak"] = 0
+
+        if lifecycle == GameLifecycle.WAITING_FOR_GAME and not in_game:
+            instruction_menu = poll_instruction()
+            if instruction_menu and "agent_mode" in instruction_menu:
+                current_agent_mode = instruction_menu.get("agent_mode", current_agent_mode)
+            commands_menu = state.get("available_commands", []) or []
+            auto_on = bool(instruction_menu.get("auto_start_next_game"))
+            if auto_on and "start" in commands_menu and state.get("ready_for_command", False):
+                execute_action("start", "auto-start")
+                menu_last_emit = time.monotonic()
+                continue
+            now_m = time.monotonic()
+            if now_m - menu_last_emit >= MENU_STATE_INTERVAL_SECONDS:
+                print("state", flush=True)
+                menu_last_emit = now_m
+            else:
+                time.sleep(MENU_IDLE_SLEEP_SECONDS)
+            continue
 
         refresh_proposal_state()
         drain_orphan_proposal_futures()
@@ -610,7 +826,8 @@ def main():
             old_sid = str(proposal_state.get("state_id") or "")
             clear_active_proposal("Retry AI: cancelled in-flight proposal for this state.")
             enqueue_orphan_proposal_future(old_fut, old_sid)
-            trace_cache.pop(state_id, None)
+            if session:
+                session.trace_cache.pop(state_id, None)
             last_proposed_state_id = None
             notify_dashboard(
                 "/log",
@@ -713,16 +930,19 @@ def main():
             agent_mode = "manual"
 
         if (
-            ready_for_command
+            session
+            and session.logging_enabled
+            and ready_for_command
             and state.get("in_game", True)
             and _is_game_over(vm)
-            and not run_end_persisted
+            and not session.run_end_persisted
         ):
-            _, der = write_run_end_snapshot(Path(run_dir), state, state_id=state_id)
-            append_run_end_metric(Path(run_dir), state_id=state_id, derived=der)
-            run_end_persisted = True
+            _, der = write_run_end_snapshot(session.game_dir, state, state_id=state_id)
+            append_run_end_metric(session.game_dir, state_id=state_id, derived=der)
+            session.run_end_persisted = True
+            _schedule_post_run_consolidation()
 
-        pending_trace = trace_cache.get(state_id)
+        pending_trace = session.trace_cache.get(state_id) if session else None
         command_to_send: str | None = None
         command_source = "idle"
 
@@ -744,6 +964,7 @@ def main():
                     "ai-auto",
                     vm.get("actions", []),
                     remaining_commands=remaining or None,
+                    vm_for_turn=vm,
                 )
                 last_proposed_state_id = None
                 last_state_snapshot = None
@@ -758,7 +979,9 @@ def main():
                 (a.get("command") or "").strip() == action for a in actions_list_for_check
             )
             if action and (approved_sid == state_id or action_still_valid):
-                trace = trace_cache.get(approved_sid) or trace_cache.get(state_id)
+                trace = (session.trace_cache.get(approved_sid) if session else None) or (
+                    session.trace_cache.get(state_id) if session else None
+                )
                 if trace:
                     if approved_action.get("edited"):
                         trace.edited_action = action
@@ -773,6 +996,7 @@ def main():
                         "ai",
                         actions_list_for_check,
                         remaining_commands=remaining or None,
+                        vm_for_turn=vm,
                     )
                 else:
                     execute_action(action, "ai")
@@ -833,7 +1057,8 @@ def main():
             trace.status = "awaiting_approval"
             trace.final_decision = auto_cmd
             trace.response_text = note
-            trace_cache[state_id] = trace
+            if session:
+                session.trace_cache[state_id] = trace
             notify_dashboard("/agent_trace", trace.model_dump(mode="json"))
             if agent_mode == "auto":
                 finalize_ai_execution(
@@ -844,6 +1069,7 @@ def main():
                     "ai-auto",
                     actions_list,
                     remaining_commands=None,
+                    vm_for_turn=vm,
                 )
                 last_proposed_state_id = None
                 last_state_snapshot = None
@@ -884,7 +1110,12 @@ def main():
                 duplicate_run_length += 1
             else:
                 duplicate_run_length = 0
-            should_write_log_go = (state.get("in_game", True)) and (not is_dup_go)
+            should_write_log_go = (
+                session
+                and session.logging_enabled
+                and state.get("in_game", True)
+                and (not is_dup_go)
+            )
             if should_write_log_go:
                 write_state_log(
                     state,
@@ -908,7 +1139,8 @@ def main():
                     trace_go.status = "awaiting_approval"
                     trace_go.final_decision = go_proceed
                     trace_go.response_text = "(Game over screen; proceed.)"
-                    trace_cache[state_id] = trace_go
+                    if session:
+                        session.trace_cache[state_id] = trace_go
                     notify_dashboard("/agent_trace", trace_go.model_dump(mode="json"))
                     finalize_ai_execution(
                         trace_go,
@@ -918,6 +1150,7 @@ def main():
                         "run-end",
                         vm.get("actions", []),
                         remaining_commands=None,
+                        vm_for_turn=vm,
                     )
                     last_proposed_state_id = None
                     last_state_snapshot = None
@@ -933,7 +1166,8 @@ def main():
                 trace_go.status = "awaiting_approval"
                 trace_go.final_decision = go_proceed
                 trace_go.response_text = "(Game over screen; approve PROCEED.)"
-                trace_cache[state_id] = trace_go
+                if session:
+                    session.trace_cache[state_id] = trace_go
                 notify_dashboard("/agent_trace", trace_go.model_dump(mode="json"))
                 last_proposed_state_id = state_id
             idle_go = choose_idle_command(state) or "state"
@@ -963,7 +1197,12 @@ def main():
         else:
             duplicate_run_length = 0
 
-        should_write_log = (state.get("in_game", True)) and (not is_duplicate)
+        should_write_log = (
+            session
+            and session.logging_enabled
+            and state.get("in_game", True)
+            and (not is_duplicate)
+        )
         if should_write_log:
             write_state_log(
                 state,

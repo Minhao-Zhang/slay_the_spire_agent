@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import time
 import zipfile
@@ -19,9 +20,12 @@ from src.ui.state_processor import process_state
 
 app = FastAPI()
 
+log = logging.getLogger(__name__)
+
 manual_actions_queue: list[str] = []
 
 LOGS_DIR = os.path.join(str(REPO_ROOT), "logs")
+LOG_GAMES_DIR = os.path.join(LOGS_DIR, "games")
 AGENT_CONFIG = get_agent_config()
 SYSTEM_PROMPT = load_system_prompt()
 
@@ -39,6 +43,7 @@ ai_runtime: dict[str, Any] = {
     "proposal_for_state_id": "",
     # One-shot from POST /api/agent/retry; main.py consumes via GET /api/ai/retry_poll.
     "retry_proposal_request": None,
+    "auto_start_next_game": bool(getattr(AGENT_CONFIG, "auto_start_next_game", False)),
 }
 
 # Last envelope or raw ingress (CommunicationMod JSON) for React monitor / debug paste.
@@ -428,6 +433,7 @@ def _build_agent_snapshot() -> dict[str, Any]:
         "proposal_in_flight": bool(ai_runtime.get("proposal_in_flight")),
         "proposal_for_state_id": ai_runtime.get("proposal_for_state_id") or None,
         "llm_user_prompt": None,
+        "auto_start_next_game": bool(ai_runtime.get("auto_start_next_game")),
     }
     return snap
 
@@ -634,6 +640,7 @@ async def get_ai_state():
         "ai_status": ai_runtime["ai_status"],
         "ai_api_style": ai_runtime["ai_api_style"],
         "ai_status_message": ai_runtime["ai_status_message"],
+        "auto_start_next_game": bool(ai_runtime.get("auto_start_next_game")),
     }
 
 
@@ -696,14 +703,27 @@ def _parse_run_metrics_ndjson_text(text: str) -> tuple[list[dict[str, Any]], lis
     return records, errors
 
 
+def _zip_path_for_run(run_name: str) -> str | None:
+    """Resolve ``*.zip`` under ``logs/games`` first, then ``logs`` (legacy)."""
+    if not run_name or "/" in run_name or "\\" in run_name or ".." in run_name:
+        return None
+    if not run_name.lower().endswith(".zip"):
+        return None
+    for root in (LOG_GAMES_DIR, LOGS_DIR):
+        base = os.path.abspath(root)
+        zip_path = os.path.abspath(os.path.join(root, run_name))
+        if zip_path.startswith(base + os.sep) and os.path.isfile(zip_path):
+            return zip_path
+    return None
+
+
 def _read_run_end_snapshot_derived(run_name: str) -> dict[str, Any] | None:
     """Load ``derived`` from ``run_end_snapshot.json`` (directory or zip under ``logs/``)."""
     if not run_name or "/" in run_name or "\\" in run_name or ".." in run_name:
         return None
-    base = os.path.abspath(LOGS_DIR)
     if run_name.lower().endswith(".zip"):
-        zip_path = os.path.abspath(os.path.join(LOGS_DIR, run_name))
-        if not zip_path.startswith(base + os.sep) or not os.path.isfile(zip_path):
+        zip_path = _zip_path_for_run(run_name)
+        if not zip_path:
             return None
         stem = os.path.splitext(os.path.basename(run_name))[0]
         inner = f"{stem}/{RUN_END_SNAPSHOT_FILENAME}".replace("\\", "/")
@@ -768,6 +788,7 @@ def _summarize_run_metrics(
     total_tokens = 0
     input_tokens = 0
     output_tokens = 0
+    cached_input_tokens = 0
     for r in executed:
         t = r.get("total_tokens")
         if isinstance(t, (int, float)):
@@ -778,6 +799,9 @@ def _summarize_run_metrics(
         to = r.get("output_tokens")
         if isinstance(to, (int, float)):
             output_tokens += int(to)
+        cti = r.get("cached_input_tokens")
+        if isinstance(cti, (int, float)):
+            cached_input_tokens += int(cti)
     latencies = [
         float(r["latency_ms"])
         for r in executed
@@ -845,6 +869,7 @@ def _summarize_run_metrics(
         "total_tokens_executed": total_tokens,
         "input_tokens_executed": input_tokens,
         "output_tokens_executed": output_tokens,
+        "cached_input_tokens_executed": cached_input_tokens,
         "latency_ms_mean": mean_lat,
         "latency_ms_median": median_lat,
         "event_index_min": min(event_indices) if event_indices else None,
@@ -868,10 +893,9 @@ def _load_run_metrics_records(run_name: str) -> tuple[list[dict[str, Any]] | Non
     """Returns (records, error_reason, parse_errors). records None if unreadable."""
     if not run_name or "/" in run_name or "\\" in run_name or ".." in run_name:
         return None, "invalid_run", []
-    base = os.path.abspath(LOGS_DIR)
     if run_name.endswith(".zip"):
-        zip_path = os.path.abspath(os.path.join(LOGS_DIR, run_name))
-        if not zip_path.startswith(base + os.sep) or not os.path.isfile(zip_path):
+        zip_path = _zip_path_for_run(run_name)
+        if not zip_path:
             return None, "run_not_found", []
         stem = os.path.splitext(os.path.basename(run_name))[0]
         inner = f"{stem}/run_metrics.ndjson".replace("\\", "/")
@@ -902,18 +926,24 @@ def _load_run_metrics_records(run_name: str) -> tuple[list[dict[str, Any]] | Non
 
 @app.get("/api/runs")
 async def get_runs():
-    """List replay/metrics run **directories** under ``logs/``. ``*.zip`` archives are omitted."""
+    """List replay/metrics run **directories** under ``logs/games`` (new) and legacy ``logs/*``."""
     try:
-        if not os.path.exists(LOGS_DIR):
-            return {"runs": [], "archived": {}}
-        runs: list[str] = []
-        for entry in os.listdir(LOGS_DIR):
-            if entry.startswith("."):
-                continue
-            p = os.path.join(LOGS_DIR, entry)
-            if os.path.isdir(p):
-                runs.append(entry)
-        runs.sort(reverse=True)
+        runs_set: set[str] = set()
+        if os.path.isdir(LOG_GAMES_DIR):
+            for entry in os.listdir(LOG_GAMES_DIR):
+                if entry.startswith("."):
+                    continue
+                p = os.path.join(LOG_GAMES_DIR, entry)
+                if os.path.isdir(p):
+                    runs_set.add(entry)
+        if os.path.isdir(LOGS_DIR):
+            for entry in os.listdir(LOGS_DIR):
+                if entry.startswith(".") or entry == "games":
+                    continue
+                p = os.path.join(LOGS_DIR, entry)
+                if os.path.isdir(p):
+                    runs_set.add(entry)
+        runs = sorted(runs_set, reverse=True)
         return {"runs": runs, "archived": {}}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -922,11 +952,14 @@ async def get_runs():
 def _safe_run_dir(run_name: str) -> str | None:
     if not run_name or "/" in run_name or "\\" in run_name or ".." in run_name:
         return None
-    base = os.path.abspath(LOGS_DIR)
-    full = os.path.abspath(os.path.join(base, run_name))
-    if not full.startswith(base + os.sep):
-        return None
-    return full if os.path.isdir(full) else None
+    for root in (LOG_GAMES_DIR, LOGS_DIR):
+        if not os.path.isdir(root):
+            continue
+        base = os.path.abspath(root)
+        full = os.path.abspath(os.path.join(root, run_name))
+        if full.startswith(base + os.sep) and os.path.isdir(full):
+            return full
+    return None
 
 
 @app.get("/api/runs/{run_name}/metrics")
@@ -934,42 +967,54 @@ async def get_run_metrics(
     run_name: str, summary: int = 0
 ) -> dict[str, Any]:
     """Parse ``run_metrics.ndjson`` for a log run directory or ``*.zip`` archive under ``logs/``."""
-    records, reason, parse_errors = _load_run_metrics_records(run_name)
-    if reason == "invalid_run":
-        raise HTTPException(status_code=400, detail="Invalid run name")
-    if reason == "run_not_found":
-        raise HTTPException(status_code=404, detail="Run not found")
-    if reason == "zip_read_error":
-        return {
-            "ok": False,
+    try:
+        records, reason, parse_errors = _load_run_metrics_records(run_name)
+        if reason == "invalid_run":
+            raise HTTPException(status_code=400, detail="Invalid run name")
+        if reason == "run_not_found":
+            raise HTTPException(status_code=404, detail="Run not found")
+        if reason == "zip_read_error":
+            return {
+                "ok": False,
+                "run": run_name,
+                "reason": "zip_read_error",
+                "records": [],
+            }
+        if reason == "read_error":
+            return {
+                "ok": False,
+                "run": run_name,
+                "reason": "read_error",
+                "records": [],
+                "parse_errors": parse_errors,
+            }
+        if reason == "no_metrics_file" or records is None:
+            return {
+                "ok": False,
+                "run": run_name,
+                "reason": reason or "no_metrics_file",
+                "records": [],
+            }
+        out: dict[str, Any] = {
+            "ok": True,
             "run": run_name,
-            "reason": "zip_read_error",
-            "records": [],
-        }
-    if reason == "read_error":
-        return {
-            "ok": False,
-            "run": run_name,
-            "reason": "read_error",
-            "records": [],
+            "records": records,
             "parse_errors": parse_errors,
         }
-    if reason == "no_metrics_file" or records is None:
+        if summary:
+            out["summary"] = _summarize_run_metrics(records, run_name=run_name)
+        return out
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("get_run_metrics failed run_name=%s", run_name)
         return {
             "ok": False,
             "run": run_name,
-            "reason": reason or "no_metrics_file",
+            "reason": "internal_error",
             "records": [],
+            "parse_errors": [str(exc)],
         }
-    out: dict[str, Any] = {
-        "ok": True,
-        "run": run_name,
-        "records": records,
-        "parse_errors": parse_errors,
-    }
-    if summary:
-        out["summary"] = _summarize_run_metrics(records, run_name=run_name)
-    return out
 
 
 def _game_state_from_frame_envelope(envelope: dict[str, Any]) -> dict[str, Any] | None:
@@ -1143,8 +1188,8 @@ async def get_run_frame_ai_sidecar(run_name: str, file_name: str) -> dict[str, A
 @app.get("/api/runs/{run_name}")
 async def get_run_states(run_name: str):
     try:
-        run_path = os.path.join(LOGS_DIR, run_name)
-        if not os.path.exists(run_path):
+        run_path = _safe_run_dir(run_name)
+        if not run_path:
             return {"status": "error", "message": "Run not found"}
 
         states = []
@@ -1173,6 +1218,7 @@ async def poll_instruction():
         "manual_action": manual_actions_queue.pop(0) if manual_actions_queue else None,
         "approved_action": approved,
         "agent_mode": ai_runtime["mode"],
+        "auto_start_next_game": bool(ai_runtime.get("auto_start_next_game")),
     }
 
 
@@ -1277,6 +1323,24 @@ async def set_ai_mode(cmd: ModeUpdate):
     await broadcast_event("agent_mode", {"mode": mode})
     await _broadcast_react_snapshot()
     return {"status": "success", "mode": mode}
+
+
+class AutoStartBody(BaseModel):
+    enabled: bool = False
+
+
+@app.post("/api/ai/auto_start")
+async def set_auto_start_next_game(body: AutoStartBody):
+    ai_runtime["auto_start_next_game"] = bool(body.enabled)
+    await broadcast_event(
+        "agent_settings",
+        {"auto_start_next_game": ai_runtime["auto_start_next_game"]},
+    )
+    await _broadcast_react_snapshot()
+    return {
+        "status": "success",
+        "auto_start_next_game": ai_runtime["auto_start_next_game"],
+    }
 
 
 @app.post("/api/ai/approve")

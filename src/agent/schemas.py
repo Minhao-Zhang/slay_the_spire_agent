@@ -83,6 +83,8 @@ class TraceTokenUsage(BaseModel):
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
     total_tokens: Optional[int] = None
+    # OpenAI-style: usage.prompt_tokens_details.cached_tokens (also tries input_tokens_details).
+    cached_input_tokens: Optional[int] = None
 
 
 class TraceLlmCall(BaseModel):
@@ -107,6 +109,7 @@ class PersistedAiLog(BaseModel):
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
     total_tokens: Optional[int] = None
+    cached_input_tokens: Optional[int] = None
     tool_names: list[str] = Field(default_factory=list)
     planner_summary: str = ""
     combat_plan_generated: bool = False
@@ -119,6 +122,10 @@ class PersistedAiLog(BaseModel):
     prompt_profile: str = "default"
     llm_model_used: str = ""
     llm_turn_model_key: str = ""
+    reasoning_profile_name: str = ""
+    reasoning_effort_used: str = ""
+    lessons_retrieved: int = 0
+    retrieval_mode_used: str = ""
 
 
 class AgentTrace(BaseModel):
@@ -159,4 +166,8 @@ class AgentTrace(BaseModel):
     prompt_profile: str = "default"
     llm_model_used: str = ""
     llm_turn_model_key: str = ""
+    reasoning_profile_name: str = ""
+    reasoning_effort_used: str = ""
+    lessons_retrieved: int = 0
+    retrieval_mode_used: str = ""
 

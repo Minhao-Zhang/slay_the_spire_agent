@@ -304,6 +304,24 @@ export function useControlPlane() {
     [fetchSnapshot, pushLog],
   );
 
+  const setAutoStartNextGame = useCallback(
+    async (enabled: boolean) => {
+      const r = await fetch("/api/ai/auto_start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        pushLog("ERROR", JSON.stringify(err));
+        return;
+      }
+      pushLog("SYSTEM", `Auto-start next game → ${enabled}`);
+      void fetchSnapshot();
+    },
+    [fetchSnapshot, pushLog],
+  );
+
   const retryAgent = useCallback(async () => {
     const r = await fetch("/api/agent/retry", {
       method: "POST",
@@ -381,6 +399,7 @@ export function useControlPlane() {
     postIngress,
     queueManualCommand,
     setAgentMode,
+    setAutoStartNextGame,
     resumeAgent,
     retryAgent,
     pushLog,

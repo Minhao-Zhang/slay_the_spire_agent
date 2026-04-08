@@ -17,6 +17,35 @@ from src.agent.tool_registry import list_function_tools
 logger = logging.getLogger(__name__)
 
 TraceCallback = Callable[[str], None]
+
+
+def _cached_tokens_from_details(details: Any) -> int | None:
+    if details is None:
+        return None
+    raw = getattr(details, "cached_tokens", None)
+    if raw is None and isinstance(details, dict):
+        raw = details.get("cached_tokens")
+    if isinstance(raw, int) and raw >= 0:
+        return raw
+    return None
+
+
+def extract_cached_prompt_tokens_from_usage(usage: Any) -> int | None:
+    """Read cached prompt-token count from OpenAI Chat / Responses ``usage`` objects."""
+    if usage is None:
+        return None
+    for attr in ("prompt_tokens_details", "input_tokens_details"):
+        c = _cached_tokens_from_details(getattr(usage, attr, None))
+        if c is not None:
+            return c
+    if isinstance(usage, dict):
+        for key in ("prompt_tokens_details", "input_tokens_details"):
+            c = _cached_tokens_from_details(usage.get(key))
+            if c is not None:
+                return c
+    return None
+
+
 ToolCallback = Callable[[str], None]
 ApiStyle = Literal["responses", "chat_completions"]
 CapabilityState = Literal["unchecked", "checking", "ready", "failed"]
@@ -325,17 +354,25 @@ class LLMClient:
         previous_response_id: str | None = None,
         model_name: str | None = None,
         model_key: str = "reasoning",
+        reasoning_effort: str | None = None,
+        function_tools: list[dict[str, Any]] | None = None,
     ):
         model = model_name or self.model_name_for_key(model_key)
-        effort = self.reasoning_effort_for_key(model_key)
+        effort = (
+            reasoning_effort.strip().lower()
+            if reasoning_effort is not None
+            else self.reasoning_effort_for_key(model_key)
+        )
         clean_input = _sanitize_responses_input(input_items)
+        tools_payload = self.tools if function_tools is None else function_tools
         kwargs: dict[str, Any] = {
             "model": model,
             "instructions": system_prompt,
-            "tools": self.tools,
             "input": clean_input,
             "previous_response_id": previous_response_id,
         }
+        if tools_payload:
+            kwargs["tools"] = tools_payload
         if effort and effort != "none":
             kwargs["reasoning"] = {"summary": "auto", "effort": effort}
         client = self._client_for_model_key(model_key)
@@ -380,6 +417,8 @@ class LLMClient:
         on_delta: TraceCallback | None = None,
         on_tool: ToolCallback | None = None,
         model_key: str = "reasoning",
+        reasoning_effort: str | None = None,
+        function_tools: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         started = time.perf_counter()
         raw_chunks: list[str] = []
@@ -389,6 +428,8 @@ class LLMClient:
             input_items=input_items,
             previous_response_id=previous_response_id,
             model_key=model_key,
+            reasoning_effort=reasoning_effort,
+            function_tools=function_tools,
         ) as stream:
             for event in stream:
                 if event.type == "response.output_text.delta":
@@ -410,6 +451,7 @@ class LLMClient:
             input_tokens=getattr(usage_data, "input_tokens", None) if usage_data else None,
             output_tokens=getattr(usage_data, "output_tokens", None) if usage_data else None,
             total_tokens=getattr(usage_data, "total_tokens", None) if usage_data else None,
+            cached_input_tokens=extract_cached_prompt_tokens_from_usage(usage_data),
         )
 
         output_text = getattr(response, "output_text", "") or ""
@@ -463,6 +505,8 @@ class LLMClient:
         on_delta: TraceCallback | None = None,
         on_tool: ToolCallback | None = None,
         model_key: str = "reasoning",
+        reasoning_effort: str | None = None,
+        function_tools: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         started = time.perf_counter()
         raw_chunks: list[str] = []
@@ -474,14 +518,24 @@ class LLMClient:
 
         messages = self._to_chat_messages(system_prompt, input_items)
         model_name = self.model_name_for_key(model_key)
-        effort = self.reasoning_effort_for_key(model_key)
+        effort = (
+            reasoning_effort.strip().lower()
+            if reasoning_effort is not None
+            else self.reasoning_effort_for_key(model_key)
+        )
+        chat_tool_list = (
+            self.chat_tools
+            if function_tools is None
+            else [_to_chat_tool_schema(t) for t in function_tools]
+        )
         create_kwargs: dict[str, Any] = {
             "model": model_name,
             "messages": messages,
-            "tools": self.chat_tools,
             "stream": True,
-            "tool_choice": "auto",
         }
+        if chat_tool_list:
+            create_kwargs["tools"] = chat_tool_list
+            create_kwargs["tool_choice"] = "auto"
         if effort and effort != "none":
             create_kwargs["reasoning_effort"] = effort
         client = self._client_for_model_key(model_key)
@@ -502,6 +556,9 @@ class LLMClient:
                     input_tokens=getattr(chunk_usage, "prompt_tokens", None),
                     output_tokens=getattr(chunk_usage, "completion_tokens", None),
                     total_tokens=getattr(chunk_usage, "total_tokens", None),
+                    cached_input_tokens=extract_cached_prompt_tokens_from_usage(
+                        chunk_usage
+                    ),
                 )
 
             choices = getattr(chunk, "choices", None) or []
@@ -670,6 +727,8 @@ class LLMClient:
         on_delta: TraceCallback | None = None,
         on_tool: ToolCallback | None = None,
         model_key: str = "reasoning",
+        reasoning_effort: str | None = None,
+        function_tools: list[dict[str, Any]] | None = None,
     ) -> dict:
         self.check_api_capabilities()
         if self.capability_state == "checking":
@@ -683,6 +742,8 @@ class LLMClient:
                 on_delta=on_delta,
                 on_tool=on_tool,
                 model_key=model_key,
+                reasoning_effort=reasoning_effort,
+                function_tools=function_tools,
             )
         return self._run_streaming_turn_responses(
             system_prompt=system_prompt,
@@ -691,6 +752,8 @@ class LLMClient:
             on_delta=on_delta,
             on_tool=on_tool,
             model_key=model_key,
+            reasoning_effort=reasoning_effort,
+            function_tools=function_tools,
         )
 
     def generate_combat_plan(
@@ -743,6 +806,7 @@ class LLMClient:
                 input_tokens=getattr(usage_data, "prompt_tokens", None) if usage_data else None,
                 output_tokens=getattr(usage_data, "completion_tokens", None) if usage_data else None,
                 total_tokens=getattr(usage_data, "total_tokens", None) if usage_data else None,
+                cached_input_tokens=extract_cached_prompt_tokens_from_usage(usage_data),
             )
         else:
             kwargs: dict[str, Any] = {
@@ -762,6 +826,87 @@ class LLMClient:
                 input_tokens=getattr(usage_data, "input_tokens", None) if usage_data else None,
                 output_tokens=getattr(usage_data, "output_tokens", None) if usage_data else None,
                 total_tokens=getattr(usage_data, "total_tokens", None) if usage_data else None,
+                cached_input_tokens=extract_cached_prompt_tokens_from_usage(usage_data),
+            )
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        return {
+            "raw_output": text,
+            "token_usage": usage,
+            "latency_ms": latency_ms,
+        }
+
+    def generate_plain_completion(
+        self,
+        *,
+        system_prompt: str,
+        user_content: str,
+        model_key: str = "fast",
+        max_output_tokens: int = 1024,
+        reasoning_effort: str | None = None,
+    ) -> dict[str, Any]:
+        """Single non-streaming text completion without tools (retrieval agent, utilities)."""
+        self.check_api_capabilities()
+        if self.capability_state == "checking":
+            raise RuntimeError("LLM configuration check is still running.")
+        if not self.available or not self.api_style:
+            raise RuntimeError(self.disabled_reason or "LLM is unavailable for this run.")
+        model_name = self.model_name_for_key(model_key)
+        effort = (
+            reasoning_effort.strip().lower()
+            if reasoning_effort is not None
+            else self.reasoning_effort_for_key(model_key)
+        )
+        client = self._client_for_model_key(model_key)
+        started = time.perf_counter()
+        cap = max_output_tokens
+        if self.api_style == "chat_completions":
+            kwargs: dict[str, Any] = {
+                "model": model_name,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content},
+                ],
+            }
+            if effort and effort != "none":
+                kwargs["reasoning_effort"] = effort
+            try:
+                completion = client.chat.completions.create(**kwargs, max_completion_tokens=cap)
+            except TypeError:
+                kwargs.pop("reasoning_effort", None)
+                try:
+                    completion = client.chat.completions.create(**kwargs, max_completion_tokens=cap)
+                except TypeError:
+                    completion = client.chat.completions.create(**kwargs)
+            choices = getattr(completion, "choices", None) or []
+            text = ""
+            if choices:
+                text = (getattr(choices[0].message, "content", None) or "").strip()
+            usage_data = getattr(completion, "usage", None)
+            usage = TraceTokenUsage(
+                input_tokens=getattr(usage_data, "prompt_tokens", None) if usage_data else None,
+                output_tokens=getattr(usage_data, "completion_tokens", None) if usage_data else None,
+                total_tokens=getattr(usage_data, "total_tokens", None) if usage_data else None,
+                cached_input_tokens=extract_cached_prompt_tokens_from_usage(usage_data),
+            )
+        else:
+            kwargs_r: dict[str, Any] = {
+                "model": model_name,
+                "instructions": system_prompt,
+                "input": [{"role": "user", "content": user_content}],
+            }
+            if effort and effort != "none":
+                kwargs_r["reasoning"] = {"effort": effort}
+            try:
+                response = client.responses.create(**kwargs_r, max_output_tokens=cap)
+            except TypeError:
+                response = client.responses.create(**kwargs_r)
+            text = (getattr(response, "output_text", None) or "").strip()
+            usage_data = getattr(response, "usage", None)
+            usage = TraceTokenUsage(
+                input_tokens=getattr(usage_data, "input_tokens", None) if usage_data else None,
+                output_tokens=getattr(usage_data, "output_tokens", None) if usage_data else None,
+                total_tokens=getattr(usage_data, "total_tokens", None) if usage_data else None,
+                cached_input_tokens=extract_cached_prompt_tokens_from_usage(usage_data),
             )
         latency_ms = int((time.perf_counter() - started) * 1000)
         return {
