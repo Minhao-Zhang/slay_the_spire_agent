@@ -1,11 +1,47 @@
 # Slay the Spire LLM Bot
 
-LLM-assisted play for **Slay the Spire** using [CommunicationMod](https://github.com/ForgottenArbiter/CommunicationMod). The stack is:
+This repo is a **full-stack LLM agent** wired into **Slay the Spire** via [CommunicationMod](https://github.com/ForgottenArbiter/CommunicationMod). It is also a practical **AI engineering** codebase: a long-horizon, tool-using decision loop with human-in-the-loop controls, structured traces, and offline analysis over logged runs.
+
+**Runtime stack:**
 
 - **`src/main.py`** — stdin/stdout bridge to the game; forwards state to the dashboard; polls for manual or AI-approved commands.
-- **`src/agent/`** — LangGraph-style decision agent ([`graph.py`](src/agent/graph.py)), OpenAI-compatible client, prompts, pile-inspection tools.
-- **`src/ui/dashboard.py`** — FastAPI control plane (HTTP + WebSocket) on port **8000**.
-- **`apps/web/`** — Vite + React operator UI (monitor, run metrics, map replay).
+- **`src/agent/`** — LangGraph decision graph ([`graph.py`](src/agent/graph.py)), OpenAI-compatible client ([`llm_client.py`](src/agent/llm_client.py)), prompts, tool registry, policy/validation, optional planning and memory.
+- **`src/ui/dashboard.py`** — FastAPI control plane (HTTP + WebSocket) on port **8000**; exposes AI approve/reject, mode switches, and agent status for operators.
+- **`apps/web/`** — Vite + React operator UI (live monitor, run metrics, map replay).
+
+## AI engineering in this repo
+
+Overview of how pieces connect: the **dashboard** hosts the agent loop; **durable knowledge** (docs, lesson store, optional reflection) feeds **context** before the **LangGraph** step; **structured traces** stream back through the same API the **operator UI** uses for HITL. The bridge records **logs** for replay and for offline reflection. For a deeper breakdown (modules, routes, trace fields), see [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+```mermaid
+flowchart TB
+  Game[("Slay the Spire + CommunicationMod")] <--> Bridge["Game bridge"]
+  Bridge <--> Dash["Dashboard API\n(agent runtime)"]
+  Dash <--> UI["Operator UI"]
+
+  subgraph Agent["Decision agent"]
+    Ctx["Build context\n(view model · memory · planner · routing)"]
+    Loop["LangGraph · LLM · tools"]
+    Pol["Policy → validated command"]
+    Ctx --> Loop --> Pol
+  end
+
+  subgraph Know["Durable knowledge (optional)"]
+    KB[("Strategy & lesson store")]
+    Refl["Reflection · consolidation"]
+  end
+
+  KB --> Ctx
+  Dash --> Ctx
+  Pol --> Dash
+  Loop -.->|AgentTrace| Dash
+  UI -.->|approve · mode| Dash
+
+  Bridge --> Logs[("Run logs")]
+  Logs --> Replay["Replay / metrics"]
+  Logs -.-> Refl
+  Refl --> KB
+```
 
 > [!NOTE]
 > Reference card/relic data is derived from the [Slay the Spire Reference Spreadsheet](https://docs.google.com/spreadsheets/d/1ZsxNXebbELpcCi8N7FVOTNGdX_K9-BRC_LMgx4TORo4) and game ingress via CommunicationMod. This project is not affiliated with ForgottenArbiter.
@@ -82,7 +118,7 @@ or `run_agent.bat` / `./run_agent.sh`. Prints `ready`, reads **JSON lines** from
 
 ### Agent modes
 
-`AGENT_MODE` (and the dashboard) support roughly **`propose`** (human approves), **`auto`**, and **`manual`**. See `.env.example` and [`config.py`](src/agent/config.py).
+`AGENT_MODE` (and the dashboard) support roughly **`propose`** (human approves), **`auto`**, and **`manual`**. See `.env.example` and [`config.py`](src/agent/config.py). For how this fits into the agent graph and APIs, see [AI engineering in this repo](#ai-engineering-in-this-repo) above.
 
 ### API overview
 
