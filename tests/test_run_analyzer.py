@@ -30,7 +30,7 @@ class TestRunAnalyzer(unittest.TestCase):
                         "state_id": "a2",
                         "turn_key": "COMBAT:2",
                         "status": "executed",
-                        "reasoning_profile_name": "legacy_binary",
+                        "reasoning_profile_name": "budget_disabled_binary",
                         "reasoning_effort_used": "medium",
                     }
                 ),

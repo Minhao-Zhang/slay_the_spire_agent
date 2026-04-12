@@ -6,11 +6,11 @@ from typing import Any, Optional
 
 from src.reference.knowledge_base import (
     get_parsed_card_info,
+    get_parsed_potion_info,
     get_relic_info,
     get_monster_info,
     get_event_info,
     get_power_info,
-    get_potion_info,
 )
 
 
@@ -22,6 +22,19 @@ def _ascension_level(game: dict) -> int:
         return int(raw)
     except (TypeError, ValueError):
         return 0
+
+
+def _normalize_relic_name(name: str) -> str:
+    return name.lower().replace("'", "").replace('"', "").strip()
+
+
+def _player_has_sacred_bark(game: dict) -> bool:
+    for r in game.get("relics") or []:
+        if not isinstance(r, dict):
+            continue
+        if _normalize_relic_name(str(r.get("name", ""))) == "sacred bark":
+            return True
+    return False
 
 
 def _normalize_keys(game: dict) -> dict[str, bool]:
@@ -91,9 +104,13 @@ def process_state(raw: dict) -> dict:
     vm["keys"] = _normalize_keys(game)
 
     # -- inventory (always present when in-game) --
+    has_sacred_bark = _player_has_sacred_bark(game)
     vm["inventory"] = {
         "relics": [_enrich_relic(r) for r in game.get("relics", [])],
-        "potions": [_enrich_potion(p) for p in game.get("potions", [])],
+        "potions": [
+            _enrich_potion(p, has_sacred_bark=has_sacred_bark)
+            for p in game.get("potions", [])
+        ],
         "deck": [_enrich_card(c) for c in game.get("deck", [])],
     }
 
@@ -172,9 +189,9 @@ def _enrich_relic(relic: dict) -> dict:
     return out
 
 
-def _enrich_potion(potion: dict) -> dict:
+def _enrich_potion(potion: dict, *, has_sacred_bark: bool = False) -> dict:
     out = dict(potion)
-    kb = get_potion_info(potion.get("name", ""))
+    kb = get_parsed_potion_info(potion.get("name", ""), has_sacred_bark)
     if kb:
         out["kb"] = {"effect": kb.get("effect", "")}
     else:
@@ -387,8 +404,9 @@ def _build_screen(screen_type: str, s: dict, game: dict, combat: Optional[dict])
             enriched["choice_index"] = len(s.get("cards", [])) + i
             shop_relics.append(enriched)
         shop_potions = []
+        has_sacred_bark = _player_has_sacred_bark(game)
         for i, p in enumerate(s.get("potions", [])):
-            enriched = _enrich_potion(p)
+            enriched = _enrich_potion(p, has_sacred_bark=has_sacred_bark)
             enriched["choice_index"] = len(s.get("cards", [])) + len(s.get("relics", [])) + i
             shop_potions.append(enriched)
 

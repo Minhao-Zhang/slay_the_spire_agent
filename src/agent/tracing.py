@@ -104,6 +104,7 @@ def build_persisted_ai_log(trace: AgentTrace) -> PersistedAiLog:
         output_tokens=trace.token_usage.output_tokens,
         total_tokens=trace.token_usage.total_tokens,
         cached_input_tokens=trace.token_usage.cached_input_tokens,
+        uncached_input_tokens=trace.token_usage.uncached_input_tokens,
         tool_names=list(trace.tool_names),
         planner_summary=trace.planner_summary,
         combat_plan_generated=trace.combat_plan_generated,
@@ -148,6 +149,19 @@ def build_vm_summary(
     floor = game.get("floor", header.get("floor"))
     act = game.get("act", header.get("act"))
 
+    pc = game.get("class")
+    if pc is None:
+        pc = header.get("class")
+    al = game.get("ascension_level")
+    if al is None:
+        al = header.get("ascension_level")
+    asc_int = 0
+    if isinstance(al, (int, float)) and not isinstance(al, bool):
+        try:
+            asc_int = max(0, int(al))
+        except (TypeError, ValueError, OverflowError):
+            asc_int = 0
+
     summary: dict[str, Any] = {
         "state_id": state_id,
         "event_index": event_index,
@@ -159,6 +173,8 @@ def build_vm_summary(
         "current_hp": game.get("current_hp"),
         "max_hp": game.get("max_hp"),
         "gold": game.get("gold"),
+        "class": pc,
+        "ascension_level": asc_int,
     }
 
     if in_combat and isinstance(combat_vm, dict):
@@ -336,6 +352,7 @@ def append_ai_decision_run_metric(run_dir: Path, trace: AgentTrace, state_log_pa
         "output_tokens": trace.token_usage.output_tokens,
         "total_tokens": trace.token_usage.total_tokens,
         "cached_input_tokens": trace.token_usage.cached_input_tokens,
+        "uncached_input_tokens": trace.token_usage.uncached_input_tokens,
         "latency_ms": trace.latency_ms,
         "status": trace.status,
         "validation_error": val_err[:500] if val_err else None,

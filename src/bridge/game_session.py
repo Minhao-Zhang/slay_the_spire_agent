@@ -74,6 +74,30 @@ def build_game_dir_name(
     return f"{ts}_{cls}_A{asc}_{seed8}"
 
 
+# Inverse of :func:`build_game_dir_name` (timestamp uses ``-``; class slug may contain ``_``).
+_GAME_DIR_BASENAME_RE = re.compile(
+    r"^(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})_(.+)_A(\d+)_(.+)$"
+)
+
+
+def parse_game_dir_basename(basename: str) -> tuple[str | None, int]:
+    """Parse a log run directory name produced by :func:`build_game_dir_name`.
+
+    Returns ``(class_slug, ascension)`` where ``class_slug`` matches
+    :func:`sanitize_class_slug` (e.g. ``THE_SILENT``), or ``(None, 0)`` if the
+    string does not match the expected shape.
+    """
+    m = _GAME_DIR_BASENAME_RE.match((basename or "").strip())
+    if not m:
+        return None, 0
+    cls_slug = m.group(2)
+    try:
+        asc = max(0, int(m.group(3)))
+    except ValueError:
+        asc = 0
+    return cls_slug, asc
+
+
 @dataclass
 class GameSession:
     """Per-run state: logging paths, indices, and caches scoped to one in-game session."""

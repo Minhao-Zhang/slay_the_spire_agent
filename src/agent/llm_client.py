@@ -10,7 +10,7 @@ import httpx
 from openai import OpenAI
 
 from src.agent.config import AgentConfig
-from src.agent.schemas import TraceTokenUsage
+from src.agent.schemas import TraceTokenUsage, compute_uncached_input_tokens
 from src.agent.tool_registry import list_function_tools
 
 
@@ -28,6 +28,24 @@ def _cached_tokens_from_details(details: Any) -> int | None:
     if isinstance(raw, int) and raw >= 0:
         return raw
     return None
+
+
+def _trace_token_usage(
+    *,
+    input_tokens: int | None,
+    output_tokens: int | None,
+    total_tokens: int | None,
+    cached_input_tokens: int | None,
+) -> TraceTokenUsage:
+    return TraceTokenUsage(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        cached_input_tokens=cached_input_tokens,
+        uncached_input_tokens=compute_uncached_input_tokens(
+            input_tokens, cached_input_tokens
+        ),
+    )
 
 
 def extract_cached_prompt_tokens_from_usage(usage: Any) -> int | None:
@@ -420,7 +438,6 @@ class LLMClient:
         reasoning_effort: str | None = None,
         function_tools: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        started = time.perf_counter()
         raw_chunks: list[str] = []
 
         with self._stream_response(
@@ -431,6 +448,7 @@ class LLMClient:
             reasoning_effort=reasoning_effort,
             function_tools=function_tools,
         ) as stream:
+            started = time.perf_counter()
             for event in stream:
                 if event.type == "response.output_text.delta":
                     delta = getattr(event, "delta", "")
@@ -447,11 +465,12 @@ class LLMClient:
 
         latency_ms = int((time.perf_counter() - started) * 1000)
         usage_data = getattr(response, "usage", None)
-        usage = TraceTokenUsage(
+        cached_in = extract_cached_prompt_tokens_from_usage(usage_data)
+        usage = _trace_token_usage(
             input_tokens=getattr(usage_data, "input_tokens", None) if usage_data else None,
             output_tokens=getattr(usage_data, "output_tokens", None) if usage_data else None,
             total_tokens=getattr(usage_data, "total_tokens", None) if usage_data else None,
-            cached_input_tokens=extract_cached_prompt_tokens_from_usage(usage_data),
+            cached_input_tokens=cached_in,
         )
 
         output_text = getattr(response, "output_text", "") or ""
@@ -508,7 +527,6 @@ class LLMClient:
         reasoning_effort: str | None = None,
         function_tools: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        started = time.perf_counter()
         raw_chunks: list[str] = []
         reasoning_chunks: list[str] = []
         response_id = ""
@@ -539,6 +557,7 @@ class LLMClient:
         if effort and effort != "none":
             create_kwargs["reasoning_effort"] = effort
         client = self._client_for_model_key(model_key)
+        started = time.perf_counter()
         try:
             stream = client.chat.completions.create(**create_kwargs)
         except TypeError:
@@ -552,13 +571,12 @@ class LLMClient:
             chunk_usage = getattr(chunk, "usage", None)
             if chunk_usage:
                 last_chunk_usage = chunk_usage
-                usage = TraceTokenUsage(
+                cch = extract_cached_prompt_tokens_from_usage(chunk_usage)
+                usage = _trace_token_usage(
                     input_tokens=getattr(chunk_usage, "prompt_tokens", None),
                     output_tokens=getattr(chunk_usage, "completion_tokens", None),
                     total_tokens=getattr(chunk_usage, "total_tokens", None),
-                    cached_input_tokens=extract_cached_prompt_tokens_from_usage(
-                        chunk_usage
-                    ),
+                    cached_input_tokens=cch,
                 )
 
             choices = getattr(chunk, "choices", None) or []
@@ -802,7 +820,7 @@ class LLMClient:
             if choices:
                 text = (getattr(choices[0].message, "content", None) or "").strip()
             usage_data = getattr(completion, "usage", None)
-            usage = TraceTokenUsage(
+            usage = _trace_token_usage(
                 input_tokens=getattr(usage_data, "prompt_tokens", None) if usage_data else None,
                 output_tokens=getattr(usage_data, "completion_tokens", None) if usage_data else None,
                 total_tokens=getattr(usage_data, "total_tokens", None) if usage_data else None,
@@ -822,7 +840,7 @@ class LLMClient:
                 response = client.responses.create(**kwargs)
             text = (getattr(response, "output_text", None) or "").strip()
             usage_data = getattr(response, "usage", None)
-            usage = TraceTokenUsage(
+            usage = _trace_token_usage(
                 input_tokens=getattr(usage_data, "input_tokens", None) if usage_data else None,
                 output_tokens=getattr(usage_data, "output_tokens", None) if usage_data else None,
                 total_tokens=getattr(usage_data, "total_tokens", None) if usage_data else None,
@@ -882,7 +900,7 @@ class LLMClient:
             if choices:
                 text = (getattr(choices[0].message, "content", None) or "").strip()
             usage_data = getattr(completion, "usage", None)
-            usage = TraceTokenUsage(
+            usage = _trace_token_usage(
                 input_tokens=getattr(usage_data, "prompt_tokens", None) if usage_data else None,
                 output_tokens=getattr(usage_data, "completion_tokens", None) if usage_data else None,
                 total_tokens=getattr(usage_data, "total_tokens", None) if usage_data else None,
@@ -902,7 +920,7 @@ class LLMClient:
                 response = client.responses.create(**kwargs_r)
             text = (getattr(response, "output_text", None) or "").strip()
             usage_data = getattr(response, "usage", None)
-            usage = TraceTokenUsage(
+            usage = _trace_token_usage(
                 input_tokens=getattr(usage_data, "input_tokens", None) if usage_data else None,
                 output_tokens=getattr(usage_data, "output_tokens", None) if usage_data else None,
                 total_tokens=getattr(usage_data, "total_tokens", None) if usage_data else None,

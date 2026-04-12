@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,9 +15,6 @@ from src.ui.state_processor import event_option_choose_index
 _BUFF_DESCRIPTIONS: dict[str, str] | None = None
 _ORB_MECHANICS: dict[str, Any] | None = None
 _TOKEN_PATTERN = re.compile(r"\[([^\]]+)\]")
-
-log = logging.getLogger(__name__)
-_legacy_strategy_corpus_warned = False
 
 
 def _get_buff_descriptions() -> dict[str, str]:
@@ -987,24 +983,6 @@ def build_user_prompt(
     prompt_profile: str = "default",
     memory_hits: list[RetrievalHit] | None = None,
 ) -> str:
-    from src.agent.config import get_agent_config
-
-    global _legacy_strategy_corpus_warned
-    cfg = get_agent_config()
-    if (
-        not _legacy_strategy_corpus_warned
-        and (
-            cfg.include_strategy_corpus
-            or bool((cfg.strategy_corpus_path or "").strip())
-        )
-    ):
-        _legacy_strategy_corpus_warned = True
-        log.warning(
-            "LLM_INCLUDE_STRATEGY_CORPUS / LLM_STRATEGY_CORPUS_PATH are deprecated: "
-            "strategy context is loaded from tagged markdown under AGENT_STRATEGY_DIR (MemoryStore L1). "
-            "The monolithic corpus prepend is no longer applied."
-        )
-
     groups = build_prompt_groups(
         vm,
         recent_actions,

@@ -15,6 +15,7 @@ from src.agent.config import get_agent_config, load_system_prompt
 from src.agent.policy import parse_agent_output
 from src.agent.prompt_builder import build_user_prompt
 from src.agent.tracing import RUN_END_SNAPSHOT_FILENAME, build_state_id
+from src.bridge.game_session import parse_game_dir_basename
 from src.repo_paths import REPO_ROOT
 from src.ui.state_processor import process_state
 
@@ -704,21 +705,20 @@ def _parse_run_metrics_ndjson_text(text: str) -> tuple[list[dict[str, Any]], lis
 
 
 def _zip_path_for_run(run_name: str) -> str | None:
-    """Resolve ``*.zip`` under ``logs/games`` first, then ``logs`` (legacy)."""
+    """Resolve ``*.zip`` under ``logs/games``."""
     if not run_name or "/" in run_name or "\\" in run_name or ".." in run_name:
         return None
     if not run_name.lower().endswith(".zip"):
         return None
-    for root in (LOG_GAMES_DIR, LOGS_DIR):
-        base = os.path.abspath(root)
-        zip_path = os.path.abspath(os.path.join(root, run_name))
-        if zip_path.startswith(base + os.sep) and os.path.isfile(zip_path):
-            return zip_path
+    base = os.path.abspath(LOG_GAMES_DIR)
+    zip_path = os.path.abspath(os.path.join(LOG_GAMES_DIR, run_name))
+    if zip_path.startswith(base + os.sep) and os.path.isfile(zip_path):
+        return zip_path
     return None
 
 
 def _read_run_end_snapshot_derived(run_name: str) -> dict[str, Any] | None:
-    """Load ``derived`` from ``run_end_snapshot.json`` (directory or zip under ``logs/``)."""
+    """Load ``derived`` from ``run_end_snapshot.json`` (directory or zip under ``logs/games``)."""
     if not run_name or "/" in run_name or "\\" in run_name or ".." in run_name:
         return None
     if run_name.lower().endswith(".zip"):
@@ -750,6 +750,24 @@ def _read_run_end_snapshot_derived(run_name: str) -> dict[str, Any] | None:
             return None
     der = obj.get("derived")
     return der if isinstance(der, dict) else None
+
+
+def _player_class_asc_from_derived(d: dict[str, Any]) -> tuple[str | None, int]:
+    """``class`` + ``ascension_level`` from ``run_end`` / snapshot ``derived``."""
+    raw_cls = d.get("class")
+    if not isinstance(raw_cls, str):
+        return None, 0
+    s = raw_cls.strip()
+    if not s or s in ("Main Menu", "?", "-"):
+        return None, 0
+    ra = d.get("ascension_level")
+    asc = 0
+    if isinstance(ra, (int, float)) and not isinstance(ra, bool):
+        try:
+            asc = max(0, int(ra))
+        except (TypeError, ValueError, OverflowError):
+            asc = 0
+    return s, asc
 
 
 def _run_outcome_from_derived(d: dict[str, Any]) -> dict[str, Any]:
@@ -789,6 +807,7 @@ def _summarize_run_metrics(
     input_tokens = 0
     output_tokens = 0
     cached_input_tokens = 0
+    uncached_input_tokens = 0
     for r in executed:
         t = r.get("total_tokens")
         if isinstance(t, (int, float)):
@@ -802,6 +821,14 @@ def _summarize_run_metrics(
         cti = r.get("cached_input_tokens")
         if isinstance(cti, (int, float)):
             cached_input_tokens += int(cti)
+        uti = r.get("uncached_input_tokens")
+        if isinstance(uti, (int, float)):
+            uncached_input_tokens += int(uti)
+        elif isinstance(ti, (int, float)):
+            if isinstance(cti, (int, float)):
+                uncached_input_tokens += max(0, int(ti) - int(cti))
+            else:
+                uncached_input_tokens += int(ti)
     latencies = [
         float(r["latency_ms"])
         for r in executed
@@ -811,6 +838,7 @@ def _summarize_run_metrics(
     n_lat = len(latencies)
     median_lat = latencies[n_lat // 2] if n_lat else None
     mean_lat = sum(latencies) / n_lat if n_lat else None
+
     event_indices: list[int] = []
     for r in records:
         ei = r.get("event_index")
@@ -818,6 +846,8 @@ def _summarize_run_metrics(
             event_indices.append(ei)
     floors: list[int] = []
     acts: list[int] = []
+    player_class: str | None = None
+    player_ascension: int = 0
     for r in states:
         vm = r.get("vm_summary")
         if isinstance(vm, dict):
@@ -827,7 +857,29 @@ def _summarize_run_metrics(
             ac = vm.get("act")
             if isinstance(ac, (int, float)):
                 acts.append(int(ac))
+            raw_cls = vm.get("class")
+            if isinstance(raw_cls, str):
+                s = raw_cls.strip()
+                # Last state row in file order wins (latest snapshot).
+                if s and s not in ("Main Menu", "?", "-"):
+                    player_class = s
+                    ra = vm.get("ascension_level")
+                    if isinstance(ra, (int, float)) and not isinstance(ra, bool):
+                        try:
+                            player_ascension = max(0, int(ra))
+                        except (TypeError, ValueError, OverflowError):
+                            player_ascension = 0
+                    else:
+                        player_ascension = 0
     run_ends = [r for r in records if r.get("type") == "run_end"]
+    if player_class is None and run_ends:
+        last_re = max(run_ends, key=lambda r: str(r.get("timestamp") or ""))
+        der0 = last_re.get("derived")
+        if isinstance(der0, dict):
+            pc, pa = _player_class_asc_from_derived(der0)
+            if pc:
+                player_class = pc
+                player_ascension = pa
     run_outcome: dict[str, Any] | None = None
     if run_ends:
         last_re = max(run_ends, key=lambda r: str(r.get("timestamp") or ""))
@@ -858,6 +910,16 @@ def _summarize_run_metrics(
     snapshot_derived: dict[str, Any] | None = None
     if run_name:
         snapshot_derived = _read_run_end_snapshot_derived(run_name)
+    if player_class is None and isinstance(snapshot_derived, dict):
+        pc, pa = _player_class_asc_from_derived(snapshot_derived)
+        if pc:
+            player_class = pc
+            player_ascension = pa
+    if run_name and player_class is None:
+        pc, pa = parse_game_dir_basename(run_name)
+        if pc:
+            player_class = pc
+            player_ascension = pa
     if run_outcome is None and isinstance(snapshot_derived, dict):
         run_outcome = _run_outcome_from_derived(snapshot_derived)
     has_run_end_snapshot = bool(snapshot_derived)
@@ -870,12 +932,18 @@ def _summarize_run_metrics(
         "input_tokens_executed": input_tokens,
         "output_tokens_executed": output_tokens,
         "cached_input_tokens_executed": cached_input_tokens,
+        "uncached_input_tokens_executed": uncached_input_tokens,
         "latency_ms_mean": mean_lat,
         "latency_ms_median": median_lat,
         "event_index_min": min(event_indices) if event_indices else None,
         "event_index_max": max(event_indices) if event_indices else None,
         "max_floor_reached": max(floors) if floors else None,
         "max_act_reached": max(acts) if acts else None,
+        "player_class": player_class,
+        "player_ascension": player_ascension if player_class else None,
+        "player_run_label": (
+            f"{player_class} · A{player_ascension}" if player_class else None
+        ),
         "run_outcome": run_outcome,
         "has_run_end_snapshot": has_run_end_snapshot,
     }
@@ -926,7 +994,7 @@ def _load_run_metrics_records(run_name: str) -> tuple[list[dict[str, Any]] | Non
 
 @app.get("/api/runs")
 async def get_runs():
-    """List replay/metrics run **directories** under ``logs/games`` (new) and legacy ``logs/*``."""
+    """List replay/metrics run **directories** under ``logs/games``."""
     try:
         runs_set: set[str] = set()
         if os.path.isdir(LOG_GAMES_DIR):
@@ -934,13 +1002,6 @@ async def get_runs():
                 if entry.startswith("."):
                     continue
                 p = os.path.join(LOG_GAMES_DIR, entry)
-                if os.path.isdir(p):
-                    runs_set.add(entry)
-        if os.path.isdir(LOGS_DIR):
-            for entry in os.listdir(LOGS_DIR):
-                if entry.startswith(".") or entry == "games":
-                    continue
-                p = os.path.join(LOGS_DIR, entry)
                 if os.path.isdir(p):
                     runs_set.add(entry)
         runs = sorted(runs_set, reverse=True)
@@ -952,13 +1013,12 @@ async def get_runs():
 def _safe_run_dir(run_name: str) -> str | None:
     if not run_name or "/" in run_name or "\\" in run_name or ".." in run_name:
         return None
-    for root in (LOG_GAMES_DIR, LOGS_DIR):
-        if not os.path.isdir(root):
-            continue
-        base = os.path.abspath(root)
-        full = os.path.abspath(os.path.join(root, run_name))
-        if full.startswith(base + os.sep) and os.path.isdir(full):
-            return full
+    if not os.path.isdir(LOG_GAMES_DIR):
+        return None
+    base = os.path.abspath(LOG_GAMES_DIR)
+    full = os.path.abspath(os.path.join(LOG_GAMES_DIR, run_name))
+    if full.startswith(base + os.sep) and os.path.isdir(full):
+        return full
     return None
 
 
@@ -966,7 +1026,7 @@ def _safe_run_dir(run_name: str) -> str | None:
 async def get_run_metrics(
     run_name: str, summary: int = 0
 ) -> dict[str, Any]:
-    """Parse ``run_metrics.ndjson`` for a log run directory or ``*.zip`` archive under ``logs/``."""
+    """Parse ``run_metrics.ndjson`` for a log run directory or ``*.zip`` archive under ``logs/games``."""
     try:
         records, reason, parse_errors = _load_run_metrics_records(run_name)
         if reason == "invalid_run":

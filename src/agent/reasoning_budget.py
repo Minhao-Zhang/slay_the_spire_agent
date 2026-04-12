@@ -131,7 +131,7 @@ class ReasoningBudgetRouter:
 
     def resolve(self, vm: dict[str, Any]) -> ReasoningProfile:
         if not self._config.reasoning_budget_enabled:
-            return self._legacy_profile(vm)
+            return self._binary_slot_profile(vm)
 
         header = as_dict(vm.get("header"))
         screen = as_dict(vm.get("screen"))
@@ -266,11 +266,11 @@ class ReasoningBudgetRouter:
             description="Default non-combat routing",
         )
 
-    def _legacy_profile(self, vm: dict[str, Any]) -> ReasoningProfile:
+    def _binary_slot_profile(self, vm: dict[str, Any]) -> ReasoningProfile:
         mk = self._config.combat_turn_llm if vm.get("combat") else self._config.non_combat_turn_llm
         effort = _effort_for_model_key(self._config, mk)
         return ReasoningProfile(
-            name="legacy_binary",
+            name="budget_disabled_binary",
             model_key=mk,
             reasoning_effort=effort,
             retrieval_mode="tag_match",

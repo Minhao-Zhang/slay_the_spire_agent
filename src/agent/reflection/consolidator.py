@@ -30,7 +30,7 @@ def _append_consolidation_log(memory_dir: Path, record: dict[str, Any]) -> None:
 def consolidate_procedural_memory(store: MemoryStore, config: AgentConfig) -> ConsolidationSummary:
     """Set ``status=archived`` for active procedural rows with confidence below threshold.
 
-    Merge / promote / weaken with LLM or cross-run validation is deferred (see IMPROVEMENT_PLAN).
+    Merge / promote / weaken with LLM or cross-run validation is deferred.
     """
     summary = ConsolidationSummary()
     summary.log_path = str((store.memory_dir / "consolidation_log.ndjson").resolve())

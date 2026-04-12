@@ -22,6 +22,7 @@ import {
   fmtFiniteIntLikeEn,
   fmtIntEn,
   fmtNumEn,
+  formatMonitorClassAscension,
   tickFmtIntEn,
   tickFmtNumberEn,
 } from "../lib/formatDisplayNumber";
@@ -34,12 +35,16 @@ import {
   deriveFloorAiAggRows,
   deriveFloorCumulativeTokens,
   deriveFloorStateAggRows,
+  deriveLatestPlayerRunLabel,
   deriveStateRows,
+  parsePlayerClassAscFromRunName,
+  type AiRow,
   type BinnedNumeric,
   type FloorAiAggRow,
   type FloorStateAggRow,
   type MetricsSummary,
   type StateRow,
+  uncachedInputTokensForAiRow,
 } from "../lib/runMetricsDerive";
 import { RunMetricsRunBar } from "./RunMetricsRunBar";
 
@@ -107,6 +112,18 @@ const Y_LABEL_LATENCY_S = {
   fontSize: 10,
   dx: -4,
 };
+
+const Y_LABEL_TPS = {
+  value: "tokens/s",
+  angle: -90,
+  position: "insideLeft" as const,
+  fill: "#64748b",
+  fontSize: 10,
+  dx: -4,
+};
+
+/** Y-axis max for estimated throughput chart (values above are clipped for display). */
+const ESTIMATED_TPS_CHART_CAP = 200;
 
 const X_AXIS_BAR_TICK = { fontSize: 9 };
 
@@ -290,6 +307,7 @@ export function RunMetricsPage() {
       aiExec
         .filter((r) => typeof r.event_index === "number")
         .map((r) => {
+          const row = r as AiRow;
           const input = numOrZero(r.input_tokens);
           const output = numOrZero(r.output_tokens);
           const total = numOrZero(r.total_tokens);
@@ -298,11 +316,13 @@ export function RunMetricsPage() {
             Number.isFinite(r.cached_input_tokens)
               ? r.cached_input_tokens
               : 0;
+          const uncachedIn = uncachedInputTokensForAiRow(row);
           const latMs = numOrZero(r.latency_ms);
           return {
             event_index: r.event_index as number,
             total_tokens: total,
             input_tokens: input,
+            uncached_input_tokens: uncachedIn,
             output_tokens: output,
             cached_input_tokens: cachedIn,
             input_k: input / 1000,
@@ -321,26 +341,34 @@ export function RunMetricsPage() {
     [aiExec],
   );
 
-  /** Run-cumulative sums (raw tokens); *_k fields are thousands for charts. */
-  const cumulativeTokenSeries = useMemo(() => {
-    let cumIn = 0;
-    let cumOut = 0;
-    let cumTotal = 0;
-    return tokenSeries.map((p) => {
-      cumIn += p.input_tokens;
-      cumOut += p.output_tokens;
-      cumTotal += p.total_tokens;
-      return {
-        ...p,
-        cumulative_total: cumTotal,
-        cumulative_input: cumIn,
-        cumulative_output: cumOut,
-        cumulative_total_k: cumTotal / 1000,
-        cumulative_input_k: cumIn / 1000,
-        cumulative_output_k: cumOut / 1000,
-      };
-    });
-  }, [tokenSeries]);
+  /**
+   * Ballpark effective output throughput: output_tokens / request latency (not raw decode speed).
+   * Chart uses `estimated_tps_clipped` capped at ESTIMATED_TPS_CHART_CAP for display.
+   */
+  const estimatedTpsSeries = useMemo(
+    () =>
+      tokenSeries.map((p) => {
+        const lat = p.latency_ms;
+        const out = p.output_tokens;
+        const raw =
+          typeof lat === "number" &&
+          Number.isFinite(lat) &&
+          lat > 0 &&
+          typeof out === "number" &&
+          Number.isFinite(out) &&
+          out >= 0
+            ? (out * 1000) / lat
+            : null;
+        const clipped =
+          raw === null ? null : Math.min(ESTIMATED_TPS_CHART_CAP, raw);
+        return {
+          ...p,
+          estimated_tps_raw: raw,
+          estimated_tps_clipped: clipped,
+        };
+      }),
+    [tokenSeries],
+  );
 
   const inputTokBins = useMemo(() => {
     const vals = aiExec
@@ -396,33 +424,83 @@ export function RunMetricsPage() {
     const sIn = summary?.input_tokens_executed;
     const sOut = summary?.output_tokens_executed;
     const sCached = summary?.cached_input_tokens_executed;
+    const sUncached = summary?.uncached_input_tokens_executed;
     if (typeof sIn === "number" && typeof sOut === "number") {
-      let cachedSum = typeof sCached === "number" ? sCached : 0;
+      let cacheRead = typeof sCached === "number" ? sCached : 0;
       if (typeof sCached !== "number") {
         for (const r of aiExec) {
           const tc = r.cached_input_tokens;
-          if (typeof tc === "number" && Number.isFinite(tc)) cachedSum += tc;
+          if (typeof tc === "number" && Number.isFinite(tc)) cacheRead += tc;
         }
       }
+      let uncached: number;
+      if (typeof sUncached === "number" && Number.isFinite(sUncached)) {
+        uncached = sUncached;
+      } else {
+        uncached = 0;
+        for (const r of aiExec) {
+          uncached += uncachedInputTokensForAiRow(r as AiRow);
+        }
+      }
+      const hasData =
+        (summary?.ai_executed_row_count ?? 0) > 0 ||
+        sIn > 0 ||
+        sOut > 0 ||
+        aiExec.length > 0;
       return {
-        input: sIn,
+        inputTotal: sIn,
+        uncached,
+        cacheRead,
         output: sOut,
-        cached: cachedSum > 0 ? cachedSum : null,
+        hasData,
       };
     }
-    let input = 0;
+    let inputTotal = 0;
     let output = 0;
-    let cached = 0;
+    let cacheRead = 0;
+    let uncached = 0;
     for (const r of aiExec) {
       const ti = r.input_tokens;
       const to = r.output_tokens;
       const tc = r.cached_input_tokens;
-      if (typeof ti === "number" && Number.isFinite(ti)) input += ti;
+      if (typeof ti === "number" && Number.isFinite(ti)) inputTotal += ti;
       if (typeof to === "number" && Number.isFinite(to)) output += to;
-      if (typeof tc === "number" && Number.isFinite(tc)) cached += tc;
+      if (typeof tc === "number" && Number.isFinite(tc)) cacheRead += tc;
+      uncached += uncachedInputTokensForAiRow(r as AiRow);
     }
-    return { input, output, cached: cached > 0 ? cached : null };
+    return {
+      inputTotal,
+      uncached,
+      cacheRead,
+      output,
+      hasData: aiExec.length > 0,
+    };
   }, [summary, aiExec]);
+
+  const playerRunLabelDisplay = useMemo(() => {
+    const clsRaw = summary?.player_class;
+    const cls =
+      typeof clsRaw === "string" ? clsRaw.trim() : String(clsRaw ?? "").trim();
+    if (
+      cls &&
+      cls !== "Main Menu" &&
+      cls !== "?" &&
+      cls !== "-"
+    ) {
+      const asc = summary?.player_ascension;
+      const a =
+        typeof asc === "number" && Number.isFinite(asc) ? asc : 0;
+      return formatMonitorClassAscension(cls, a);
+    }
+    const fromRows = deriveLatestPlayerRunLabel(stateRows);
+    if (fromRows) return fromRows;
+    const parsed = run.trim()
+      ? parsePlayerClassAscFromRunName(run)
+      : null;
+    if (parsed)
+      return formatMonitorClassAscension(parsed.classId, parsed.ascension);
+    return "—";
+  }, [summary?.player_class, summary?.player_ascension, stateRows, run]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-[#0a0d11] to-[#06080a] text-sm text-slate-300">
@@ -488,37 +566,71 @@ export function RunMetricsPage() {
         ) : null}
 
         {summary ? (
-          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            <Kpi
-              label="Tokens (executed)"
-              value={
-                executedInOutTokens.cached != null &&
-                executedInOutTokens.cached > 0
-                  ? `in ${fmtNumEn(executedInOutTokens.input)} · out ${fmtNumEn(executedInOutTokens.output)} · cache in ${fmtNumEn(executedInOutTokens.cached)}`
-                  : `in ${fmtNumEn(executedInOutTokens.input)} · out ${fmtNumEn(executedInOutTokens.output)}`
-              }
-              title="Input and output tokens on executed calls; cache in = prompt tokens billed as cache hits (OpenAI-style), when logged."
-            />
-            <Kpi
-              label="Latency mean / median (s)"
-              value={latencyMeanMedianSecondsKpi(summary)}
-              title="Mean and median wall time per executed call."
-            />
-            <Kpi
-              label="Levels reached"
-              value={levelsReachedKpi(summary)}
-              title="Highest act and floor in recorded progression."
-            />
-            <Kpi
-              label="Run outcome"
-              value={runOutcomeKpi(summary)}
-              title={runOutcomeTitle(summary)}
-            />
-            <Kpi
-              label="Final score"
-              value={runScoreKpi(summary)}
-              title="From game-over screen (run_metrics run_end row, GAME_OVER snapshot, or run_end_snapshot.json)."
-            />
+          <section className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Kpi
+                label="Character"
+                value={playerRunLabelDisplay}
+                title="Class and ascension from the latest state snapshot (same format as Monitor: class · A0)."
+              />
+              <Kpi
+                label="Input tokens"
+                value={
+                  executedInOutTokens.hasData
+                    ? fmtNumEn(executedInOutTokens.uncached)
+                    : "—"
+                }
+                title={
+                  executedInOutTokens.hasData
+                    ? `Non-cached prompt tokens (fresh input). API prompt total for this run = ${fmtNumEn(executedInOutTokens.inputTotal)} (= input + cache read).`
+                    : "Non-cached prompt tokens on executed calls."
+                }
+              />
+              <Kpi
+                label="Cache read"
+                value={
+                  executedInOutTokens.hasData
+                    ? fmtNumEn(executedInOutTokens.cacheRead)
+                    : "—"
+                }
+                title={
+                  executedInOutTokens.hasData
+                    ? `Prompt tokens served from cache. With input tokens, sums to API prompt total ${fmtNumEn(executedInOutTokens.inputTotal)}.`
+                    : "Prompt cache-hit tokens on executed calls."
+                }
+              />
+              <Kpi
+                label="Output tokens"
+                value={
+                  executedInOutTokens.hasData
+                    ? fmtNumEn(executedInOutTokens.output)
+                    : "—"
+                }
+                title="Completion tokens on executed calls."
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Kpi
+                label="Run outcome"
+                value={runOutcomeKpi(summary)}
+                title={runOutcomeTitle(summary)}
+              />
+              <Kpi
+                label="Final score"
+                value={runScoreKpi(summary)}
+                title="From game-over screen (run_metrics run_end row, GAME_OVER snapshot, or run_end_snapshot.json)."
+              />
+              <Kpi
+                label="Latency mean / median (s)"
+                value={latencyMeanMedianSecondsKpi(summary)}
+                title="Mean and median wall time per executed call."
+              />
+              <Kpi
+                label="Levels reached"
+                value={levelsReachedKpi(summary)}
+                title="Highest act and floor in recorded progression."
+              />
+            </div>
           </section>
         ) : null}
 
@@ -964,31 +1076,32 @@ export function RunMetricsPage() {
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>
-                <ChartCard title="Cumulative (k)">
+                <ChartCard title="Estimated output tokens / s (clipped at 200)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
-                    <AreaChart data={cumulativeTokenSeries} margin={CHART_MARGIN_LEFT4}>
+                    <LineChart data={estimatedTpsSeries} margin={CHART_MARGIN_LEFT4}>
                       <CartesianGrid {...GRID} />
                       <XAxis dataKey="event_index" type="number" {...X_AXIS_EVENT_INDEX} />
                       <YAxis
                         {...Y_AXIS_DEFAULT}
-                        tickFormatter={yAxisTickKTokens}
-                        width={56}
-                        label={Y_LABEL_K_TOKENS}
+                        tickFormatter={yAxisTickSeconds}
+                        width={48}
+                        label={Y_LABEL_TPS}
                       />
                       <Tooltip
-                        content={TooltipCumulativeToken}
+                        content={TooltipEstimatedTps}
                         isAnimationActive={false}
                       />
-                      <Area
+                      <Line
                         type="monotone"
-                        dataKey="cumulative_total_k"
-                        name="cumulative_total_k"
+                        dataKey="estimated_tps_clipped"
+                        name="estimated_tps_clipped"
                         stroke="#22d3ee"
-                        fill="#22d3ee33"
+                        dot={false}
                         strokeWidth={2}
+                        connectNulls
                         isAnimationActive={false}
                       />
-                    </AreaChart>
+                    </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>
                 <ChartCard title="Latency (s)">
@@ -1105,7 +1218,7 @@ export function RunMetricsPage() {
               <h2 className="mb-3 font-console text-xs font-semibold uppercase tracking-wide text-slate-400">
                 Distributions
               </h2>
-              <div className="grid gap-6 lg:grid-cols-3">
+              <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
                 <ChartCard title="AI status">
                   {statusPie.length === 0 ? (
                     <p className="py-8 text-center text-xs text-slate-500">
@@ -1258,14 +1371,19 @@ function Kpi({
   label,
   value,
   title,
+  className = "",
 }: {
   label: string;
   value: string;
   title?: string;
+  className?: string;
 }) {
   return (
     <div
-      className="rounded border border-slate-700/80 bg-slate-950/50 px-3 py-2"
+      className={
+        "rounded border border-slate-700/80 bg-slate-950/50 px-3 py-2 " +
+        className
+      }
       title={title}
     >
       <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
@@ -1280,18 +1398,27 @@ function Kpi({
 
 function ChartCard({
   title,
+  caption,
   children,
   className = "",
 }: {
   title: string;
+  caption?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
   return (
     <div className={`rounded border border-slate-700/80 bg-slate-950/40 p-3 ${className}`}>
-      <h3 className="mb-2 font-console text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+      <h3
+        className={`font-console text-[11px] font-semibold uppercase tracking-wide text-slate-400 ${caption ? "mb-1" : "mb-2"}`}
+      >
         {title}
       </h3>
+      {caption ? (
+        <p className="mb-2 text-[10px] font-normal normal-case leading-snug text-slate-500">
+          {caption}
+        </p>
+      ) : null}
       {children}
     </div>
   );
@@ -1398,6 +1525,7 @@ function AiTokenTooltip({
   const rawOut = Number(p.output_tokens) || 0;
   const rawTot = Number(p.total_tokens) || 0;
   const rawCached = Number(p.cached_input_tokens) || 0;
+  const rawUncached = Number(p.uncached_input_tokens) || 0;
   return (
     <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
       <div className="font-mono">
@@ -1406,11 +1534,14 @@ function AiTokenTooltip({
       <div>Decision: {String(p.decision_id)}</div>
       <div className="mt-1 text-slate-400">This call</div>
       <div className="tabular-nums text-slate-100">
-        input: {fmtTokensCommas(rawIn)} tokens
+        prompt in (total): {fmtTokensCommas(rawIn)} tokens
+      </div>
+      <div className="tabular-nums text-slate-100">
+        non-cached: {fmtTokensCommas(rawUncached)} tokens
       </div>
       {rawCached > 0 ? (
         <div className="tabular-nums text-slate-100">
-          cache in: {fmtTokensCommas(rawCached)} tokens
+          cache hits: {fmtTokensCommas(rawCached)} tokens
         </div>
       ) : null}
       <div className="tabular-nums text-slate-100">
@@ -1421,7 +1552,7 @@ function AiTokenTooltip({
       </div>
       <div className="mt-1 border-t border-slate-700 pt-1 text-slate-400">Latency</div>
       <div className="tabular-nums text-slate-100">
-        {fmtTokensCommas(Number(p.latency_ms) || 0)} ms
+        total (request→done): {fmtTokensCommas(Number(p.latency_ms) || 0)} ms
       </div>
       <div>status: {String(p.status)}</div>
       <div className="truncate" title={String(p.llm_model_used)}>
@@ -1453,7 +1584,9 @@ function LatencySecondsTooltip({
       </div>
       <div>Decision: {String(p.decision_id)}</div>
       <div className="mt-1 text-slate-400">Latency</div>
-      <div className="tabular-nums text-slate-100">{fmtTokensCommas(ms)} ms</div>
+      <div className="tabular-nums text-slate-100">
+        total: {fmtTokensCommas(ms)} ms
+      </div>
       <div>status: {String(p.status)}</div>
       <div className="truncate text-[10px] text-slate-500" title={String(p.llm_model_used)}>
         {String(p.llm_model_used)}
@@ -1462,7 +1595,7 @@ function LatencySecondsTooltip({
   );
 }
 
-function CumulativeTokenTooltip({
+function EstimatedTpsTooltip({
   active,
   payload,
 }: {
@@ -1472,41 +1605,53 @@ function CumulativeTokenTooltip({
   if (!active || !payload?.[0]) return null;
   const p = payload[0].payload;
   if (!p) return null;
-  const cin = Number(p.cumulative_input);
-  const cout = Number(p.cumulative_output);
-  const ctot = Number(p.cumulative_total);
-  const safeIn = Number.isFinite(cin) ? cin : 0;
-  const safeOut = Number.isFinite(cout) ? cout : 0;
-  const safeTot = Number.isFinite(ctot) ? ctot : 0;
+  const raw = p.estimated_tps_raw;
+  const clipped = p.estimated_tps_clipped;
+  const rawNum = typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+  const clippedNum =
+    typeof clipped === "number" && Number.isFinite(clipped) ? clipped : null;
+  const isClipped =
+    rawNum !== null &&
+    clippedNum !== null &&
+    rawNum > ESTIMATED_TPS_CHART_CAP;
+  const ms = Number(p.latency_ms) || 0;
+  const out = Number(p.output_tokens) || 0;
   return (
     <div className="max-w-xs rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
       <div className="font-mono text-slate-200">
         Event {fmtFiniteIntLikeEn(p.event_index)}
       </div>
       <div className="mt-1 border-t border-slate-700 pt-1 text-slate-400">
-        This call (tokens)
+        Ballpark throughput (output ÷ latency)
       </div>
-      <div className="tabular-nums text-slate-100">
-        in / out / total: {fmtTokensCommas(Number(p.input_tokens) || 0)} /{" "}
-        {fmtTokensCommas(Number(p.output_tokens) || 0)} /{" "}
-        {fmtTokensCommas(Number(p.total_tokens) || 0)}
-      </div>
-      {Number(p.cached_input_tokens) > 0 ? (
-        <div className="tabular-nums text-slate-100">
-          cache in: {fmtTokensCommas(Number(p.cached_input_tokens) || 0)}
-        </div>
-      ) : null}
+      {rawNum === null ? (
+        <div className="text-slate-500">No estimate (missing latency or tokens).</div>
+      ) : (
+        <>
+          <div className="tabular-nums text-slate-100">
+            Raw: {fmtNumEn(rawNum, 1)} t/s
+            {isClipped ? (
+              <span className="text-amber-400/90">
+                {" "}
+                — chart clipped at {fmtIntEn(ESTIMATED_TPS_CHART_CAP)} t/s
+              </span>
+            ) : null}
+          </div>
+          {clippedNum !== null && isClipped ? (
+            <div className="tabular-nums text-slate-400">
+              Plotted: {fmtNumEn(clippedNum, 1)} t/s
+            </div>
+          ) : null}
+        </>
+      )}
       <div className="mt-1 border-t border-slate-700 pt-1 text-slate-400">
-        Run cumulative
+        Basis
       </div>
       <div className="tabular-nums text-slate-100">
-        total: {fmtTokensCommas(safeTot)} tokens
+        Output: {fmtTokensCommas(out)} tok · Latency: {fmtTokensCommas(ms)} ms
       </div>
-      <div className="tabular-nums text-slate-100">
-        input: {fmtTokensCommas(safeIn)} tokens
-      </div>
-      <div className="tabular-nums text-slate-100">
-        output: {fmtTokensCommas(safeOut)} tokens
+      <div className="mt-1 text-[10px] text-slate-500">
+        Full request time, not decode-only speed.
       </div>
       <div className="mt-1 truncate text-[10px] text-slate-500" title={String(p.decision_id)}>
         {String(p.decision_id)}
@@ -1659,9 +1804,14 @@ function TooltipFloorAiInput(tp: TooltipLite) {
       />
       <div>Calls: {fmtIntEn(row.decision_count)}</div>
       <div className="tabular-nums text-slate-100">
-        Input: {fmtTokensCommas(row.sum_input_tokens)} tokens (
+        Prompt in (total): {fmtTokensCommas(row.sum_input_tokens)} (
         {fmtNumEn(Number(row.sum_input_k), 2)}k)
       </div>
+      {row.sum_uncached_input_tokens !== row.sum_input_tokens ? (
+        <div className="tabular-nums text-slate-100">
+          Non-cached: {fmtTokensCommas(row.sum_uncached_input_tokens)}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1789,9 +1939,9 @@ function TooltipAiToken(tp: TooltipLite) {
   );
 }
 
-function TooltipCumulativeToken(tp: TooltipLite) {
+function TooltipEstimatedTps(tp: TooltipLite) {
   return (
-    <CumulativeTokenTooltip
+    <EstimatedTpsTooltip
       active={tp.active}
       payload={
         tp.payload as ReadonlyArray<{

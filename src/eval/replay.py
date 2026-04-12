@@ -17,31 +17,20 @@ def _read_json(path: Path) -> dict[str, Any] | None:
 
 
 def _iter_run_dirs(logs_dir: Path, run_name: str | None) -> list[Path]:
-    """Resolve runs under ``logs/games/<run>`` when present, else legacy ``logs/<run>``.
-
-    When listing all runs, merge ``logs/games/*`` with top-level ``logs/*`` (excluding
-    the ``games`` directory), preferring ``games`` when names collide.
-    """
+    """Resolve runs under ``logs/games/<run>`` only."""
     logs_dir = logs_dir.resolve()
     games_root = logs_dir / "games"
     if run_name:
-        for root in (games_root, logs_dir):
-            if root == games_root and not root.is_dir():
-                continue
-            target = root / run_name
-            if target.is_dir():
-                return [target]
+        target = games_root / run_name
+        return [target] if target.is_dir() else []
+    if not games_root.is_dir():
         return []
-    merged: dict[str, Path] = {}
-    if games_root.is_dir():
-        for p in games_root.iterdir():
-            if p.is_dir():
-                merged[p.name] = p
-    if logs_dir.is_dir():
-        for p in logs_dir.iterdir():
-            if p.is_dir() and p.name != "games":
-                merged.setdefault(p.name, p)
-    return sorted(merged.values(), key=lambda p: p.name, reverse=True)
+    runs = [
+        p
+        for p in games_root.iterdir()
+        if p.is_dir() and not p.name.startswith(".")
+    ]
+    return sorted(runs, key=lambda p: p.name, reverse=True)
 
 
 def _extract_tool_counts(ai_message: str) -> Counter:
@@ -380,7 +369,7 @@ def main() -> int:
     parser.add_argument(
         "--logs-dir",
         default="logs",
-        help="Path to logs root (default: logs). Runs are read from logs/games/<run> when that folder exists, else legacy logs/<run>.",
+        help="Path to logs root (default: logs). Runs are read from logs/games/<run>.",
     )
     parser.add_argument(
         "--run",

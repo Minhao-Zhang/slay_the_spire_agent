@@ -11,8 +11,6 @@ from pydantic import BaseModel, Field
 from src.repo_paths import PACKAGE_ROOT, REPO_ROOT
 
 DEFAULT_PROMPT_PATH = PACKAGE_ROOT / "agent" / "prompts" / "system_prompt.md"
-# Optional full-text corpus when ``include_strategy_corpus`` is True (directory uses many small files).
-DEFAULT_STRATEGY_CORPUS_PATH = REPO_ROOT / "data" / "strategy" / "general_principles.md"
 
 
 def _normalize_llm_slot(raw: str, default: str = "reasoning") -> str:
@@ -53,10 +51,8 @@ class AgentConfig(BaseModel):
     non_combat_turn_llm: str = "reasoning"
     combat_plan_llm: str = "reasoning"
     # When True: ReasoningBudgetRouter picks model_key + per-turn reasoning_effort from VM context.
-    # When False: same routing as legacy (combat_turn_llm vs non_combat_turn_llm only).
+    # When False: same routing as when the router is off (combat_turn_llm vs non_combat_turn_llm only).
     reasoning_budget_enabled: bool = False
-    include_strategy_corpus: bool = False
-    strategy_corpus_path: str = ""
     auto_start_next_game: bool = False
     memory_dir: str = "data/memory"
     strategy_dir: str = "data/strategy"
@@ -85,14 +81,6 @@ class AgentConfig(BaseModel):
     def resolved_expert_guides_dir(self) -> Path:
         p = Path((self.expert_guides_dir or "").strip() or "data/expert_guides")
         return p if p.is_absolute() else REPO_ROOT / p
-
-    def resolved_strategy_corpus_path(self) -> Path | None:
-        if not self.include_strategy_corpus:
-            return None
-        raw = (self.strategy_corpus_path or "").strip()
-        if raw:
-            return Path(raw)
-        return DEFAULT_STRATEGY_CORPUS_PATH if DEFAULT_STRATEGY_CORPUS_PATH.exists() else None
 
 
 @lru_cache(maxsize=1)
@@ -163,8 +151,6 @@ def get_agent_config() -> AgentConfig:
         combat_turn_llm=_normalize_llm_slot(os.getenv("LLM_COMBAT_TURN_MODEL", "reasoning")),
         non_combat_turn_llm=_normalize_llm_slot(os.getenv("LLM_NON_COMBAT_TURN_MODEL", "reasoning")),
         combat_plan_llm=_normalize_llm_slot(os.getenv("LLM_COMBAT_PLAN_MODEL", "reasoning")),
-        include_strategy_corpus=os.getenv("LLM_INCLUDE_STRATEGY_CORPUS", "false").strip().lower() == "true",
-        strategy_corpus_path=os.getenv("LLM_STRATEGY_CORPUS_PATH", "").strip(),
         auto_start_next_game=os.getenv("AUTO_START_NEXT_GAME", "false").strip().lower() == "true",
         memory_dir=os.getenv("AGENT_MEMORY_DIR", "data/memory").strip() or "data/memory",
         strategy_dir=os.getenv("AGENT_STRATEGY_DIR", "data/strategy").strip() or "data/strategy",

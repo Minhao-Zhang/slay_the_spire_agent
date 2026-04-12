@@ -67,7 +67,7 @@ or `./run_api.sh` — runs `uv run uvicorn src.ui.dashboard:app --host 127.0.0.1
 npm run dev:web
 ```
 
-- **`http://127.0.0.1:5173/`** — main monitor (`/`), run metrics (`/metrics`), map replay (`/metrics/map`), metrics debug (`/metrics/debug`). See [`apps/web/README.md`](apps/web/README.md).
+- **`http://127.0.0.1:5173/`** — main monitor (`/`), run metrics (`/metrics`), map replay (`/metrics/map`). See [`apps/web/README.md`](apps/web/README.md).
 - **`http://127.0.0.1:8000/`** — minimal FastAPI landing page; the SPA is normally served by Vite in dev.
 
 Production build for static assets: `npm run build:web` → `apps/web/dist/`.

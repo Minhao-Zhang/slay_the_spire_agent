@@ -153,6 +153,7 @@ class SpireDecisionAgent:
             "output_tokens",
             "total_tokens",
             "cached_input_tokens",
+            "uncached_input_tokens",
         ):
             cur = getattr(target, name)
             new = getattr(extra, name, None)

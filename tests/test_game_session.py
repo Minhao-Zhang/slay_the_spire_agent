@@ -9,6 +9,7 @@ from src.bridge.game_session import (
     build_game_dir_name,
     extract_game_state,
     normalize_seed,
+    parse_game_dir_basename,
     sanitize_class_slug,
 )
 
@@ -38,6 +39,28 @@ class TestGameSession(unittest.TestCase):
     def test_normalize_seed(self) -> None:
         self.assertEqual(normalize_seed({"seed": 12345}), "12345")
         self.assertIsNone(normalize_seed({}))
+
+    def test_parse_game_dir_basename_roundtrip(self) -> None:
+        fixed = datetime.datetime(2025, 4, 7, 14, 32, 5)
+        gs = {"seed": "ABCDEFGH1234", "class": "IRONCLAD", "ascension_level": 15}
+        name = build_game_dir_name(gs, now=fixed)
+        assert name is not None
+        cls_slug, asc = parse_game_dir_basename(name)
+        self.assertEqual(cls_slug, "IRONCLAD")
+        self.assertEqual(asc, 15)
+
+    def test_parse_game_dir_basename_underscore_slug(self) -> None:
+        """Class slugs from sanitize may contain underscores (e.g. IRON_CLAD)."""
+        fixed = datetime.datetime(2025, 1, 1, 0, 0, 0)
+        gs = {"seed": "99999999", "class": "iron clad", "ascension_level": 0}
+        name = build_game_dir_name(gs, now=fixed)
+        assert name is not None
+        cls_slug, asc = parse_game_dir_basename(name)
+        self.assertEqual(cls_slug, "IRON_CLAD")
+        self.assertEqual(asc, 0)
+
+    def test_parse_game_dir_basename_rejects_garbage(self) -> None:
+        self.assertEqual(parse_game_dir_basename("not-a-run-dir"), (None, 0))
 
 
 if __name__ == "__main__":

@@ -67,6 +67,38 @@ export function fmtGameStatDisplay(s: unknown): string {
     .join("/");
 }
 
+/** Game / API class id → single UI label (Monitor + Run Metrics). */
+const PLAYER_CLASS_DISPLAY: Readonly<Record<string, string>> = {
+  IRONCLAD: "Ironclad",
+  THE_SILENT: "The Silent",
+  DEFECT: "Defect",
+  WATCHER: "Watcher",
+};
+
+export function displayPlayerClassName(raw: unknown): string {
+  if (raw === null || raw === undefined) return "—";
+  const s = String(raw).trim();
+  if (!s || s === "—" || s === "?" || s === "-") return "—";
+  const key = s.toUpperCase().replace(/\s+/g, "_");
+  const mapped = PLAYER_CLASS_DISPLAY[key];
+  if (mapped) return mapped;
+  return fmtGameStatDisplay(s);
+}
+
+/** Monitor HUD class line: display class · A{ascension} (uses `displayPlayerClassName`). */
+export function formatMonitorClassAscension(
+  clsRaw: unknown,
+  ascRaw: unknown,
+): string {
+  const name = displayPlayerClassName(clsRaw);
+  if (name === "—") return "—";
+  let asc = 0;
+  if (typeof ascRaw === "number" && Number.isFinite(ascRaw)) {
+    asc = Math.max(0, Math.trunc(ascRaw));
+  }
+  return `${name} · A${fmtIntEn(asc)}`;
+}
+
 export function fmtUnknownNumericOrText(s: unknown, fallback = "—"): string {
   if (s === null || s === undefined) return fallback;
   if (typeof s === "number" && Number.isFinite(s)) {

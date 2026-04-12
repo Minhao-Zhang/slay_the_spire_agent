@@ -1,11 +1,15 @@
 /** Types and pure transforms for `run_metrics.ndjson` records (API `/api/runs/.../metrics`). */
 
-import { fmtTruncIntEn } from "./formatDisplayNumber";
+import { fmtTruncIntEn, formatMonitorClassAscension } from "./formatDisplayNumber";
 
 export type JsonRecord = Record<string, unknown>;
 
 export type VmSummary = {
   screen_type?: string;
+  /** Player character from `vm_summary.class` (e.g. Ironclad). */
+  playerClass?: string;
+  /** Matches game/header ascension (0 = A0). */
+  ascension_level?: number;
   floor?: number;
   act?: number;
   in_combat?: boolean;
@@ -54,6 +58,8 @@ export type AiRow = JsonRecord & {
   total_tokens?: number | null;
   /** OpenAI-style cache hits (prompt_tokens_details.cached_tokens), when present. */
   cached_input_tokens?: number | null;
+  /** input_tokens − cached_input_tokens when both known (else derived client-side). */
+  uncached_input_tokens?: number | null;
   latency_ms?: number | null;
   status?: string;
   validation_error?: string | null;
@@ -93,7 +99,57 @@ function asVmSummary(raw: unknown): VmSummary {
     hand: Array.isArray(o.hand) ? (o.hand as VmSummary["hand"]) : undefined,
     deck_size: num(o.deck_size) ?? undefined,
     relic_count: num(o.relic_count) ?? undefined,
+    playerClass:
+      typeof o.class === "string" && o.class.trim() !== ""
+        ? o.class.trim()
+        : undefined,
+    ascension_level: (() => {
+      const a = num(o.ascension_level);
+      return a != null ? Math.max(0, Math.trunc(a)) : undefined;
+    })(),
   };
+}
+
+const _PLAYER_CLASS_SKIP = new Set(["Main Menu", "?", "-", ""]);
+
+/**
+ * Parse log run directory basenames from `build_game_dir_name` /
+ * `parse_game_dir_basename` in `src/bridge/game_session.py` (keep in sync).
+ */
+const GAME_DIR_BASENAME_RE =
+  /^(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})_(.+)_A(\d+)_(.+)$/;
+
+export function parsePlayerClassAscFromRunName(runName: string): {
+  classId: string;
+  ascension: number;
+} | null {
+  const m = GAME_DIR_BASENAME_RE.exec(runName.trim());
+  if (!m) return null;
+  return { classId: m[2], ascension: Number(m[3]) };
+}
+
+/** Latest non-menu character from state rows (by event order). */
+export function deriveLatestPlayerClass(rows: StateRow[]): string | null {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const c = rows[i]?.vm?.playerClass?.trim();
+    if (c && !_PLAYER_CLASS_SKIP.has(c)) return c;
+  }
+  return null;
+}
+
+/** Latest non-menu class + ascension, same display as Monitor HUD. */
+export function deriveLatestPlayerRunLabel(rows: StateRow[]): string | null {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const vm = rows[i]?.vm;
+    const c = vm?.playerClass?.trim();
+    if (!c || _PLAYER_CLASS_SKIP.has(c)) continue;
+    const asc =
+      typeof vm.ascension_level === "number" && Number.isFinite(vm.ascension_level)
+        ? vm.ascension_level
+        : 0;
+    return formatMonitorClassAscension(c, asc);
+  }
+  return null;
 }
 
 export function deriveStateRows(records: JsonRecord[]): StateRow[] {
@@ -152,6 +208,17 @@ export function deriveStateRows(records: JsonRecord[]): StateRow[] {
 
 export function deriveAiRows(records: JsonRecord[]): AiRow[] {
   return records.filter((r) => r.type === "ai_decision") as AiRow[];
+}
+
+/** Non-cached prompt tokens for one AI row (subset of `input_tokens`). */
+export function uncachedInputTokensForAiRow(r: AiRow): number {
+  const u = num(r.uncached_input_tokens);
+  if (u !== null) return u;
+  const ti = num(r.input_tokens);
+  const c = num(r.cached_input_tokens);
+  if (ti === null) return 0;
+  if (c === null) return ti;
+  return Math.max(0, ti - c);
 }
 
 export function aiExecutedForSeries(rows: AiRow[]): AiRow[] {
@@ -332,6 +399,7 @@ export type FloorAiAggRow = FloorBucketMeta & {
   x_rank: number;
   decision_count: number;
   sum_input_tokens: number;
+  sum_uncached_input_tokens: number;
   sum_output_tokens: number;
   sum_total_tokens: number;
   mean_latency_ms: number | null;
@@ -365,6 +433,7 @@ export function deriveFloorAiAggRows(
     string,
     {
       inputs: number[];
+      uncachedInputs: number[];
       outputs: number[];
       totals: number[];
       lats: number[];
@@ -386,7 +455,13 @@ export function deriveFloorAiAggRows(
     }
     let g = groups.get(fk);
     if (!g) {
-      g = { inputs: [], outputs: [], totals: [], lats: [] };
+      g = {
+        inputs: [],
+        uncachedInputs: [],
+        outputs: [],
+        totals: [],
+        lats: [],
+      };
       groups.set(fk, g);
     }
     const ti = r.input_tokens;
@@ -394,6 +469,7 @@ export function deriveFloorAiAggRows(
     const tt = r.total_tokens;
     const lat = r.latency_ms;
     if (typeof ti === "number" && Number.isFinite(ti)) g.inputs.push(ti);
+    g.uncachedInputs.push(uncachedInputTokensForAiRow(r));
     if (typeof to === "number" && Number.isFinite(to)) g.outputs.push(to);
     if (typeof tt === "number" && Number.isFinite(tt)) g.totals.push(tt);
     if (typeof lat === "number" && Number.isFinite(lat)) g.lats.push(lat);
@@ -414,6 +490,7 @@ export function deriveFloorAiAggRows(
       x_rank: 0,
       decision_count: g.totals.length || g.inputs.length,
       sum_input_tokens: g.inputs.reduce((s, x) => s + x, 0),
+      sum_uncached_input_tokens: g.uncachedInputs.reduce((s, x) => s + x, 0),
       sum_output_tokens: g.outputs.reduce((s, x) => s + x, 0),
       sum_total_tokens: g.totals.reduce((s, x) => s + x, 0),
       mean_latency_ms: g.lats.length ? mean(g.lats) : null,
@@ -503,6 +580,8 @@ export type MetricsSummary = {
   output_tokens_executed?: number;
   /** Sum of cached prompt tokens on executed rows (newer logs / OpenAI cache). */
   cached_input_tokens_executed?: number;
+  /** Sum of prompt tokens not served from cache (input total − cache hits per row). */
+  uncached_input_tokens_executed?: number;
   latency_ms_mean: number | null;
   latency_ms_median: number | null;
   event_index_min: number | null;
@@ -510,6 +589,12 @@ export type MetricsSummary = {
   /** Deepest map floor / act from state `vm_summary` (omitted on older logs). */
   max_floor_reached?: number | null;
   max_act_reached?: number | null;
+  /** Last seen `vm_summary.class` in run (e.g. Ironclad). */
+  player_class?: string | null;
+  /** Ascension level paired with `player_class` (format on client with `formatMonitorClassAscension`). */
+  player_ascension?: number | null;
+  /** `{class} · A{asc}` from latest state snapshot (Monitor HUD style). */
+  player_run_label?: string | null;
   run_outcome?: RunOutcomeSummary | null;
   /** True when `run_end_snapshot.json` exists on disk for this run. */
   has_run_end_snapshot?: boolean;

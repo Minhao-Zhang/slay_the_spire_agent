@@ -79,12 +79,25 @@ class ValidationResult(BaseModel):
     matched_label: Optional[str] = None
 
 
+def compute_uncached_input_tokens(
+    input_tokens: Optional[int], cached_input_tokens: Optional[int]
+) -> Optional[int]:
+    """Tokens read from prompt that were not served from cache (input_total − cached_subset)."""
+    if input_tokens is None:
+        return None
+    inn = int(input_tokens)
+    if cached_input_tokens is None:
+        return inn
+    return max(0, inn - int(cached_input_tokens))
+
+
 class TraceTokenUsage(BaseModel):
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
     total_tokens: Optional[int] = None
     # OpenAI-style: usage.prompt_tokens_details.cached_tokens (also tries input_tokens_details).
     cached_input_tokens: Optional[int] = None
+    uncached_input_tokens: Optional[int] = None
 
 
 class TraceLlmCall(BaseModel):
@@ -110,6 +123,7 @@ class PersistedAiLog(BaseModel):
     output_tokens: Optional[int] = None
     total_tokens: Optional[int] = None
     cached_input_tokens: Optional[int] = None
+    uncached_input_tokens: Optional[int] = None
     tool_names: list[str] = Field(default_factory=list)
     planner_summary: str = ""
     combat_plan_generated: bool = False

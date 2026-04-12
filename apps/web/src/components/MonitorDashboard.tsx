@@ -8,10 +8,11 @@ import {
 } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Link } from "react-router-dom";
 import { useControlPlane } from "../hooks/useControlPlane";
 import { GameScreenPanel } from "./gameScreen/GameScreenPanel";
+import { SpireAgentNav } from "./SpireAgentNav";
 import {
+  displayPlayerClassName,
   fmtGameStatDisplay,
   fmtIntEn,
 } from "../lib/formatDisplayNumber";
@@ -44,6 +45,13 @@ function cardTableText(c: Record<string, unknown>): string {
     kb && typeof kb.description === "string" ? kb.description.trim() : "";
   if (d) return d;
   return "—";
+}
+
+/** Game state uses a row with this name/id for an empty potion slot (e.g. with Potion Belt). */
+function isPotionSlotPlaceholder(p: Record<string, unknown>): boolean {
+  const id = String(p.id ?? "").trim();
+  const name = String(p.name ?? "").trim();
+  return id === "Potion Slot" || name === "Potion Slot";
 }
 
 type TipSide = "top" | "right" | "bottom";
@@ -194,8 +202,9 @@ const osdBtnReject =
 const osdBtnCta =
   `${osdBtnBase} border-indigo-700/85 bg-indigo-800 text-indigo-50 hover:bg-indigo-700`;
 
+/** Fixed height so Relics / Enemies / Hand / AI control (and other rails) align across columns. */
 const osdPanelStrip =
-  "flex shrink-0 items-center justify-between gap-2 border-b border-slate-700/85 bg-slate-800/95 px-3 py-2 font-console text-sm font-semibold uppercase tracking-[0.12em] text-slate-300";
+  "flex h-12 min-h-12 shrink-0 items-center justify-between gap-2 overflow-hidden border-b border-slate-700/85 bg-slate-800/95 px-3 font-console text-sm font-semibold uppercase tracking-[0.12em] text-slate-300";
 
 const osdSectionLabel =
   "font-console text-sm font-semibold uppercase tracking-[0.12em] text-slate-500";
@@ -273,7 +282,7 @@ function PileTelemetryBar({
 
   return (
     <div
-      className="deck-telemetry flex shrink-0 overflow-hidden rounded-md border border-slate-700/90"
+      className="deck-telemetry flex h-8 max-h-8 shrink-0 overflow-hidden rounded-md border border-slate-700/90"
       role="group"
       aria-label="Draw, Discard, Exhaust piles — click to inspect"
     >
@@ -284,7 +293,7 @@ function PileTelemetryBar({
           onClick={() => onInspect(s.kind)}
           title={s.title}
           className={
-            "group relative flex min-h-[1.75rem] min-w-0 flex-1 items-center justify-between gap-2 px-2 py-0.5 text-left transition-[background-color,box-shadow] duration-150 " +
+            "group relative flex h-full min-h-0 min-w-0 flex-1 items-center justify-between gap-2 px-2 py-0 text-left transition-[background-color,box-shadow] duration-150 " +
             "hover:bg-slate-800/40 active:bg-slate-800/65 " +
             "focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400/45 " +
             (i > 0 ? "border-l border-slate-700/55 " : "")
@@ -294,7 +303,7 @@ function PileTelemetryBar({
             {s.label}
           </span>
           <span
-            className={`font-telemetry text-base font-semibold leading-none tabular-nums tracking-tight transition-colors ${s.tint} ${s.glow}`}
+            className={`font-telemetry text-sm font-semibold leading-none tabular-nums tracking-tight transition-colors ${s.tint} ${s.glow}`}
           >
             {fmtIntEn(s.n)}
           </span>
@@ -368,46 +377,48 @@ function EnemyCard({ m }: { m: Record<string, unknown> }) {
   const tip = monsterTooltip(m);
 
   return (
-    <HoverTip
-      tip={tip}
-      side="bottom"
-      className="flex flex-col overflow-hidden rounded border border-slate-700 bg-slate-800/30"
-    >
-        <div className="flex items-center justify-between border-b border-slate-700/50 bg-slate-800/50 px-3 py-1.5">
-          <div className="flex items-baseline gap-2">
-            <span className="font-console text-sm font-bold text-red-400">
+    <div className="flex flex-col overflow-hidden rounded border border-slate-700 bg-slate-800/30">
+      <div className="flex items-center justify-between border-b border-slate-700/50 bg-slate-800/50 px-3 py-1.5">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <HoverTip
+            tip={tip}
+            side="bottom"
+            className="inline-flex min-w-0 max-w-[55%] shrink"
+          >
+            <span className="cursor-help truncate font-console text-sm font-bold text-red-400 underline decoration-red-400/40 decoration-dotted underline-offset-2">
               {name}
             </span>
-            <span className={osdStatCaption}>HP</span>
-            <span className="font-telemetry text-sm font-medium text-slate-200">
-              {hp ? fmtGameStatDisplay(hp) : "—"}
-            </span>
-          </div>
-          <div className="font-console text-xs font-semibold uppercase tracking-wide text-red-400">
-            {intent || "—"}
-          </div>
+          </HoverTip>
+          <span className={osdStatCaption}>HP</span>
+          <span className="font-telemetry text-sm font-medium text-slate-200">
+            {hp ? fmtGameStatDisplay(hp) : "—"}
+          </span>
         </div>
-        <div className="flex flex-wrap gap-2 px-3 py-2">
-          {powers.length === 0 ? (
-            <span className="text-xs text-slate-600">—</span>
-          ) : (
-            powers.map((p, i) => (
-              <HoverTip
-                key={i}
-                tip={labeledTooltip(powerChipLabel(p), p, {
-                  skipPowerAmountLead: true,
-                })}
-                side="bottom"
-                className="inline-flex"
-              >
-                <span className="inline-flex cursor-help rounded border border-purple-700/50 bg-purple-900/40 px-1.5 py-0.5 text-xs text-purple-300">
-                  {powerChipLabel(p)}
-                </span>
-              </HoverTip>
-            ))
-          )}
+        <div className="shrink-0 font-console text-xs font-semibold uppercase tracking-wide text-red-400">
+          {intent || "—"}
         </div>
-    </HoverTip>
+      </div>
+      <div className="flex flex-wrap gap-2 px-3 py-2">
+        {powers.length === 0 ? (
+          <span className="text-xs text-slate-600">—</span>
+        ) : (
+          powers.map((p, i) => (
+            <HoverTip
+              key={i}
+              tip={labeledTooltip(powerChipLabel(p), p, {
+                skipPowerAmountLead: true,
+              })}
+              side="bottom"
+              className="inline-flex"
+            >
+              <span className="inline-flex cursor-help rounded border border-purple-700/50 bg-purple-900/40 px-1.5 py-0.5 text-xs text-purple-300">
+                {powerChipLabel(p)}
+              </span>
+            </HoverTip>
+          ))
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -524,7 +535,6 @@ type LlmRailStatus =
       kind: "pending";
       title: string;
       message: string;
-      hint?: string;
       /** When false, omit the pulsing dot (idle / informational). */
       pulse?: boolean;
     };
@@ -774,10 +784,20 @@ export function MonitorDashboard() {
     (inventory?.deck as Record<string, unknown>[] | undefined) ?? [];
 
   const potionSlots = useMemo(() => {
-    const slots: (Record<string, unknown> | null)[] = [null, null, null];
-    potions.forEach((p, i) => {
-      if (i < 3) slots[i] = p;
-    });
+    const defaultCount = 3;
+    const slotCount =
+      potions.length === 0
+        ? defaultCount
+        : Math.max(defaultCount, potions.length);
+    const slots: (Record<string, unknown> | null)[] = [];
+    for (let i = 0; i < slotCount; i++) {
+      const p = potions[i];
+      if (p && typeof p === "object" && !isPotionSlotPlaceholder(p)) {
+        slots.push(p);
+      } else {
+        slots.push(null);
+      }
+    }
     return slots;
   }, [potions]);
 
@@ -928,8 +948,6 @@ export function MonitorDashboard() {
         title: "Preparing prompt",
         message:
           "Building the user prompt and context before calling the model…",
-        hint:
-          proposal?.command != null ? String(proposal.command) : undefined,
       };
     }
     if (proposalStatus === "running") {
@@ -939,8 +957,6 @@ export function MonitorDashboard() {
         title: "Awaiting model response",
         message:
           "The model is generating a reply (including after tool calls). This can take a while.",
-        hint:
-          proposal?.command != null ? String(proposal.command) : undefined,
       };
     }
     if (proposalStatus === "awaiting_approval") {
@@ -950,8 +966,6 @@ export function MonitorDashboard() {
         title: "Proposal ready",
         message:
           "The model returned a legal command. Use Awaiting approval below or switch to auto mode.",
-        hint:
-          proposal?.command != null ? String(proposal.command) : undefined,
       };
     }
     if (proposalStatus === "stale") {
@@ -1101,15 +1115,7 @@ export function MonitorDashboard() {
       {/* Top bar — game / session controls only; combat readouts live in the stats strip */}
       <header className="flex shrink-0 items-center border-b border-slate-700/90 bg-slate-900/80 px-3 py-2 backdrop-blur-sm">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-          <span className="font-console text-sm font-bold tracking-[0.14em] text-slate-100">
-            SPIRE AGENT
-          </span>
-          <Link
-            to="/metrics"
-            className="font-console text-xs font-semibold uppercase tracking-wide text-sky-400 hover:text-sky-300"
-          >
-            Run metrics
-          </Link>
+          <SpireAgentNav page="monitor" runQuery="" />
           <div
             className={`font-console flex h-7 items-center gap-1.5 rounded border px-2.5 text-xs font-semibold uppercase tracking-wide ${
               gameFeedLive
@@ -1281,11 +1287,19 @@ export function MonitorDashboard() {
           <div className="flex min-h-[2.25rem] flex-col justify-center gap-1">
             <span className={osdHudLabel}>Class</span>
             <span className={`${osdHudValue} text-orange-300`}>
-              {fmtGameStatDisplay(headerClass(header))}
-              <span className="text-slate-500"> · </span>
-              <span className="tabular-nums">
-                A{fmtIntEn(ascensionDisplay(header))}
-              </span>
+              {(() => {
+                const name = displayPlayerClassName(headerClass(header));
+                if (name === "—") return "—";
+                return (
+                  <>
+                    {name}
+                    <span className="text-slate-500"> · </span>
+                    <span className="tabular-nums">
+                      A{fmtIntEn(ascensionDisplay(header))}
+                    </span>
+                  </>
+                );
+              })()}
             </span>
           </div>
           {(
@@ -1511,9 +1525,7 @@ export function MonitorDashboard() {
               </div>
 
               <div className="flex min-h-0 min-w-0 flex-[1.32] flex-col bg-slate-900">
-                <div
-                  className={`sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 ${osdPanelStrip}`}
-                >
+                <div className={`sticky top-0 z-10 ${osdPanelStrip}`}>
                   <span className="min-w-0 shrink-0 truncate">
                     Hand · {fmtIntEn(hand.length)}
                   </span>
@@ -1675,28 +1687,48 @@ export function MonitorDashboard() {
                 disabled={snapshot == null}
                 onSelect={(m) => void setAgentMode(m)}
               />
-              <label className="mt-2 flex cursor-pointer items-center gap-2 font-telemetry text-xs text-slate-400">
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-emerald-600 focus:ring-emerald-500"
-                  checked={Boolean(agentForRail?.auto_start_next_game)}
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-slate-700/80 bg-slate-900/60 px-2.5 py-2">
+                <div className="min-w-0">
+                  <div className="font-console text-[11px] font-semibold uppercase tracking-wide text-slate-300">
+                    Auto-start next run
+                  </div>
+                  <p className="mt-0.5 font-telemetry text-[10px] leading-snug text-slate-500">
+                    Sends start on the title screen so a new run begins without
+                    in-game Continue.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={Boolean(agentForRail?.auto_start_next_game)}
                   disabled={snapshot == null}
-                  onChange={(e) =>
-                    void setAutoStartNextGame(e.target.checked)
+                  title={
+                    snapshot == null
+                      ? undefined
+                      : "Toggle auto-start on the title screen"
                   }
-                />
-                <span title="When enabled, the bridge sends `start` on the title screen so a new run begins without clicking Continue in-game.">
-                  Auto-start next game
-                </span>
-              </label>
-              <div className="mt-2 truncate font-mono text-[10px] leading-tight text-slate-500">
-                <span className="text-slate-600">llm</span>{" "}
-                {agentForRail?.llm_backend ?? "—"}{" "}
-                <span className="text-slate-700">·</span>{" "}
-                <span className="text-slate-600">state</span>{" "}
-                <span className="font-telemetry text-slate-400">
-                  {stateId ?? "—"}
-                </span>
+                  onClick={() =>
+                    void setAutoStartNextGame(
+                      !Boolean(agentForRail?.auto_start_next_game),
+                    )
+                  }
+                  className={
+                    "relative h-7 w-12 shrink-0 rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:cursor-not-allowed disabled:opacity-40 " +
+                    (agentForRail?.auto_start_next_game
+                      ? "border-emerald-600/80 bg-emerald-950/80"
+                      : "border-slate-600 bg-slate-950")
+                  }
+                >
+                  <span
+                    className={
+                      "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-slate-100 shadow transition-transform " +
+                      (agentForRail?.auto_start_next_game
+                        ? "translate-x-5"
+                        : "translate-x-0")
+                    }
+                    aria-hidden
+                  />
+                </button>
               </div>
             </div>
 
@@ -1736,14 +1768,6 @@ export function MonitorDashboard() {
                 <p className="font-telemetry text-sm leading-snug text-sky-100/90">
                   {llmRunStatus.message}
                 </p>
-                {llmRunStatus.hint ? (
-                  <p className="mt-1.5 font-telemetry text-sm leading-snug text-slate-400">
-                    Latest trace:{" "}
-                    <span className="font-medium text-slate-300">
-                      {llmRunStatus.hint}
-                    </span>
-                  </p>
-                ) : null}
               </div>
             )}
 

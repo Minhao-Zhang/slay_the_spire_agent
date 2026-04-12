@@ -7,7 +7,7 @@ from src.agent.reasoning_budget import ReasoningBudgetRouter
 
 
 class TestReasoningBudgetRouter(unittest.TestCase):
-    def test_legacy_matches_combat_non_combat_slots(self) -> None:
+    def test_budget_disabled_matches_combat_non_combat_slots(self) -> None:
         cfg = AgentConfig().model_copy(
             update={
                 "reasoning_budget_enabled": False,
