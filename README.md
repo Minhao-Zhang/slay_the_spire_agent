@@ -5,42 +5,47 @@ This repo is a **full-stack LLM agent** wired into **Slay the Spire** via [Commu
 **Runtime stack:**
 
 - **`src/main.py`** — stdin/stdout bridge to the game; forwards state to the dashboard; polls for manual or AI-approved commands.
-- **`src/agent/`** — LangGraph decision graph ([`graph.py`](src/agent/graph.py)), OpenAI-compatible client ([`llm_client.py`](src/agent/llm_client.py)), prompts, tool registry, policy/validation, optional planning and memory.
+- **`src/agent/`** — LangGraph loop ([`graph.py`](src/agent/graph.py)), OpenAI-compatible client ([`llm_client.py`](src/agent/llm_client.py)), **strategist** ([`strategist.py`](src/agent/strategist.py)) on a **support** model, **combat planning**, **map analysis** ([`map_analysis.py`](src/agent/map_analysis.py)), retrieval over **`data/knowledge`** and **`data/reference`**, memory, prompts, tool registry, and policy/validation.
 - **`src/ui/dashboard.py`** — FastAPI control plane (HTTP + WebSocket) on port **8000**; exposes AI approve/reject, mode switches, and agent status for operators.
-- **`apps/web/`** — Vite + React operator UI (live monitor, run metrics, map replay).
+- **`apps/web/`** — Vite + React operator UI (live monitor, per-run metrics, multi-run compare, map replay).
 
 ## AI engineering in this repo
 
-Overview of how pieces connect: the **dashboard** hosts the agent loop; **durable knowledge** (docs, lesson store, optional reflection) feeds **context** before the **LangGraph** step; **structured traces** stream back through the same API the **operator UI** uses for HITL. The bridge records **logs** for replay and for offline reflection. For a deeper breakdown (modules, routes, trace fields), see [`ARCHITECTURE.md`](ARCHITECTURE.md).
+Overview of how pieces connect: the **dashboard** hosts the agent. Each turn, **context** combines the game view model, **strategist** notes (support model), retrieval from **markdown knowledge** and **reference JSON**, **combat plan** and **map analysis**, and the **memory / lesson store**. The **decision model** runs the **LangGraph** tool loop; **structured traces** stream to the same API the **operator UI** uses for HITL. After a run, **reflection** and **consolidation** update lessons in `MEMORY_DIR`. The bridge writes **logs** for replay, metrics UI, and reflection. For a deeper breakdown (modules, routes, trace fields), see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ```mermaid
 flowchart TB
   Game[("Slay the Spire + CommunicationMod")] <--> Bridge["Game bridge"]
-  Bridge <--> Dash["Dashboard API\n(agent runtime)"]
+  Bridge <--> Dash["Dashboard API\n(FastAPI + agent)"]
   Dash <--> UI["Operator UI"]
 
-  subgraph Agent["Decision agent"]
-    Ctx["Build context\n(view model · memory · planner · routing)"]
-    Loop["LangGraph · LLM · tools"]
+  subgraph Know["Knowledge & memory"]
+    KBM["Strategy markdown\n(data/knowledge)"]
+    RefJ["Reference JSON\n(data/reference)"]
+    Mem["Lesson store\n(MEMORY_DIR)"]
+    Post["Reflector · consolidator\n(post-run)"]
+  end
+
+  subgraph Runtime["In-dashboard pipeline"]
+    Strat["Strategist\n(SUPPORT_MODEL)"]
+    Ctx["Context\n(view model · retrieval · combat plan ·\nmap analysis · strategist · memory)"]
+    Loop["LangGraph · DECISION_MODEL · tools"]
     Pol["Policy → validated command"]
-    Ctx --> Loop --> Pol
+    Strat --> Ctx --> Loop --> Pol
   end
 
-  subgraph Know["Durable knowledge (optional)"]
-    KB[("Strategy & lesson store")]
-    Refl["Reflection · consolidation"]
-  end
-
-  KB --> Ctx
-  Dash --> Ctx
+  KBM --> Ctx
+  RefJ --> Ctx
+  Mem --> Ctx
+  Dash --> Runtime
   Pol --> Dash
   Loop -.->|AgentTrace| Dash
   UI -.->|approve · mode| Dash
 
   Bridge --> Logs[("Run logs")]
-  Logs --> Replay["Replay / metrics"]
-  Logs -.-> Refl
-  Refl --> KB
+  Logs --> Replay["Replay · metrics · compare"]
+  Logs -.-> Post
+  Post --> Mem
 ```
 
 > [!NOTE]
@@ -83,7 +88,7 @@ uv sync
 npm install
 ```
 
-Optional: copy [`.env.example`](.env.example) to **`.env`** at the repo root. Configuration is documented inline there and implemented in [`src/agent/config.py`](src/agent/config.py) (`LLM_API_KEY`, `AGENT_MODE`, models, timeouts, optional combat planner, etc.). Without `LLM_API_KEY`, the agent runs with AI disabled.
+Optional: copy [`.env.example`](.env.example) to **`.env`** at the repo root. Configuration is documented inline there and implemented in [`src/agent/config.py`](src/agent/config.py). Main variables: **`API_KEY`**, **`API_BASE_URL`**, **`DECISION_MODEL`** / **`DECISION_REASONING_EFFORT`** (gameplay, combat plans, reflection), **`SUPPORT_MODEL`** / **`SUPPORT_REASONING_EFFORT`** (strategist, history compaction), **`AGENT_MODE`**, paths **`KNOWLEDGE_DIR`** and **`MEMORY_DIR`**, plus timeouts and consolidation cadence. Without **`API_KEY`**, the agent runs with AI disabled.
 
 ## Run the stack
 
@@ -103,7 +108,7 @@ or `./run_api.sh` — runs `uv run uvicorn src.ui.dashboard:app --host 127.0.0.1
 npm run dev:web
 ```
 
-- **`http://127.0.0.1:5173/`** — main monitor (`/`), run metrics (`/metrics`), map replay (`/metrics/map`). See [`apps/web/README.md`](apps/web/README.md).
+- **`http://127.0.0.1:5173/`** — main monitor (`/`), per-run metrics (`/metrics`), multi-run compare (`/metrics/compare`), map replay (`/metrics/map`). See [`apps/web/README.md`](apps/web/README.md).
 - **`http://127.0.0.1:8000/`** — minimal FastAPI landing page; the SPA is normally served by Vite in dev.
 
 Production build for static assets: `npm run build:web` → `apps/web/dist/`.
