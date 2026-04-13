@@ -333,7 +333,8 @@ export function RunMetricsPage() {
             decision_id: String(r.decision_id ?? "—"),
             status: String(r.status ?? "—"),
             llm_model_used: String(r.llm_model_used ?? "—"),
-            llm_turn_model_key: String(r.llm_turn_model_key ?? "—"),
+            experiment_id: String(r.experiment_id ?? "—"),
+            strategist_ran: Boolean(r.strategist_ran),
             timestamp: String(r.timestamp ?? "—"),
           };
         })
@@ -1558,8 +1559,11 @@ function AiTokenTooltip({
       <div className="truncate" title={String(p.llm_model_used)}>
         model: {String(p.llm_model_used)}
       </div>
-      <div className="truncate text-[10px] text-slate-500" title={String(p.llm_turn_model_key)}>
-        key: {String(p.llm_turn_model_key)}
+      <div className="truncate text-[10px] text-slate-500" title={String(p.experiment_id)}>
+        experiment: {String(p.experiment_id)}
+      </div>
+      <div className="text-[10px] text-slate-500">
+        strategist: {p.strategist_ran ? "yes" : "no"}
       </div>
       <div className="text-[10px] text-slate-500">{String(p.timestamp)}</div>
     </div>

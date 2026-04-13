@@ -1,15 +1,16 @@
-from openai import OpenAI
 import os
+
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
 client = OpenAI(
-    api_key=os.getenv("LLM_API_KEY"),
-    base_url=os.getenv("LLM_BASE_URL")
+    api_key=os.getenv("API_KEY", ""),
+    base_url=os.getenv("API_BASE_URL", "https://api.openai.com/v1"),
 )
 
 response = client.chat.completions.create(
-    model=os.getenv("LLM_MODEL_REASONING"),
+    model=os.getenv("DECISION_MODEL", "gpt-4o"),
     messages=[
         {"role": "user", "content": "hello"}
     ]

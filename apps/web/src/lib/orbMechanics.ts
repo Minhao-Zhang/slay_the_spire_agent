@@ -1,4 +1,4 @@
-import orbMechanicsJson from "../../../../data/processed/orb_mechanics.json";
+import orbMechanicsJson from "../../../../data/reference/orb_mechanics.json";
 
 export type OrbTypeMeta = {
   short?: string;

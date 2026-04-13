@@ -65,7 +65,8 @@ export type AiRow = JsonRecord & {
   validation_error?: string | null;
   error?: string | null;
   llm_model_used?: string | null;
-  llm_turn_model_key?: string | null;
+  experiment_id?: string | null;
+  strategist_ran?: boolean | null;
 };
 
 function num(v: unknown): number | null {

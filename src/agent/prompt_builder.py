@@ -6,37 +6,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.agent.map_analysis import analyze_map_paths
 from src.agent.memory.types import RetrievalHit
 from src.agent.vm_shapes import as_dict, normalize_legal_actions, prompt_command_for_action
 from src.repo_paths import REPO_ROOT
 from src.ui.state_processor import event_option_choose_index
 
-# Lazy-loaded map of buff/power name -> description (from buff_descriptions.json + powers)
-_BUFF_DESCRIPTIONS: dict[str, str] | None = None
 _ORB_MECHANICS: dict[str, Any] | None = None
 _TOKEN_PATTERN = re.compile(r"\[([^\]]+)\]")
-
-
-def _get_buff_descriptions() -> dict[str, str]:
-    """Load buff_descriptions.json and merge with get_power_info for any missing names."""
-    global _BUFF_DESCRIPTIONS
-    if _BUFF_DESCRIPTIONS is not None:
-        return _BUFF_DESCRIPTIONS
-    path = REPO_ROOT / "data" / "processed" / "buff_descriptions.json"
-    if path.exists():
-        with open(path, encoding="utf-8") as f:
-            _BUFF_DESCRIPTIONS = json.load(f)
-    else:
-        _BUFF_DESCRIPTIONS = {}
-    # Backfill from knowledge_base for names we might see (e.g. "Draw Card", "Energized")
-    try:
-        from src.reference.knowledge_base import get_power_info
-        for name in list(_BUFF_DESCRIPTIONS):
-            pass  # already have
-        # We don't preload all powers; we resolve on demand in _buff_glossary_lines
-    except Exception:
-        pass
-    return _BUFF_DESCRIPTIONS
 
 
 def _get_orb_mechanics() -> dict[str, Any]:
@@ -44,7 +21,7 @@ def _get_orb_mechanics() -> dict[str, Any]:
     global _ORB_MECHANICS
     if _ORB_MECHANICS is not None:
         return _ORB_MECHANICS
-    path = REPO_ROOT / "data" / "processed" / "orb_mechanics.json"
+    path = REPO_ROOT / "data" / "reference" / "orb_mechanics.json"
     if path.exists():
         with open(path, encoding="utf-8") as f:
             _ORB_MECHANICS = json.load(f)
@@ -120,18 +97,16 @@ def _orb_subsection_body(vm: dict[str, Any]) -> str | None:
 
 
 def _resolve_buff_description(name: str) -> str:
-    """Get description for a power/buff name. Uses buff_descriptions.json then get_power_info."""
+    """Get description for a power/buff/debuff name from ``powers.json`` via knowledge_base."""
     name = (name or "").strip()
     if not name:
         return ""
-    descs = _get_buff_descriptions()
-    if name in descs:
-        return descs[name]
     try:
         from src.reference.knowledge_base import get_power_info
+
         info = get_power_info(name)
         if info and info.get("effect"):
-            return info["effect"]
+            return str(info["effect"])
     except Exception:
         pass
     return ""
@@ -240,7 +215,7 @@ def _apply_prompt_profile(groups: list[PromptGroup], profile: str) -> list[Promp
     drop_keys = {"buff_glossary", "map_scene", "card_choice_guidance", "memory_context"}
     thin_tooling = (
         "- Pile tools only if hidden information is required.\n"
-        "- inspect_deck_summary for deck stats.\n"
+        "- inspect_deck_summary / inspect_full_deck for deck info.\n"
         "- END: chosen_commands must be [\"END\"] alone, never queued with plays."
     )
     out: list[PromptGroup] = []
@@ -403,6 +378,66 @@ def _buff_glossary_lines(vm: dict[str, Any]) -> list[str]:
     return sorted(lines)  # deterministic order
 
 
+def _deck_assessment_lines(vm: dict[str, Any]) -> list[str]:
+    """Compact deck assessment for reward / shop / event screens (Phase 2)."""
+    inv = vm.get("inventory") or {}
+    deck = inv.get("deck") or []
+    if not isinstance(deck, list) or not deck:
+        return []
+
+    deck_size = len(deck)
+    type_counts: dict[str, int] = {}
+    cost_counts: dict[int, int] = {}
+    upgrades = 0
+
+    for c in deck:
+        if not isinstance(c, dict):
+            continue
+        ct = ((c.get("kb") or {}).get("type") or c.get("type") or "").upper()
+        if ct:
+            type_counts[ct] = type_counts.get(ct, 0) + 1
+        cost = c.get("cost")
+        if isinstance(cost, int):
+            cost_counts[cost] = cost_counts.get(cost, 0) + 1
+        if c.get("upgrades", 0):
+            upgrades += 1
+
+    type_str = ", ".join(f"{t}={n}" for t, n in sorted(type_counts.items()))
+    cost_str = ", ".join(f"{k}-cost={v}" for k, v in sorted(cost_counts.items()))
+    lines = [
+        f"DECK ({deck_size} cards, {upgrades} upgraded): {type_str}",
+        f"Cost curve: {cost_str}",
+    ]
+
+    by_type: dict[str, list[str]] = {}
+    for c in deck:
+        if not isinstance(c, dict):
+            continue
+        ct = ((c.get("kb") or {}).get("type") or c.get("type") or "").upper() or "OTHER"
+        name = str(c.get("name", "?"))
+        if c.get("upgrades", 0):
+            name += "+"
+        by_type.setdefault(ct, []).append(name)
+
+    max_per_type = 35
+    for t in sorted(by_type):
+        names = sorted(by_type[t])
+        if len(names) > max_per_type:
+            extra = len(names) - max_per_type
+            shown = ", ".join(names[:max_per_type])
+            lines.append(f"  {t}: {shown}, … (+{extra} more)")
+        else:
+            lines.append(f"  {t}: {', '.join(names)}")
+
+    if deck_size >= 25:
+        lines.append(
+            f"WARNING: Deck has {deck_size} cards. Larger decks lose consistency. "
+            "Skip rewards unless the pick is exceptional or fills a critical gap."
+        )
+
+    return lines
+
+
 def _map_planning_lines(vm: dict[str, Any]) -> list[str]:
     screen = vm.get("screen") or {}
     if screen.get("type") != "MAP":
@@ -429,6 +464,31 @@ def _map_planning_lines(vm: dict[str, Any]) -> list[str]:
             for node in next_nodes
         ]
         lines.append("next_nodes=" + ", ".join(next_node_bits))
+
+        analysis = analyze_map_paths(
+            nodes=map_state.get("nodes") or [],
+            current_node=map_state.get("current_node"),
+            next_nodes=next_nodes,
+            boss_available=bool(map_state.get("boss_available", False)),
+        )
+        if analysis:
+            lines.append("## Path analysis")
+            for a in analysis:
+                nn = a.get("next_node") or {}
+                sym = nn.get("symbol", "?")
+                x, y = nn.get("x", "?"), nn.get("y", "?")
+                s = a.get("encounter_summary") or {}
+                parts = [f"{k}={v}" for k, v in sorted(s.items()) if v > 0]
+                typical = ", ".join(parts) if parts else "n/a"
+                sample = a.get("sample_path") or []
+                sample_s = " → ".join(str(t) for t in sample) if sample else "n/a"
+                note = a.get("notable_sequences") or []
+                seq_note = f" Notable: {', '.join(note)}." if note else ""
+                lines.append(
+                    f"Path from ({x},{y})={sym}: {a.get('path_count', 0)} routes to boss row. "
+                    f"Typical (mean across routes): {typical}. "
+                    f"Sample: {sample_s}.{seq_note}"
+                )
 
     lines.append(f"boss_available={bool(map_state.get('boss_available', False))}")
 
@@ -760,7 +820,7 @@ def _format_memory_hits(hits: list[RetrievalHit]) -> str:
 def build_prompt_groups(
     vm: dict[str, Any],
     recent_actions: list[str],
-    strategy_memory: list[str] | None = None,
+    strategy_notes: list[str] | None = None,
     combat_plan_guide: str | None = None,
     prompt_profile: str = "default",
     memory_hits: list[RetrievalHit] | None = None,
@@ -843,7 +903,7 @@ def build_prompt_groups(
 
     tooling_body = (
         "- Use a pile inspection tool only if you need hidden pile details.\n"
-        "- Use inspect_deck_summary for archetype/cost-curve checks.\n"
+        "- Use inspect_deck_summary for quick deck aggregates; use inspect_full_deck for every card + KB text.\n"
         "- Do not request a tool if the visible state already answers the question.\n"
         "- END (end turn): chosen_commands must be [\"END\"] alone — never queue END with plays or potions."
     )
@@ -853,8 +913,8 @@ def build_prompt_groups(
     run_subs: list[PromptSubsection] = [
         PromptSubsection("Player snapshot", _fmt_list(player_lines)),
     ]
-    if strategy_memory:
-        run_subs.append(PromptSubsection("Strategy memory", _fmt_list(strategy_memory)))
+    if strategy_notes:
+        run_subs.append(PromptSubsection("Strategy notes", _fmt_list(strategy_notes)))
     guide = (combat_plan_guide or "").strip()
     if guide and combat:
         run_subs.append(
@@ -904,6 +964,13 @@ def build_prompt_groups(
                 _fmt_list(screen_content_lines, fallback="No content."),
             ),
         ]
+        st = screen.get("type", "NONE")
+        if st in ("CARD_REWARD", "SHOP_SCREEN", "BOSS_REWARD", "EVENT"):
+            deck_assess = _deck_assessment_lines(vm)
+            if deck_assess:
+                nc_subs.append(
+                    PromptSubsection("Deck assessment", _fmt_list(deck_assess)),
+                )
         if map_lines:
             nc_subs.append(PromptSubsection("Map planning", _fmt_list(map_lines)))
         if map_scene:
@@ -956,7 +1023,7 @@ def build_prompt_groups(
                 "Reference & past lessons",
                 [
                     PromptSubsection(
-                        "RETRIEVED KNOWLEDGE (L2 procedural, then L1 strategy & expert guides, then L3 episodic)",
+                        "RETRIEVED KNOWLEDGE (L2 procedural, then L1 knowledge markdown, then L3 episodic)",
                         _format_memory_hits(memory_hits),
                         profile_key="memory_context",
                     ),
@@ -978,7 +1045,7 @@ def build_user_prompt(
     vm: dict[str, Any],
     _state_id: str,
     recent_actions: list[str],
-    strategy_memory: list[str] | None = None,
+    strategy_notes: list[str] | None = None,
     combat_plan_guide: str | None = None,
     prompt_profile: str = "default",
     memory_hits: list[RetrievalHit] | None = None,
@@ -986,7 +1053,7 @@ def build_user_prompt(
     groups = build_prompt_groups(
         vm,
         recent_actions,
-        strategy_memory=strategy_memory,
+        strategy_notes=strategy_notes,
         combat_plan_guide=combat_plan_guide,
         prompt_profile=prompt_profile,
         memory_hits=memory_hits,

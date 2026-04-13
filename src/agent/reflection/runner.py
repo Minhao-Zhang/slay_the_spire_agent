@@ -10,8 +10,9 @@ from typing import Any
 from src.agent.config import AgentConfig
 from src.agent.memory import MemoryStore
 from src.agent.reflection.analyzer import RunAnalyzer
-from src.agent.reflection.memory_storage import persist_reflection_to_memory
+from src.agent.reflection.memory_storage import persist_reflection_to_memory, update_lesson_outcomes
 from src.agent.reflection.reflector import reflect_on_run
+from src.agent.reflection.report_types import RunReport
 from src.agent.reflection.schemas import EpisodicDraft, ReflectionPersistInput, ReflectionPersistResult
 
 log = logging.getLogger(__name__)
@@ -89,6 +90,8 @@ def run_reflection_pipeline(
             episodic=episodic,
         )
         result = persist_reflection_to_memory(memory_store, inp)
+        vic = report.victory is True
+        update_lesson_outcomes(memory_store, list(report.retrieved_lesson_ids), vic)
     except Exception as exc:  # noqa: BLE001
         error = repr(exc)
         log.exception("run_reflection_pipeline failed for %s", game_dir)

@@ -1,0 +1,824 @@
+[
+  {
+    "name": "Artifact",
+    "effect": "Negates X debuffs.",
+    "stacks": "Counter",
+    "type": "buff"
+  },
+  {
+    "name": "Barricade",
+    "effect": "Block is not removed at the start of turn.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Buffer",
+    "effect": "Prevent the next X times you would lose HP.",
+    "stacks": "Counter",
+    "type": "buff"
+  },
+  {
+    "name": "Dexterity",
+    "effect": "Increases Block gained from cards by X.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Draw Card",
+    "effect": "Draw X additional cards next turn.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Energy",
+    "effect": "Resource used to play cards. You gain Energy at the start of each turn.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Energized",
+    "effect": "Gain X additional Energy next turn.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Focus",
+    "effect": "Increases the effectiveness of Orbs by X.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Intangible",
+    "effect": "Reduce ALL damage taken and HP loss to 1 this turn. (lasts X turns)",
+    "stacks": "Duration",
+    "type": "buff"
+  },
+  {
+    "name": "Mantra",
+    "effect": "When you gain 10 Mantra, enter Divinity.",
+    "stacks": "Counter",
+    "type": "buff"
+  },
+  {
+    "name": "Calm",
+    "effect": "While in Calm there are no stance damage modifiers. When you exit Calm, gain 2 Energy.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Divinity",
+    "effect": "When you enter: gain 3 Energy. Your Attacks deal triple damage. Ends at end of turn.",
+    "stacks": "Duration",
+    "type": "buff"
+  },
+  {
+    "name": "Wrath",
+    "effect": "Your Attacks deal double damage; you take double damage from enemy Attacks.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Metallicize",
+    "effect": "At the end of your/its turn, gain X Block.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Next Turn Block",
+    "effect": "Gain X Block next turn.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Plated Armor",
+    "effect": "At the end of your turn, gain X Block. Receiving unblocked attack damage reduces Plated Armor by 1.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Regenerate",
+    "effect": "At the end of its turn, heals X HP.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Ritual",
+    "effect": "At the end of its turn, gains X Strength.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Strength",
+    "effect": "Increases attack damage by X.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Thorns",
+    "effect": "When attacked, deals X damage back.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Vigor",
+    "effect": "Your next Attack deals X additional damage.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Accuracy",
+    "effect": "Shivs deal X additional damage.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "After Image",
+    "effect": "Whenever you play a card, gain X Block.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Amplify",
+    "effect": "Your next X Power cards are played twice.",
+    "stacks": "Counter",
+    "type": "buff"
+  },
+  {
+    "name": "Battle Hymn",
+    "effect": "At the start of each turn add X Smites into your hand.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Berserk",
+    "effect": "At the start of your turn, gain X Energy.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Blasphemer",
+    "effect": "At the start of your turn, die.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Blur",
+    "effect": "Block is not removed at the start of your next X turns.",
+    "stacks": "Duration",
+    "type": "buff"
+  },
+  {
+    "name": "Brutality",
+    "effect": "At the start of your turn, lose X HP and draw X cards.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Burst",
+    "effect": "Your next X Skills are played twice.",
+    "stacks": "Counter",
+    "type": "buff"
+  },
+  {
+    "name": "Collect",
+    "effect": "Put a Miracle+ into your hand at the start of your next X turns.",
+    "stacks": "Duration",
+    "type": "buff"
+  },
+  {
+    "name": "Combust",
+    "effect": "At the end of your turn, lose 1 HP(for each Combust played) and deal X damage to ALL enemies.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Corruption",
+    "effect": "Skills cost 0. Whenever you play a Skill, Exhaust it.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Creative AI",
+    "effect": "At the start of your turn, add X random Power cards into your hand.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Dark Embrace",
+    "effect": "Whenever a card is Exhausted, draw X cards.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Demon Form",
+    "effect": "At the start of your turn, gain X Strength.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Deva",
+    "effect": "At the start of your turn gain Energy N times and increase this gain by X.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Devotion",
+    "effect": "At the start of your turn, gain X Mantra.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Double Damage",
+    "effect": "Attacks deal double damage for X turns.",
+    "stacks": "Duration",
+    "type": "buff"
+  },
+  {
+    "name": "Double Tap",
+    "effect": "Your next X Attacks are played twice.",
+    "stacks": "Counter",
+    "type": "buff"
+  },
+  {
+    "name": "Duplication",
+    "effect": "Your next X cards are played twice.",
+    "stacks": "Counter",
+    "type": "buff"
+  },
+  {
+    "name": "Echo Form",
+    "effect": "The first X cards you play each turn are played twice.",
+    "stacks": "Counter",
+    "type": "buff"
+  },
+  {
+    "name": "Electro",
+    "effect": "Lightning hits ALL enemies.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Envenom",
+    "effect": "Whenever you deal unblocked attack damage, apply X Poison.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Equilibrium",
+    "effect": "Retain your hand for X turns.",
+    "stacks": "Duration",
+    "type": "buff"
+  },
+  {
+    "name": "Establishment",
+    "effect": "Whenever a card is Retained, lower its cost by X.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Evolve",
+    "effect": "Whenever you draw a Status, draw X cards.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Feel No Pain",
+    "effect": "Whenever a card is Exhausted, gain X Block.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Fire Breathing",
+    "effect": "Whenever you draw a Status or Curse card, deal X damage to ALL enemies.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Flame Barrier",
+    "effect": "When attacked, deals X damage back. Wears off at the start of your next turn.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Foresight",
+    "effect": "At the start of your turn, Scry X.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Free Attack Power",
+    "effect": "The next X Attacks you play costs 0.",
+    "stacks": "Counter",
+    "type": "buff"
+  },
+  {
+    "name": "Heatsink",
+    "effect": "Whenever you play a Power card, draw X cards.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Hello",
+    "effect": "At the start of your turn, add X random Common cards into your hand.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Infinite Blades",
+    "effect": "At the start of your turn, add X Shivs into your hand.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Juggernaut",
+    "effect": "Whenever you gain Block, deal X damage to a random enemy.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Like Water",
+    "effect": "At the end of your turn, if you are in Calm, gain X Block.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Loop",
+    "effect": "At the start of your turn, trigger the passive ability of your next Orb X times.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Machine Learning",
+    "effect": "At the start of your turn, draw X additional cards.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Magnetism",
+    "effect": "At the start of your turn, add X random colorless cards into your hand.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Master Reality",
+    "effect": "Whenever a card is created during combat, Upgrade it.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Mayhem",
+    "effect": "At the start of your turn, play the top X card of your draw pile.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Mental Fortress",
+    "effect": "Whenever you switch Stances, gain X Block.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Nightmare",
+    "effect": "Add X of a chosen card into your hand next turn.",
+    "stacks": "Special",
+    "type": "buff"
+  },
+  {
+    "name": "Nirvana",
+    "effect": "Whenever you Scry, gain X Block.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Noxious Fumes",
+    "effect": "At the start of your turn, apply X Poison to ALL enemies.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Omega",
+    "effect": "At the end of your turn, deal X damage to ALL enemies.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Panache",
+    "effect": "If you play N more cards this turn, deal X damage to all enemies.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Pen Nib",
+    "effect": "Your next Attack deals double damage.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Phantasmal",
+    "effect": "Deal Double Damage for the next X turns.",
+    "stacks": "Duration",
+    "type": "buff"
+  },
+  {
+    "name": "Rage",
+    "effect": "Whenever you play an Attack, gain X Block.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Rebound",
+    "effect": "The next X cards you play this turn are placed on top of your draw pile.",
+    "stacks": "Counter",
+    "type": "buff"
+  },
+  {
+    "name": "Regeneration",
+    "effect": "At the end of your turn, heal X HP and reduce Regen by 1.",
+    "stacks": "Intensity and Duration",
+    "type": "buff"
+  },
+  {
+    "name": "Rushdown",
+    "effect": "Whenever you enter Wrath, draw X cards.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Repair",
+    "effect": "At the end of combat, heal X HP.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Rupture",
+    "effect": "Whenever you lose HP from a card, gain X Strength.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Sadistic",
+    "effect": "Whenever you apply a debuff to an enemy, deal X damage.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Simmering Rage",
+    "effect": "At the start of your next turn, enter Wrath.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Static Discharge",
+    "effect": "Whenever you receive unblocked attack damage, channel X Lightning.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Storm",
+    "effect": "Whenever you play a Power card, channel X Lightning.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Study",
+    "effect": "At the end of your turn, shuffle X Insights into your draw pile.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Surrounded",
+    "effect": "Receive 50% more damage if attacked from behind. Use targeting cards or potions to change your orientation.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "The Bomb",
+    "effect": "At the end of N turns, deal X damage to all enemies.",
+    "stacks": "Special",
+    "type": "buff"
+  },
+  {
+    "name": "Thousand Cuts",
+    "effect": "Whenever you play a card, deal X damage to ALL enemies.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Tools of the Trade",
+    "effect": "At the start of your turn, draw X cards and discard X cards.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Wave of the Hand",
+    "effect": "Whenever you gain Block this turn, apply X Weak to ALL enemies.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Well-Laid Plans",
+    "effect": "At the end of your turn, Retain up to X cards.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Angry",
+    "effect": "Upon receiving attack damage, gains X Strength.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Back Attack",
+    "effect": "Deals 50% more damage as it is attacking you from behind.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Beat of Death",
+    "effect": "Whenever you play a card, take X damage.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Curiosity",
+    "effect": "Whenever you play a Power card, gains X Strength.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Curl Up",
+    "effect": "On receiving attack damage, rolls up and gains X Block (Once per combat).",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Enrage",
+    "effect": "Whenever you play a skill, gains X Strength.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Explosive",
+    "effect": "Explodes in N turns, dealing X damage.",
+    "stacks": "Special",
+    "type": "buff"
+  },
+  {
+    "name": "Fading",
+    "effect": "Dies in X turns.",
+    "stacks": "Duration",
+    "type": "debuff"
+  },
+  {
+    "name": "Invincible",
+    "effect": "Can only lose X more HP this turn.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Life Link",
+    "effect": "If other Darklings are still alive, revives in 2 turns.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Malleable",
+    "effect": "Upon receiving attack damage, gains X Block. Block gain increases by 1 each time Malleable is triggered. Resets to X at the start of your turn.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Minion",
+    "effect": "Minions abandon combat without their leader.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Mode Shift",
+    "effect": "After receiving X damage, changes to a defensive mode.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Painful Stabs",
+    "effect": "Whenever you receive attack damage from this enemy, add X Wounds into your discard pile.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Reactive",
+    "effect": "Upon receiving attack damage, changes its intent.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Sharp Hide",
+    "effect": "Whenever you play an attack, take X damage.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Shifting",
+    "effect": "Upon losing HP, loses that much Strength until the end of the turn.",
+    "stacks": "No",
+    "type": "debuff"
+  },
+  {
+    "name": "Split",
+    "effect": "When its HP is at or below 50%, will split into 2 smaller Slimes with its current HP.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Spore Cloud",
+    "effect": "On death, applies X Vulnerable.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Stasis",
+    "effect": "On death, a stolen card is returned to your hand.",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Strength Up",
+    "effect": "At the end of its turn, gains X Strength.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Thievery",
+    "effect": "Steals X Gold whenever it attacks.",
+    "stacks": "Intensity",
+    "type": "buff"
+  },
+  {
+    "name": "Time Warp",
+    "effect": "Whenever you play N cards, ends your turn and gains X Strength.",
+    "stacks": "Counter",
+    "type": "buff"
+  },
+  {
+    "name": "Unawakened",
+    "effect": "This enemy hasn't awakened yet...",
+    "stacks": "No",
+    "type": "buff"
+  },
+  {
+    "name": "Confused",
+    "effect": "The costs of your cards are randomized on draw, from 0 to 3.",
+    "stacks": "No",
+    "type": "debuff"
+  },
+  {
+    "name": "Dexterity (Negative)",
+    "effect": "Decreases Block gained from cards by X.",
+    "stacks": "Intensity",
+    "type": "debuff"
+  },
+  {
+    "name": "Dexterity Down",
+    "effect": "At the end of your turn, lose X Dexterity.",
+    "stacks": "Intensity",
+    "type": "debuff"
+  },
+  {
+    "name": "Focus (Negative)",
+    "effect": "Decreases the effectiveness of your Orbs by X.",
+    "stacks": "Intensity",
+    "type": "debuff"
+  },
+  {
+    "name": "Frail",
+    "effect": "Block gained from cards is reduced by 25%.",
+    "stacks": "Duration",
+    "type": "debuff"
+  },
+  {
+    "name": "No Draw",
+    "effect": "You may not draw any more cards this turn.",
+    "stacks": "No",
+    "type": "debuff"
+  },
+  {
+    "name": "Poison",
+    "effect": "At the start of its turn, lose X HP (bypasses Block); then lose 1 stack of Poison.",
+    "stacks": "Intensity and Duration",
+    "type": "debuff"
+  },
+  {
+    "name": "Shackled",
+    "effect": "At the end of its turn, regains X Strength.",
+    "stacks": "Intensity",
+    "type": "debuff"
+  },
+  {
+    "name": "Slow",
+    "effect": "The enemy receives (X*10)% more damage from attacks this turn. Whenever you play a card, increases X by 1.",
+    "stacks": "Intensity",
+    "type": "debuff"
+  },
+  {
+    "name": "Strength (Negative)",
+    "effect": "Decreases attack damage by X.",
+    "stacks": "Intensity",
+    "type": "debuff"
+  },
+  {
+    "name": "Strength Down",
+    "effect": "At the end of your turn, lose X Strength.",
+    "stacks": "Intensity",
+    "type": "debuff"
+  },
+  {
+    "name": "Vulnerable",
+    "effect": "Target takes 50% more damage from attacks.",
+    "stacks": "Duration",
+    "type": "debuff"
+  },
+  {
+    "name": "Weak",
+    "effect": "Target deals 25% less attack damage.",
+    "stacks": "Duration",
+    "type": "debuff"
+  },
+  {
+    "name": "Bias",
+    "effect": "At the start of your turn, lose X Focus.",
+    "stacks": "Intensity",
+    "type": "debuff"
+  },
+  {
+    "name": "Block Return",
+    "effect": "Whenever you attack this enemy, gain X Block.",
+    "stacks": "Intensity",
+    "type": "debuff"
+  },
+  {
+    "name": "Choked",
+    "effect": "Whenever you play a card this turn, the targeted enemy loses X HP.",
+    "stacks": "Intensity",
+    "type": "debuff"
+  },
+  {
+    "name": "Constricted",
+    "effect": "At the end of your turn, take X damage.",
+    "stacks": "Intensity",
+    "type": "debuff"
+  },
+  {
+    "name": "Corpse Explosion",
+    "effect": "On death, the enemy deals X times its Max HP worth of damage to all other enemies.",
+    "stacks": "Intensity",
+    "type": "debuff"
+  },
+  {
+    "name": "Draw Reduction",
+    "effect": "Draw 1 less card next X turns.",
+    "stacks": "Duration",
+    "type": "debuff"
+  },
+  {
+    "name": "Entangled",
+    "effect": "You may not play any Attacks this turn.",
+    "stacks": "No",
+    "type": "debuff"
+  },
+  {
+    "name": "Fasting",
+    "effect": "Gain X less Energy at the start of each turn.",
+    "stacks": "Intensity",
+    "type": "debuff"
+  },
+  {
+    "name": "Hex",
+    "effect": "Whenever you play a non-Attack card, add X Dazed to your draw pile.",
+    "stacks": "Intensity",
+    "type": "debuff"
+  },
+  {
+    "name": "Lock-On",
+    "effect": "Lightning and Dark orbs deal 50% more damage (rounded down) to the targeted enemy.",
+    "stacks": "Duration",
+    "type": "debuff"
+  },
+  {
+    "name": "Mark",
+    "effect": "Whenever you play Pressure Points, all enemies with Mark lose X HP.",
+    "stacks": "Intensity",
+    "type": "debuff"
+  },
+  {
+    "name": "No Block",
+    "effect": "You may not gain Block from cards for the next X turns.",
+    "stacks": "Duration",
+    "type": "debuff"
+  },
+  {
+    "name": "Wraith Form",
+    "effect": "Lose X Dexterity at the end of your turn.",
+    "stacks": "Intensity",
+    "type": "debuff"
+  }
+]

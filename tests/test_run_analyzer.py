@@ -30,8 +30,9 @@ class TestRunAnalyzer(unittest.TestCase):
                         "state_id": "a2",
                         "turn_key": "COMBAT:2",
                         "status": "executed",
-                        "reasoning_profile_name": "budget_disabled_binary",
+                        "llm_model_used": "gpt-test",
                         "reasoning_effort_used": "medium",
+                        "strategist_ran": True,
                     }
                 ),
                 encoding="utf-8",

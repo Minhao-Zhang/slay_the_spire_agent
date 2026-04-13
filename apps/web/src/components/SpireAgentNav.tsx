@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-export type SpireNavPage = "monitor" | "metrics" | "map";
+export type SpireNavPage = "monitor" | "metrics" | "map" | "compare";
 
 const linkCls =
   "font-console text-xs font-semibold uppercase tracking-wide text-sky-400 hover:text-sky-300";
@@ -15,6 +15,7 @@ const pageLabel: Record<SpireNavPage, string> = {
   monitor: "Monitor",
   metrics: "Run metrics",
   map: "Run map",
+  compare: "Compare runs",
 };
 
 export function SpireAgentNav({ page, runQuery }: SpireAgentNavProps) {
@@ -45,6 +46,11 @@ export function SpireAgentNav({ page, runQuery }: SpireAgentNavProps) {
             className={linkCls}
           >
             Run map
+          </Link>
+        ) : null}
+        {page !== "compare" ? (
+          <Link to="/metrics/compare" className={linkCls}>
+            Compare runs
           </Link>
         ) : null}
       </nav>

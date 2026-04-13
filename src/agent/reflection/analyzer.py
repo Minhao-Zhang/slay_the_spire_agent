@@ -39,16 +39,17 @@ def _decision_from_ai_log(data: dict[str, Any], source_path: str) -> DecisionRec
             lr = int(lr)
         except (TypeError, ValueError):
             lr = 0
+    sr = data.get("strategist_ran")
+    strategist_ran = bool(sr) if isinstance(sr, bool) else str(sr).lower() == "true"
     return DecisionRecord(
         state_id=str(data.get("state_id") or ""),
         turn_key=str(data.get("turn_key") or ""),
         status=str(data.get("status") or ""),
         final_decision=data.get("final_decision") if data.get("final_decision") is not None else None,
         planner_summary=str(data.get("planner_summary") or ""),
-        llm_turn_model_key=str(data.get("llm_turn_model_key") or ""),
-        reasoning_profile_name=str(data.get("reasoning_profile_name") or ""),
+        llm_model_used=str(data.get("llm_model_used") or ""),
         reasoning_effort_used=str(data.get("reasoning_effort_used") or ""),
-        retrieval_mode_used=str(data.get("retrieval_mode_used") or ""),
+        strategist_ran=strategist_ran,
         lessons_retrieved=lr,
         tool_names=[str(t) for t in tools if t],
         source_path=source_path,
@@ -70,11 +71,18 @@ class RunAnalyzer:
         latencies: list[int] = []
         valid_like = 0
 
+        all_lesson_ids: set[str] = set()
         for path in iter_ai_json_paths(run_dir):
             data = read_json_dict(path)
             if not data:
                 continue
             decisions.append(_decision_from_ai_log(data, str(path)))
+            raw_ids = data.get("retrieved_lesson_ids")
+            if isinstance(raw_ids, list):
+                for x in raw_ids:
+                    s = str(x).strip()
+                    if s:
+                        all_lesson_ids.add(s)
             for tn in data.get("tool_names") or []:
                 if tn:
                     tool_usage[str(tn)] = tool_usage.get(str(tn), 0) + 1
@@ -241,4 +249,5 @@ class RunAnalyzer:
             run_end_derived=derived,
             run_metrics_line_count=len(metrics),
             last_run_end_derived=last_run,
+            retrieved_lesson_ids=sorted(all_lesson_ids),
         )

@@ -4,7 +4,11 @@ import json
 import sys
 from typing import Any
 
-from src.agent.config import reload_agent_config
+from src.agent.config import (
+    CONNECT_TIMEOUT_SECONDS,
+    PROBE_TIMEOUT_SECONDS,
+    reload_agent_config,
+)
 from src.agent.llm_client import ApiStyle, build_llm_check_result, LLMClient
 
 
@@ -58,17 +62,15 @@ def build_report() -> dict[str, Any]:
 
     return {
         "config": {
-            "base_url": config.base_url,
-            "reasoning_model": config.reasoning_model,
-            "fast_model": config.fast_model,
+            "api_base_url": config.api_base_url,
+            "decision_model": config.decision_model,
+            "support_model": config.support_model,
             "api_key_present": bool(config.api_key),
-            "default_mode": config.default_mode,
+            "agent_mode": config.agent_mode,
             "request_timeout_seconds": config.request_timeout_seconds,
-            "connect_timeout_seconds": config.connect_timeout_seconds,
-            "probe_timeout_seconds": config.probe_timeout_seconds,
+            "connect_timeout_seconds": CONNECT_TIMEOUT_SECONDS,
+            "probe_timeout_seconds": PROBE_TIMEOUT_SECONDS,
             "proposal_timeout_seconds": config.proposal_timeout_seconds,
-            "proposal_failure_streak_limit": config.proposal_failure_streak_limit,
-            "planner_enabled": config.planner_enabled,
             "max_retries": config.max_retries,
         },
         "runtime": result,

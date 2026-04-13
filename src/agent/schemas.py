@@ -27,6 +27,7 @@ class ToolRequest(BaseModel):
         "inspect_discard_pile",
         "inspect_exhaust_pile",
         "inspect_deck_summary",
+        "inspect_full_deck",
     ]
     question: str = ""
 
@@ -44,6 +45,10 @@ class InspectExhaustPileTool(BaseModel):
 
 
 class InspectDeckSummaryTool(BaseModel):
+    question: str = ""
+
+
+class InspectFullDeckTool(BaseModel):
     question: str = ""
 
 
@@ -135,11 +140,13 @@ class PersistedAiLog(BaseModel):
     error: str = ""
     prompt_profile: str = "default"
     llm_model_used: str = ""
-    llm_turn_model_key: str = ""
-    reasoning_profile_name: str = ""
     reasoning_effort_used: str = ""
     lessons_retrieved: int = 0
-    retrieval_mode_used: str = ""
+    experiment_tag: str = ""
+    experiment_id: str = ""
+    strategist_ran: bool = False
+    deck_size: Optional[int] = None
+    retrieved_lesson_ids: list[str] = Field(default_factory=list)
 
 
 class AgentTrace(BaseModel):
@@ -179,9 +186,11 @@ class AgentTrace(BaseModel):
     error: str = ""
     prompt_profile: str = "default"
     llm_model_used: str = ""
-    llm_turn_model_key: str = ""
-    reasoning_profile_name: str = ""
     reasoning_effort_used: str = ""
     lessons_retrieved: int = 0
-    retrieval_mode_used: str = ""
+    experiment_tag: str = ""
+    experiment_id: str = ""
+    strategist_ran: bool = False
+    deck_size: Optional[int] = None
+    retrieved_lesson_ids: list[str] = Field(default_factory=list)
 

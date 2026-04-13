@@ -30,11 +30,11 @@ class TestPersistReflectionToMemory(unittest.TestCase):
         self.addCleanup(td.cleanup)
         base = Path(td.name)
         mem = base / "memory"
-        strat = base / "strategy"
+        kn = base / "knowledge"
         mem.mkdir()
-        strat.mkdir()
-        (strat / "x.md").write_text("---\ntags: [t]\n---\n.", encoding="utf-8")
-        return MemoryStore(memory_dir=mem, strategy_dir=strat), mem, strat
+        kn.mkdir()
+        (kn / "x.md").write_text("---\ntags: [t]\n---\n.", encoding="utf-8")
+        return MemoryStore(memory_dir=mem, knowledge_dir=kn), mem, kn
 
     def test_appends_procedural_and_episodic(self) -> None:
         store, mem, _ = self._store()

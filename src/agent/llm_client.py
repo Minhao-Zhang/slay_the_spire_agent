@@ -9,7 +9,12 @@ from typing import Any, Callable, Literal, Mapping, cast
 import httpx
 from openai import OpenAI
 
-from src.agent.config import AgentConfig
+from src.agent.config import (
+    COMBAT_PLAN_MAX_OUTPUT_TOKENS,
+    CONNECT_TIMEOUT_SECONDS,
+    PROBE_TIMEOUT_SECONDS,
+    AgentConfig,
+)
 from src.agent.schemas import TraceTokenUsage, compute_uncached_input_tokens
 from src.agent.tool_registry import list_function_tools
 
@@ -156,18 +161,18 @@ def build_llm_check_result(config: AgentConfig) -> dict[str, Any]:
         "api_style": "",
         "message": "",
         "config": {
-            "base_url": config.base_url,
-            "reasoning_model": config.reasoning_model,
-            "fast_model": config.fast_model,
+            "api_base_url": config.api_base_url,
+            "decision_model": config.decision_model,
+            "support_model": config.support_model,
             "prompt_profile": config.prompt_profile,
             "api_key_present": bool(config.api_key),
         },
     }
     if not config.api_key:
-        result["message"] = "LLM mis-configured: missing LLM_API_KEY."
+        result["message"] = "LLM mis-configured: missing API_KEY."
         return result
-    if not config.reasoning_model:
-        result["message"] = "LLM mis-configured: missing LLM_MODEL_REASONING."
+    if not config.decision_model:
+        result["message"] = "LLM mis-configured: missing DECISION_MODEL."
         return result
 
     llm = LLMClient(config)
@@ -184,42 +189,44 @@ def build_llm_check_result(config: AgentConfig) -> dict[str, Any]:
     return result
 
 
+LlmRole = Literal["decision", "support"]
+
+
 class LLMClient:
-    """API client; use model_key 'reasoning' vs 'fast' for turn routing (see AgentConfig)."""
+    """OpenAI client: decision model for gameplay; support model for strategist / compaction."""
 
     def __init__(self, config: AgentConfig):
         self.config = config
-        reasoning_timeout_s = float(config.reasoning_request_timeout_seconds or config.request_timeout_seconds)
-        fast_timeout_s = float(config.fast_request_timeout_seconds or config.request_timeout_seconds)
-        self.reasoning_timeout = httpx.Timeout(
-            timeout=reasoning_timeout_s,
-            connect=config.connect_timeout_seconds,
+        decision_timeout_s = float(config.request_timeout_seconds)
+        support_timeout_s = float(config.support_timeout_seconds)
+        self.decision_timeout = httpx.Timeout(
+            timeout=decision_timeout_s,
+            connect=CONNECT_TIMEOUT_SECONDS,
         )
-        self.fast_timeout = httpx.Timeout(
-            timeout=fast_timeout_s,
-            connect=config.connect_timeout_seconds,
+        self.support_timeout = httpx.Timeout(
+            timeout=support_timeout_s,
+            connect=CONNECT_TIMEOUT_SECONDS,
         )
         self.probe_timeout = httpx.Timeout(
-            timeout=config.probe_timeout_seconds,
-            connect=min(config.connect_timeout_seconds, config.probe_timeout_seconds),
+            timeout=PROBE_TIMEOUT_SECONDS,
+            connect=min(CONNECT_TIMEOUT_SECONDS, PROBE_TIMEOUT_SECONDS),
         )
-        self.reasoning_client = OpenAI(
+        self.decision_client = OpenAI(
             api_key=config.api_key or "missing-key",
-            base_url=config.base_url,
-            timeout=self.reasoning_timeout,
+            base_url=config.api_base_url,
+            timeout=self.decision_timeout,
             max_retries=config.max_retries,
         )
-        self.fast_client = OpenAI(
+        self.support_client = OpenAI(
             api_key=config.api_key or "missing-key",
-            base_url=config.base_url,
-            timeout=self.fast_timeout,
+            base_url=config.api_base_url,
+            timeout=self.support_timeout,
             max_retries=config.max_retries,
         )
-        # Backward-compatible alias for callsites that should use reasoning by default.
-        self.client = self.reasoning_client
+        self.client = self.decision_client
         self.probe_client = OpenAI(
             api_key=config.api_key or "missing-key",
-            base_url=config.base_url,
+            base_url=config.api_base_url,
             timeout=self.probe_timeout,
             max_retries=0,
         )
@@ -232,19 +239,16 @@ class LLMClient:
         self._chat_history: list[dict[str, Any]] = []
         self._capability_lock = threading.Lock()
 
-    def model_name_for_key(self, model_key: str) -> str:
-        key = (model_key or "reasoning").strip().lower()
-        return self.config.fast_model if key == "fast" else self.config.reasoning_model
+    def model_for_role(self, role: LlmRole) -> str:
+        return self.config.support_model if role == "support" else self.config.decision_model
 
-    def reasoning_effort_for_key(self, model_key: str) -> str:
-        key = (model_key or "reasoning").strip().lower()
-        if key == "fast":
-            return (self.config.fast_reasoning_effort or "none").strip().lower()
-        return (self.config.reasoning_effort or "medium").strip().lower()
+    def effort_for_role(self, role: LlmRole) -> str:
+        if role == "support":
+            return (self.config.support_reasoning_effort or "low").strip().lower()
+        return (self.config.decision_reasoning_effort or "medium").strip().lower()
 
-    def _client_for_model_key(self, model_key: str) -> OpenAI:
-        key = (model_key or "reasoning").strip().lower()
-        return self.fast_client if key == "fast" else self.reasoning_client
+    def _client_for_role(self, role: LlmRole) -> OpenAI:
+        return self.support_client if role == "support" else self.decision_client
 
     def check_api_capabilities(self) -> None:
         if self.capability_state in {"ready", "failed"}:
@@ -260,11 +264,11 @@ class LLMClient:
 
             if not self.config.api_key:
                 self.capability_state = "failed"
-                self.disabled_reason = "LLM mis-configured: missing LLM_API_KEY."
+                self.disabled_reason = "LLM mis-configured: missing API_KEY."
                 return
-            if not self.config.reasoning_model:
+            if not self.config.decision_model:
                 self.capability_state = "failed"
-                self.disabled_reason = "LLM mis-configured: missing LLM_MODEL_REASONING."
+                self.disabled_reason = "LLM mis-configured: missing DECISION_MODEL."
                 return
 
             responses_error = self._probe_responses_api()
@@ -320,21 +324,21 @@ class LLMClient:
 
     def _verify_responses_api(self) -> str | None:
         try:
-            self._basic_responses_text(self.reasoning_client, "ping")
+            self._basic_responses_text(self.decision_client, "ping")
             return None
         except Exception as exc:  # noqa: BLE001
             return self._summarize_exception(exc)
 
     def _verify_chat_completions_api(self) -> str | None:
         try:
-            self._basic_chat_text(self.reasoning_client, "ping")
+            self._basic_chat_text(self.decision_client, "ping")
             return None
         except Exception as exc:  # noqa: BLE001
             return self._summarize_exception(exc)
 
     def _basic_chat_text(self, client: OpenAI, message: str) -> str:
         completion = client.chat.completions.create(
-            model=self.config.reasoning_model,
+            model=self.config.decision_model,
             messages=[{"role": "user", "content": message}],
         )
         choices = getattr(completion, "choices", None) or []
@@ -344,9 +348,10 @@ class LLMClient:
         return (getattr(choice_message, "content", None) or "").strip()
 
     def _basic_responses_text(self, client: OpenAI, message: str) -> str:
+        effort = (self.config.decision_reasoning_effort or "medium").strip().lower()
         response = client.responses.create(
-            model=self.config.reasoning_model,
-            reasoning={"effort": self.config.reasoning_effort},
+            model=self.config.decision_model,
+            reasoning={"effort": effort},
             input=[{"role": "user", "content": message}],
         )
         return (getattr(response, "output_text", None) or "").strip()
@@ -371,15 +376,15 @@ class LLMClient:
         input_items: list[dict[str, Any]],
         previous_response_id: str | None = None,
         model_name: str | None = None,
-        model_key: str = "reasoning",
+        llm_role: LlmRole = "decision",
         reasoning_effort: str | None = None,
         function_tools: list[dict[str, Any]] | None = None,
     ):
-        model = model_name or self.model_name_for_key(model_key)
+        model = model_name or self.model_for_role(llm_role)
         effort = (
             reasoning_effort.strip().lower()
             if reasoning_effort is not None
-            else self.reasoning_effort_for_key(model_key)
+            else self.effort_for_role(llm_role)
         )
         clean_input = _sanitize_responses_input(input_items)
         tools_payload = self.tools if function_tools is None else function_tools
@@ -393,7 +398,7 @@ class LLMClient:
             kwargs["tools"] = tools_payload
         if effort and effort != "none":
             kwargs["reasoning"] = {"summary": "auto", "effort": effort}
-        client = self._client_for_model_key(model_key)
+        client = self._client_for_role(llm_role)
         return client.responses.stream(**kwargs)
 
     def _to_chat_messages(self, system_prompt: str, input_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -434,7 +439,7 @@ class LLMClient:
         previous_response_id: str | None = None,
         on_delta: TraceCallback | None = None,
         on_tool: ToolCallback | None = None,
-        model_key: str = "reasoning",
+        llm_role: LlmRole = "decision",
         reasoning_effort: str | None = None,
         function_tools: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
@@ -444,7 +449,7 @@ class LLMClient:
             system_prompt=system_prompt,
             input_items=input_items,
             previous_response_id=previous_response_id,
-            model_key=model_key,
+            llm_role=llm_role,
             reasoning_effort=reasoning_effort,
             function_tools=function_tools,
         ) as stream:
@@ -523,7 +528,7 @@ class LLMClient:
         input_items: list[dict[str, Any]],
         on_delta: TraceCallback | None = None,
         on_tool: ToolCallback | None = None,
-        model_key: str = "reasoning",
+        llm_role: LlmRole = "decision",
         reasoning_effort: str | None = None,
         function_tools: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
@@ -535,11 +540,11 @@ class LLMClient:
         tool_deltas: dict[int, dict[str, Any]] = {}
 
         messages = self._to_chat_messages(system_prompt, input_items)
-        model_name = self.model_name_for_key(model_key)
+        model_name = self.model_for_role(llm_role)
         effort = (
             reasoning_effort.strip().lower()
             if reasoning_effort is not None
-            else self.reasoning_effort_for_key(model_key)
+            else self.effort_for_role(llm_role)
         )
         chat_tool_list = (
             self.chat_tools
@@ -556,7 +561,7 @@ class LLMClient:
             create_kwargs["tool_choice"] = "auto"
         if effort and effort != "none":
             create_kwargs["reasoning_effort"] = effort
-        client = self._client_for_model_key(model_key)
+        client = self._client_for_role(llm_role)
         started = time.perf_counter()
         try:
             stream = client.chat.completions.create(**create_kwargs)
@@ -699,30 +704,28 @@ class LLMClient:
                 "important relics or scaling pieces, pathing goals, boss preparation, and unusual constraints. "
                 "Do not restate routine board-state details that will appear in the live prompt."
             )
-            # Optional reasoning effort for the fast model summarization.
-            # If set to "none", we omit the SDK parameter entirely for compatibility.
-            fast_effort = (self.config.fast_reasoning_effort or "").strip().lower()
-            if fast_effort and fast_effort != "none":
+            sup_effort = (self.config.support_reasoning_effort or "").strip().lower()
+            if sup_effort and sup_effort != "none":
                 try:
-                    completion = self.fast_client.chat.completions.create(
-                        model=self.config.fast_model,
+                    completion = self.support_client.chat.completions.create(
+                        model=self.config.support_model,
                         messages=[
                             {"role": "system", "content": prompt},
                             {"role": "user", "content": transcript},
                         ],
-                        reasoning_effort=fast_effort,
+                        reasoning_effort=sup_effort,
                     )
                 except TypeError:
-                    completion = self.fast_client.chat.completions.create(
-                        model=self.config.fast_model,
+                    completion = self.support_client.chat.completions.create(
+                        model=self.config.support_model,
                         messages=[
                             {"role": "system", "content": prompt},
                             {"role": "user", "content": transcript},
                         ],
                     )
             else:
-                completion = self.fast_client.chat.completions.create(
-                    model=self.config.fast_model,
+                completion = self.support_client.chat.completions.create(
+                    model=self.config.support_model,
                     messages=[
                         {"role": "system", "content": prompt},
                         {"role": "user", "content": transcript},
@@ -744,7 +747,7 @@ class LLMClient:
         previous_response_id: str | None = None,
         on_delta: TraceCallback | None = None,
         on_tool: ToolCallback | None = None,
-        model_key: str = "reasoning",
+        llm_role: LlmRole = "decision",
         reasoning_effort: str | None = None,
         function_tools: list[dict[str, Any]] | None = None,
     ) -> dict:
@@ -759,7 +762,7 @@ class LLMClient:
                 input_items=input_items,
                 on_delta=on_delta,
                 on_tool=on_tool,
-                model_key=model_key,
+                llm_role=llm_role,
                 reasoning_effort=reasoning_effort,
                 function_tools=function_tools,
             )
@@ -769,7 +772,7 @@ class LLMClient:
             previous_response_id=previous_response_id,
             on_delta=on_delta,
             on_tool=on_tool,
-            model_key=model_key,
+            llm_role=llm_role,
             reasoning_effort=reasoning_effort,
             function_tools=function_tools,
         )
@@ -780,7 +783,6 @@ class LLMClient:
         system_prompt: str,
         user_content: str,
         max_output_tokens: int | None = None,
-        model_key: str = "reasoning",
     ) -> dict[str, Any]:
         """Single non-streaming completion without tools (opening combat battle guide)."""
         self.check_api_capabilities()
@@ -788,14 +790,10 @@ class LLMClient:
             raise RuntimeError("LLM configuration check is still running.")
         if not self.available or not self.api_style:
             raise RuntimeError(self.disabled_reason or "LLM is unavailable for this run.")
-        cap = (
-            max_output_tokens
-            if max_output_tokens is not None
-            else self.config.combat_plan_max_output_tokens
-        )
-        model_name = self.model_name_for_key(model_key)
-        effort = self.reasoning_effort_for_key(model_key)
-        client = self._client_for_model_key(model_key)
+        cap = max_output_tokens if max_output_tokens is not None else COMBAT_PLAN_MAX_OUTPUT_TOKENS
+        model_name = self.model_for_role("decision")
+        effort = self.effort_for_role("decision")
+        client = self._client_for_role("decision")
         started = time.perf_counter()
         if self.api_style == "chat_completions":
             kwargs: dict[str, Any] = {
@@ -858,23 +856,23 @@ class LLMClient:
         *,
         system_prompt: str,
         user_content: str,
-        model_key: str = "fast",
+        llm_role: LlmRole = "support",
         max_output_tokens: int = 1024,
         reasoning_effort: str | None = None,
     ) -> dict[str, Any]:
-        """Single non-streaming text completion without tools (retrieval agent, utilities)."""
+        """Single non-streaming text completion without tools (strategist, utilities)."""
         self.check_api_capabilities()
         if self.capability_state == "checking":
             raise RuntimeError("LLM configuration check is still running.")
         if not self.available or not self.api_style:
             raise RuntimeError(self.disabled_reason or "LLM is unavailable for this run.")
-        model_name = self.model_name_for_key(model_key)
+        model_name = self.model_for_role(llm_role)
         effort = (
             reasoning_effort.strip().lower()
             if reasoning_effort is not None
-            else self.reasoning_effort_for_key(model_key)
+            else self.effort_for_role(llm_role)
         )
-        client = self._client_for_model_key(model_key)
+        client = self._client_for_role(llm_role)
         started = time.perf_counter()
         cap = max_output_tokens
         if self.api_style == "chat_completions":

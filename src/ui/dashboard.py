@@ -5,6 +5,7 @@ import os
 import time
 import zipfile
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -31,7 +32,7 @@ AGENT_CONFIG = get_agent_config()
 SYSTEM_PROMPT = load_system_prompt()
 
 ai_runtime: dict[str, Any] = {
-    "mode": AGENT_CONFIG.default_mode,
+    "mode": AGENT_CONFIG.agent_mode,
     "latest_state_id": "",
     "latest_trace": None,
     "trace_history": [],
@@ -59,7 +60,7 @@ def _touch_ingress_received() -> None:
 
 
 def _ingress_max_age_seconds() -> float:
-    raw = os.environ.get("DASHBOARD_INGRESS_MAX_AGE_SECONDS", "90")
+    raw = os.environ.get("DASHBOARD_MAX_INGRESS_AGE_SECONDS", "90")
     try:
         v = float(raw)
     except ValueError:
@@ -225,7 +226,7 @@ def _merge_llm_user_prompt_for_monitor(
             vm,
             sid,
             [],
-            strategy_memory=None,
+            strategy_notes=None,
             combat_plan_guide=None,
             prompt_profile=cfg.prompt_profile,
         )
@@ -1008,6 +1009,25 @@ async def get_runs():
         return {"runs": runs, "archived": {}}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/experiments")
+async def get_experiments(exp_a: str = "", exp_b: str = "") -> dict[str, Any]:
+    """Aggregate metrics grouped by ``experiment_id``; optional paired comparison by seed."""
+    from src.eval.replay import compare_experiments, seed_paired_comparison
+
+    try:
+        base = Path(LOGS_DIR)
+        a = exp_a.strip()
+        b = exp_b.strip()
+        if a and b:
+            comparison = seed_paired_comparison(base, a, b)
+            return {"ok": True, "paired": True, "comparison": comparison}
+        payload = compare_experiments(base)
+        return {"ok": True, "paired": False, **payload}
+    except Exception as exc:
+        log.exception("get_experiments failed")
+        return {"ok": False, "paired": False, "message": str(exc), "groups": {}, "runs": []}
 
 
 def _safe_run_dir(run_name: str) -> str | None:

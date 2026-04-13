@@ -9,6 +9,23 @@ from src.agent.prompt_builder import format_pile_tool_result
 ToolExecutor = Callable[[dict[str, Any], dict[str, Any]], str]
 
 
+def tool_filter_for_context(vm: dict[str, Any]) -> str | None:
+    """Return a tool context filter string based on the current screen."""
+    if vm.get("combat"):
+        return "combat"
+    screen_type = str((vm.get("screen") or {}).get("type", "NONE")).upper()
+    return {
+        "MAP": "map",
+        "CARD_REWARD": "reward",
+        "COMBAT_REWARD": "reward",
+        "SHOP_SCREEN": "reward",
+        "SHOP_ROOM": "reward",
+        "BOSS_REWARD": "reward",
+        "EVENT": "event",
+        "REST": "reward",
+    }.get(screen_type)
+
+
 def _fmt_list(items: list[str], fallback: str = "None") -> str:
     return "\n".join(f"- {item}" for item in items) if items else f"- {fallback}"
 
@@ -59,6 +76,34 @@ def _run_deck_summary_tool(vm: dict[str, Any], _arguments: dict[str, Any]) -> st
     return "## TOOL RESULT: Inspect Deck Summary\n" + "\n".join(summary_lines)
 
 
+_FULL_DECK_DESC_MAX = 220
+
+
+def _run_full_deck_tool(vm: dict[str, Any], _arguments: dict[str, Any]) -> str:
+    inventory = vm.get("inventory") or {}
+    deck = inventory.get("deck") or []
+    if not isinstance(deck, list):
+        deck = []
+
+    lines: list[str] = [f"deck_size={len(deck)}", ""]
+    for i, card in enumerate(deck, start=1):
+        if not isinstance(card, dict):
+            lines.append(f"{i}. (invalid entry)")
+            continue
+        name = card.get("name", "?")
+        kb = card.get("kb") or {}
+        ctype = kb.get("type") or card.get("type") or "?"
+        cost = card.get("cost", "?")
+        up = int(card.get("upgrades", 0) or 0)
+        desc = str(kb.get("description") or "").replace("\n", " ").strip()
+        if len(desc) > _FULL_DECK_DESC_MAX:
+            desc = desc[: _FULL_DECK_DESC_MAX - 1] + "…"
+        lines.append(f"{i}. {name} | type={ctype} | cost={cost} | upgrades={up}")
+        if desc:
+            lines.append(f"   desc={desc}")
+    return "## TOOL RESULT: Inspect Full Deck\n" + "\n".join(lines)
+
+
 TOOL_SPECS: dict[str, dict[str, Any]] = {
     "inspect_draw_pile": {
         "description": "Inspect hidden draw pile details to support this turn's decision.",
@@ -85,6 +130,13 @@ TOOL_SPECS: dict[str, dict[str, Any]] = {
         "description": "Inspect deck-level aggregate stats (size, upgrades, type mix, average cost).",
         "contexts": ["combat", "reward", "shop", "event", "map"],
         "executor": _run_deck_summary_tool,
+    },
+    "inspect_full_deck": {
+        "description": (
+            "List every card in the master deck with name, type, cost, upgrades, and KB description."
+        ),
+        "contexts": ["combat", "map", "reward", "event", "shop", "rest"],
+        "executor": _run_full_deck_tool,
     },
 }
 

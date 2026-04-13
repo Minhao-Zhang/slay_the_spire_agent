@@ -13,14 +13,13 @@ from src.repo_paths import REPO_ROOT
 
 from .strategy_docs import parse_strategy_markdown
 from .tag_utils import flatten_tag_mapping, slugify_token
-from .types import ContextTags, EpisodicEntry, MemoryLayer, ProceduralEntry, RetrievalHit
+from .types import ContextTags, EpisodicEntry, ProceduralEntry, RetrievalHit
 
 _E = TypeVar("_E", bound=BaseModel)
 
 log = logging.getLogger(__name__)
 
-STRATEGY_EFFECTIVE_CONFIDENCE = 1.5
-EXPERT_GUIDE_EFFECTIVE_CONFIDENCE = 1.62
+KNOWLEDGE_EFFECTIVE_WEIGHT = 1.5
 EPISODIC_WEIGHT = 0.85
 
 
@@ -29,8 +28,8 @@ class _StrategyDoc:
     path: str
     tags: frozenset[str]
     body: str
-    layer: str = "strategy"  # "strategy" | "expert"
-    effective_weight: float = STRATEGY_EFFECTIVE_CONFIDENCE
+    layer: str = "strategy"
+    effective_weight: float = KNOWLEDGE_EFFECTIVE_WEIGHT
 
 
 def _procedural_flat(entry: ProceduralEntry) -> frozenset[str]:
@@ -60,31 +59,23 @@ def _overlap_score(flat_ctx: frozenset[str], flat_entry: frozenset[str]) -> floa
 
 
 class MemoryStore:
-    """L1 strategy markdown, L2 procedural NDJSON, L3 episodic NDJSON."""
+    """L1 knowledge markdown (recursive tree), L2 procedural NDJSON, L3 episodic NDJSON."""
 
     def __init__(
         self,
         *,
         memory_dir: Path | None = None,
-        strategy_dir: Path | None = None,
-        expert_guides_dir: Path | None = None,
+        knowledge_dir: Path | None = None,
     ) -> None:
         self.memory_dir = memory_dir or (REPO_ROOT / "data" / "memory")
-        self.strategy_dir = strategy_dir or (REPO_ROOT / "data" / "strategy")
-        self.expert_guides_dir = expert_guides_dir or (REPO_ROOT / "data" / "expert_guides")
+        self.knowledge_dir = knowledge_dir or (REPO_ROOT / "data" / "knowledge")
         self._strategy_docs: list[_StrategyDoc] = []
         self._procedural: list[ProceduralEntry] = []
         self._episodic: list[EpisodicEntry] = []
         self.reload()
 
     def reload(self) -> None:
-        core = self._load_markdown_dir(self.strategy_dir, layer="strategy")
-        expert: list[_StrategyDoc] = []
-        if self.expert_guides_dir and self.expert_guides_dir.is_dir():
-            expert = self._load_markdown_dir(
-                self.expert_guides_dir, layer="expert", weight=EXPERT_GUIDE_EFFECTIVE_CONFIDENCE
-            )
-        self._strategy_docs = core + expert
+        self._strategy_docs = self._load_knowledge_tree(self.knowledge_dir)
         self._procedural = self._load_ndjson(
             self.memory_dir / "procedural.ndjson", ProceduralEntry
         )
@@ -95,17 +86,14 @@ class MemoryStore:
         return list(self._procedural)
 
     @staticmethod
-    def _load_markdown_dir(
-        base_dir: Path,
-        *,
-        layer: str,
-        weight: float = STRATEGY_EFFECTIVE_CONFIDENCE,
-    ) -> list[_StrategyDoc]:
+    def _load_knowledge_tree(base_dir: Path) -> list[_StrategyDoc]:
         out: list[_StrategyDoc] = []
         if not base_dir.is_dir():
-            log.debug("markdown corpus dir missing: %s", base_dir)
+            log.debug("knowledge corpus dir missing: %s", base_dir)
             return out
-        for path in sorted(base_dir.glob("*.md")):
+        for path in sorted(base_dir.rglob("*.md")):
+            if path.stem.upper() in ("SOURCES", "CHANGELOG", "README"):
+                continue
             try:
                 raw = path.read_text(encoding="utf-8")
             except OSError as exc:
@@ -120,8 +108,8 @@ class MemoryStore:
                     path=str(path.resolve()),
                     tags=tags,
                     body=body.strip(),
-                    layer=layer,
-                    effective_weight=weight,
+                    layer="strategy",
+                    effective_weight=KNOWLEDGE_EFFECTIVE_WEIGHT,
                 )
             )
         return out
@@ -155,7 +143,7 @@ class MemoryStore:
             snip = doc.body.replace("\n", " ").strip()
             if len(snip) > 120:
                 snip = snip[:120] + "…"
-            lid = "expert" if doc.layer == "expert" else "strategy"
+            lid = "strategy"
             out.append(
                 {
                     "id": f"{lid}:{name}",
@@ -221,10 +209,9 @@ class MemoryStore:
                 continue
             score = ov * doc.effective_weight
             name = Path(doc.path).name
-            lyr: MemoryLayer = "expert" if doc.layer == "expert" else "strategy"
             strategy_hits.append(
                 RetrievalHit(
-                    layer=lyr,
+                    layer="strategy",
                     score=score,
                     title=name,
                     body=doc.body,

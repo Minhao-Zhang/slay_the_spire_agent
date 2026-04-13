@@ -75,8 +75,6 @@ def _schedule_post_run_consolidation() -> None:
             from src.agent.reflection.consolidator import consolidate_procedural_memory
 
             cfg = get_agent_config()
-            if not cfg.reflection_enabled:
-                return
             mem_dir = cfg.resolved_memory_dir()
             mem_dir.mkdir(parents=True, exist_ok=True)
             ctr_path = mem_dir / "consolidation_run_counter.txt"
@@ -93,8 +91,7 @@ def _schedule_post_run_consolidation() -> None:
                 return
             store = MemoryStore(
                 memory_dir=mem_dir,
-                strategy_dir=cfg.resolved_strategy_dir(),
-                expert_guides_dir=cfg.resolved_expert_guides_dir(),
+                knowledge_dir=cfg.resolved_knowledge_dir(),
             )
             consolidate_procedural_memory(store, cfg)
         except OSError:
@@ -296,7 +293,7 @@ def main():
     menu_last_emit = 0.0
 
     last_proposed_state_id = None
-    current_agent_mode: str = agent.config.default_mode
+    current_agent_mode: str = agent.config.agent_mode
     last_ai_execution: dict[str, object | None] = {
         "trace": None,
         "state_id": None,
@@ -403,7 +400,9 @@ def main():
     def handle_proposal_failure(*, summary: str, disable_message: str, status: str) -> None:
         proposal_failures["streak"] += 1
         streak = proposal_failures["streak"]
-        limit = getattr(agent.config, "proposal_failure_streak_limit", 3)
+        from src.agent.config import PROPOSAL_FAILURE_STREAK_LIMIT
+
+        limit = int(PROPOSAL_FAILURE_STREAK_LIMIT)
         notify_dashboard(
             "/log",
             {
@@ -460,10 +459,10 @@ def main():
             )
             if live_trace is not None:
                 try:
-                    reasoning_s = float(agent.config.reasoning_request_timeout_seconds or 60.0)
+                    per_round_s = float(agent.config.request_timeout_seconds or 60.0)
                     err = (
-                        f"Proposal timed out after {timeout_seconds:.0f}s (limit LLM_PROPOSAL_TIMEOUT_SECONDS). "
-                        f"After tools the agent runs another model call; allow at least ~{reasoning_s:.0f}s per round."
+                        f"Proposal timed out after {timeout_seconds:.0f}s (limit from proposal_timeout_seconds). "
+                        f"After tools the agent runs another model call; allow at least ~{per_round_s:.0f}s per round."
                     )
                     failed = live_trace.model_copy(
                         update={"status": "error", "error": err, "update_seq": live_trace.update_seq + 1}
@@ -617,7 +616,7 @@ def main():
             from src.agent.reflection.runner import run_reflection_pipeline
 
             cfg = get_agent_config()
-            if not cfg.reflection_enabled or not game_dir or not game_dir.is_dir():
+            if not game_dir or not game_dir.is_dir():
                 reflection_stub(str(game_dir) if game_dir else None)
                 return
             if not agent.llm:
@@ -663,11 +662,9 @@ def main():
     def _scan_retry_pending_reflection() -> None:
         """Retry runs with run_report.json but no reflection_output.json (startup)."""
         try:
-            from src.agent.config import get_agent_config
             from src.agent.reflection.runner import pending_reflection_dirs
 
-            cfg = get_agent_config()
-            if not cfg.reflection_enabled or not agent.llm:
+            if not agent.llm:
                 return
             root = Path(LOG_GAMES_ROOT)
             for d in pending_reflection_dirs(root, limit=3):

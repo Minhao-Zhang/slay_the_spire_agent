@@ -52,9 +52,9 @@ flowchart TB
 |------|------|
 | [`src/`](src/) | Python package: bridge, agent, [`state_processor`](src/ui/state_processor.py) (game JSON → view model), dashboard. |
 | [`apps/web/`](apps/web/) | React monitor (`@slay/web`); dev server proxies `/api` and `/ws` to **127.0.0.1:8000**. |
-| [`data/`](data/) | Processed reference JSON under `data/processed/`, optional strategy text under `data/strategy/`. |
+| [`data/`](data/) | Reference JSON under `data/reference/`, retrievable markdown under `data/knowledge/`. |
 | [`logs/`](logs/) | Per-run folders of JSON snapshots written by the bridge (older runs may be zipped; see `MAX_LOG_RUNS` in [`src/main.py`](src/main.py)). |
-| [`scripts/`](scripts/) | [`extract_reference_data.py`](scripts/extract_reference_data.py) — spreadsheet → `data/processed/*.json`. |
+| [`scripts/`](scripts/) | [`extract_reference_data.py`](scripts/extract_reference_data.py) — spreadsheet → `data/reference/*.json`. |
 
 Architecture diagram and data flow: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
@@ -151,4 +151,4 @@ command=/PATH/TO/slay_the_spire_agent/.venv/bin/python /PATH/TO/slay_the_spire_a
 
 ## Scripts
 
-[`scripts/extract_reference_data.py`](scripts/extract_reference_data.py) — reads **`data/raw/Slay the Spire Reference.xlsx`**, writes **`data/processed/*.json`** (requires **pandas** / **openpyxl**, declared in [`pyproject.toml`](pyproject.toml)).
+[`scripts/extract_reference_data.py`](scripts/extract_reference_data.py) — reads **`data/raw/Slay the Spire Reference.xlsx`**, writes **`data/reference/*.json`** (requires **pandas** / **openpyxl**, declared in [`pyproject.toml`](pyproject.toml)).

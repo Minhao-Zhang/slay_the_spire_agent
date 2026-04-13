@@ -1,4 +1,4 @@
-"""Deterministic procedural memory maintenance (archive low-confidence rows)."""
+"""Deterministic procedural memory maintenance (archive low-confidence / bad-outcome rows)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from src.agent.config import AgentConfig
+from src.agent.config import CONSOLIDATION_ARCHIVE_THRESHOLD
 from src.agent.memory import MemoryStore
 from src.agent.memory.types import ProceduralEntry
 from src.agent.tracing import utc_now_iso
@@ -27,14 +27,11 @@ def _append_consolidation_log(memory_dir: Path, record: dict[str, Any]) -> None:
         f.write(line)
 
 
-def consolidate_procedural_memory(store: MemoryStore, config: AgentConfig) -> ConsolidationSummary:
-    """Set ``status=archived`` for active procedural rows with confidence below threshold.
-
-    Merge / promote / weaken with LLM or cross-run validation is deferred.
-    """
+def consolidate_procedural_memory(store: MemoryStore, _config: Any = None) -> ConsolidationSummary:
+    """Archive procedural rows that are mostly contradicted or unused low-confidence."""
     summary = ConsolidationSummary()
     summary.log_path = str((store.memory_dir / "consolidation_log.ndjson").resolve())
-    threshold = float(config.consolidation_confidence_archive_threshold)
+    threshold = float(CONSOLIDATION_ARCHIVE_THRESHOLD)
     out: list[ProceduralEntry] = []
     for entry in store.procedural_entries:
         e = entry.model_copy(deep=True)
@@ -42,7 +39,13 @@ def consolidate_procedural_memory(store: MemoryStore, config: AgentConfig) -> Co
         if status == "archived":
             out.append(e)
             continue
-        if float(e.confidence) < threshold:
+        validated = int(e.times_validated)
+        contradicted = int(e.times_contradicted)
+        total_uses = validated + contradicted
+        if total_uses >= 3 and contradicted > validated:
+            e.status = "archived"
+            summary.archived_ids.append(e.id)
+        elif float(e.confidence) < threshold and total_uses == 0:
             e.status = "archived"
             summary.archived_ids.append(e.id)
         out.append(e)

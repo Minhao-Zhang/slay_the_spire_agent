@@ -7,7 +7,7 @@ import logging
 import re
 from typing import Any
 
-from src.agent.config import AgentConfig
+from src.agent.config import REFLECTION_MAX_LESSONS_PER_RUN, AgentConfig
 from src.agent.reflection.report_types import RunReport
 from src.agent.reflection.schemas import EpisodicDraft, ProceduralLessonDraft
 
@@ -101,7 +101,7 @@ def reflect_on_run(
         out = llm_client.generate_plain_completion(
             system_prompt=_REFLECTOR_SYSTEM,
             user_content=user,
-            model_key="reasoning",
+            llm_role="decision",
             max_output_tokens=4096,
             reasoning_effort="high",
         )
@@ -159,7 +159,7 @@ def reflect_on_run(
                 context_tags=ct,
             )
 
-        cap = max(1, int(config.reflection_max_lessons_per_run))
+        cap = max(1, int(REFLECTION_MAX_LESSONS_PER_RUN))
         procedural = procedural[:cap]
 
         return procedural, episodic

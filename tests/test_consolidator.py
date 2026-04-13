@@ -4,7 +4,6 @@ import json
 import unittest
 from pathlib import Path
 
-from src.agent.config import AgentConfig
 from src.agent.memory import MemoryStore
 from src.agent.memory.types import ProceduralEntry
 from src.agent.reflection.consolidator import consolidate_procedural_memory
@@ -17,10 +16,10 @@ class TestConsolidator(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
             mem = base / "memory"
-            strat = base / "strategy"
+            kn = base / "knowledge"
             mem.mkdir()
-            strat.mkdir()
-            (strat / "x.md").write_text("---\ntags: [t]\n---\n.", encoding="utf-8")
+            kn.mkdir()
+            (kn / "x.md").write_text("---\ntags: [t]\n---\n.", encoding="utf-8")
             proc = mem / "procedural.ndjson"
             proc.write_text(
                 "\n".join(
@@ -48,9 +47,8 @@ class TestConsolidator(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
-            store = MemoryStore(memory_dir=mem, strategy_dir=strat)
-            cfg = AgentConfig().model_copy(update={"consolidation_confidence_archive_threshold": 0.2})
-            summary = consolidate_procedural_memory(store, cfg)
+            store = MemoryStore(memory_dir=mem, knowledge_dir=kn)
+            summary = consolidate_procedural_memory(store)
             self.assertIn("low", summary.archived_ids)
             self.assertNotIn("ok", summary.archived_ids)
             store.reload()

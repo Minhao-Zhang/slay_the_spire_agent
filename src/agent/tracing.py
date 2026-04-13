@@ -6,9 +6,11 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 RUN_END_SNAPSHOT_FILENAME = "run_end_snapshot.json"
+
+CardRewardAction = Literal["take", "skip"] | None
 
 from src.agent.schemas import AgentMode, AgentTrace, PersistedAiLog
 from src.agent.vm_shapes import as_dict
@@ -116,11 +118,13 @@ def build_persisted_ai_log(trace: AgentTrace) -> PersistedAiLog:
         error=trace.error,
         prompt_profile=trace.prompt_profile,
         llm_model_used=trace.llm_model_used,
-        llm_turn_model_key=trace.llm_turn_model_key,
-        reasoning_profile_name=trace.reasoning_profile_name,
         reasoning_effort_used=trace.reasoning_effort_used,
         lessons_retrieved=trace.lessons_retrieved,
-        retrieval_mode_used=trace.retrieval_mode_used,
+        experiment_tag=trace.experiment_tag,
+        experiment_id=trace.experiment_id,
+        strategist_ran=trace.strategist_ran,
+        deck_size=trace.deck_size,
+        retrieved_lesson_ids=list(trace.retrieved_lesson_ids),
     )
 
 
@@ -317,6 +321,43 @@ def append_run_metric_line(run_dir: Path, record: dict[str, Any]) -> None:
         f.write(line)
 
 
+def derive_card_reward_action(trace: AgentTrace) -> CardRewardAction:
+    """Classify card reward outcome from executed/approved commands (CARD_REWARD only)."""
+    if str(trace.screen_type or "").upper() != "CARD_REWARD":
+        return None
+    cmds: list[str] = []
+    if trace.final_decision_sequence:
+        cmds = [str(c).strip() for c in trace.final_decision_sequence if str(c).strip()]
+    elif trace.final_decision:
+        cmds = [str(trace.final_decision).strip()]
+    for raw in cmds:
+        u = raw.upper()
+        if u == "SKIP":
+            return "skip"
+        if u.startswith("CHOOSE"):
+            return "take"
+    return None
+
+
+def derive_potion_used(trace: AgentTrace) -> bool:
+    """True if any chosen command is a potion use (``POTION USE``)."""
+    seen: set[str] = set()
+    parts: list[str] = []
+    for c in trace.final_decision_sequence or []:
+        s = str(c).strip()
+        if s and s not in seen:
+            seen.add(s)
+            parts.append(s)
+    if trace.final_decision:
+        s = str(trace.final_decision).strip()
+        if s and s not in seen:
+            parts.append(s)
+    for raw in parts:
+        if raw.upper().startswith("POTION USE"):
+            return True
+    return False
+
+
 def append_state_run_metric(
     run_dir: Path,
     vm_summary: dict[str, Any],
@@ -342,6 +383,7 @@ def append_ai_decision_run_metric(run_dir: Path, trace: AgentTrace, state_log_pa
         event_index = None
     val_err = (trace.validation.error if trace.validation else "") or ""
     err_body = (trace.error or "") or ""
+    screen_upper = str(trace.screen_type or "").upper()
     rec: dict[str, Any] = {
         "type": "ai_decision",
         "state_id": trace.state_id,
@@ -358,7 +400,13 @@ def append_ai_decision_run_metric(run_dir: Path, trace: AgentTrace, state_log_pa
         "validation_error": val_err[:500] if val_err else None,
         "error": err_body[:500] if err_body else None,
         "llm_model_used": trace.llm_model_used,
-        "llm_turn_model_key": trace.llm_turn_model_key,
+        "experiment_tag": trace.experiment_tag,
+        "experiment_id": trace.experiment_id,
+        "strategist_ran": trace.strategist_ran,
+        "screen_type": trace.screen_type or None,
+        "deck_size": trace.deck_size,
+        "card_reward_action": derive_card_reward_action(trace) if screen_upper == "CARD_REWARD" else None,
+        "potion_used": derive_potion_used(trace),
     }
     append_run_metric_line(run_dir, rec)
 

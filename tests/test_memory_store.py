@@ -4,35 +4,36 @@ import json
 import unittest
 from pathlib import Path
 
+from src.repo_paths import REPO_ROOT
+
 from src.agent.memory import MemoryStore, build_context_tags
 from src.agent.memory.types import ContextTags, ProceduralEntry
 
 
 class TestMemoryStore(unittest.TestCase):
-    def test_expert_guides_load_and_retrieve_as_expert_layer(self) -> None:
+    def test_knowledge_tree_loads_nested_markdown_as_strategy_layer(self) -> None:
         import tempfile
 
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
-            strat = base / "strategy"
-            expert = base / "expert"
+            kn = base / "knowledge"
             mem = base / "memory"
-            strat.mkdir()
-            expert.mkdir()
+            (kn / "fundamentals").mkdir(parents=True)
             mem.mkdir()
-            (strat / "gen.md").write_text(
+            (kn / "gen.md").write_text(
                 "---\ntags: [general]\n---\nGeneral strategy.",
                 encoding="utf-8",
             )
-            (expert / "deep.md").write_text(
-                "---\ntags: [act1, combat, general]\n---\nExpert act1 combat note.",
+            (kn / "fundamentals" / "deep.md").write_text(
+                "---\ntags: [act1, combat, general]\n---\nAct1 combat note from nested path.",
                 encoding="utf-8",
             )
-            store = MemoryStore(memory_dir=mem, strategy_dir=strat, expert_guides_dir=expert)
+            store = MemoryStore(memory_dir=mem, knowledge_dir=kn)
             idx = store.knowledge_index_entries()
             ids = {e["id"] for e in idx}
             self.assertIn("strategy:gen.md", ids)
-            self.assertIn("expert:deep.md", ids)
+            self.assertIn("strategy:deep.md", ids)
+            self.assertTrue(all(e["layer"] == "strategy" for e in idx if e["id"].startswith("strategy:")))
             ctx = ContextTags(
                 act="act1",
                 floor=5,
@@ -48,20 +49,48 @@ class TestMemoryStore(unittest.TestCase):
                 ctx, max_results=10, char_budget=5000, min_procedural_confidence=0.5
             )
             layers = [h.layer for h in hits]
-            self.assertIn("expert", layers)
-            expert_hit = next(h for h in hits if h.layer == "expert")
-            self.assertIn("Expert act1", expert_hit.body)
+            self.assertIn("strategy", layers)
+            strat_hit = next(h for h in hits if h.layer == "strategy")
+            self.assertIn("Act1 combat", strat_hit.body)
+
+    def test_metadata_markdown_files_not_indexed(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            kn = base / "knowledge"
+            mem = base / "memory"
+            (kn / "sub").mkdir(parents=True)
+            mem.mkdir()
+            (kn / "keep.md").write_text(
+                "---\ntags: [general]\n---\nReal strategy.",
+                encoding="utf-8",
+            )
+            (kn / "sub" / "SOURCES.md").write_text(
+                "---\ntags: [general]\n---\nBibliography only.",
+                encoding="utf-8",
+            )
+            (kn / "sub" / "real.md").write_text(
+                "---\ntags: [general]\n---\nGameplay note.",
+                encoding="utf-8",
+            )
+            store = MemoryStore(memory_dir=mem, knowledge_dir=kn)
+            idx = store.knowledge_index_entries()
+            ids = {e["id"] for e in idx}
+            self.assertIn("strategy:keep.md", ids)
+            self.assertIn("strategy:real.md", ids)
+            self.assertFalse(any("SOURCES" in i for i in ids))
 
     def test_retrieve_layer_order_and_skips_archived(self) -> None:
         import tempfile
 
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
-            strat = base / "strategy"
+            kn = base / "knowledge"
             mem = base / "memory"
-            strat.mkdir()
+            kn.mkdir()
             mem.mkdir()
-            (strat / "only_shop.md").write_text(
+            (kn / "only_shop.md").write_text(
                 "---\ntags: [shop, general]\n---\nShop only body.",
                 encoding="utf-8",
             )
@@ -107,7 +136,7 @@ class TestMemoryStore(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            store = MemoryStore(memory_dir=mem, strategy_dir=strat)
+            store = MemoryStore(memory_dir=mem, knowledge_dir=kn)
             ctx = ContextTags(
                 act="act1",
                 floor=5,
@@ -138,11 +167,11 @@ class TestMemoryStore(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
-            strat = base / "strategy"
+            kn = base / "knowledge"
             mem = base / "memory"
-            strat.mkdir()
+            kn.mkdir()
             mem.mkdir()
-            (strat / "empty.md").write_text("---\ntags: [x]\n---\nnope", encoding="utf-8")
+            (kn / "empty.md").write_text("---\ntags: [x]\n---\nnope", encoding="utf-8")
             (mem / "procedural.ndjson").write_text(
                 json.dumps(
                     {
@@ -157,7 +186,7 @@ class TestMemoryStore(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
-            store = MemoryStore(memory_dir=mem, strategy_dir=strat)
+            store = MemoryStore(memory_dir=mem, knowledge_dir=kn)
             ctx = ContextTags(
                 act=None,
                 floor=None,
@@ -182,15 +211,15 @@ class TestMemoryStore(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
-            strat = base / "strategy"
+            kn = base / "knowledge"
             mem = base / "memory"
-            strat.mkdir()
+            kn.mkdir()
             mem.mkdir()
-            (strat / "big.md").write_text(
+            (kn / "big.md").write_text(
                 "---\ntags: [general]\n---\n" + ("word " * 2000),
                 encoding="utf-8",
             )
-            store = MemoryStore(memory_dir=mem, strategy_dir=strat)
+            store = MemoryStore(memory_dir=mem, knowledge_dir=kn)
             ctx = ContextTags(
                 act=None,
                 floor=None,
@@ -217,12 +246,12 @@ class TestMemoryStore(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
-            strat = base / "strategy"
+            kn = base / "knowledge"
             mem = base / "memory"
-            strat.mkdir()
+            kn.mkdir()
             mem.mkdir()
-            (strat / "t.md").write_text("---\ntags: [z]\n---\nx", encoding="utf-8")
-            store = MemoryStore(memory_dir=mem, strategy_dir=strat)
+            (kn / "t.md").write_text("---\ntags: [z]\n---\nx", encoding="utf-8")
+            store = MemoryStore(memory_dir=mem, knowledge_dir=kn)
             entry = ProceduralEntry(
                 id="new1",
                 created_at="now",
@@ -247,6 +276,15 @@ class TestMemoryStore(unittest.TestCase):
                 ctx, max_results=5, char_budget=500, min_procedural_confidence=0.0
             )
             self.assertTrue(any(h.body == "appended" for h in hits))
+
+    def test_repo_knowledge_directory_loads_multiple_docs(self) -> None:
+        kn = REPO_ROOT / "data" / "knowledge"
+        if not kn.is_dir():
+            self.skipTest("data/knowledge missing")
+        store = MemoryStore(knowledge_dir=kn)
+        idx = store.knowledge_index_entries()
+        strat_docs = [e for e in idx if e["id"].startswith("strategy:")]
+        self.assertGreaterEqual(len(strat_docs), 10, "expected merged knowledge corpus")
 
 
 class TestContextTags(unittest.TestCase):

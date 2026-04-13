@@ -3,11 +3,10 @@ import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
-# Build paths assuming the data/processed directory is at the project root
-# This module is in src/reference/ so root is two levels up.
+# Reference JSON under data/reference (extracted from spreadsheet).
 from src.repo_paths import REPO_ROOT
 
-PROCESSED_DATA_DIR = REPO_ROOT / "data" / "processed"
+REFERENCE_DATA_DIR = REPO_ROOT / "data" / "reference"
 
 class DataStore:
     def __init__(self):
@@ -26,7 +25,7 @@ class DataStore:
             return
             
         def _load_json_list(filename: str) -> List[dict]:
-            path = PROCESSED_DATA_DIR / filename
+            path = REFERENCE_DATA_DIR / filename
             if not path.exists():
                 print(f"Warning: Data file {path} not found.")
                 return []
@@ -161,7 +160,17 @@ def get_event_info(name: str) -> Optional[dict]:
     return None
 
 def get_power_info(name: str) -> Optional[dict]:
-    """Retrieve details about a power (buff/debuff) by name."""
+    """Retrieve details about a power (buff/debuff) by name.
+
+    Each entry in ``data/reference/powers.json`` is a JSON object with:
+    ``name`` (str), ``effect`` (str, may use X for magnitude), ``stacks``
+    (how the number behaves: Intensity, Duration, Counter, No, etc.), and
+    ``type`` (``buff`` or ``debuff``). Optional keys should not be required by code.
+
+    Prompts attach ``effect``/``type`` to powers in combat and build a
+    **BUFF GLOSSARY** for tokens; keep strategic prose in ``data/knowledge/``
+    instead of duplicating these strings.
+    """
     _ensure_loaded()
     key = name.lower().replace("'", "").replace('"', '')
     
@@ -175,7 +184,7 @@ def get_power_info(name: str) -> Optional[dict]:
     return None
 
 def get_potion_info(name: str) -> Optional[dict]:
-    """Retrieve details about a potion by name from data/processed/potions.json."""
+    """Retrieve details about a potion by name from data/reference/potions.json."""
     if not name or name == "Potion Slot":
         return None
     _ensure_loaded()

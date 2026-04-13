@@ -13,10 +13,9 @@ class DecisionRecord(BaseModel):
     status: str = ""
     final_decision: str | None = None
     planner_summary: str = ""
-    llm_turn_model_key: str = ""
-    reasoning_profile_name: str = ""
+    llm_model_used: str = ""
     reasoning_effort_used: str = ""
-    retrieval_mode_used: str = ""
+    strategist_ran: bool = False
     lessons_retrieved: int = 0
     tool_names: list[str] = Field(default_factory=list)
     source_path: str = ""
@@ -50,3 +49,4 @@ class RunReport(BaseModel):
     deck_evolution_notes: list[str] = Field(default_factory=list)
     inflection_points: list[str] = Field(default_factory=list)
     mistakes: list[str] = Field(default_factory=list)
+    retrieved_lesson_ids: list[str] = Field(default_factory=list)

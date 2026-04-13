@@ -10,7 +10,7 @@ import re
 import uuid
 from typing import Any
 
-from src.agent.config import get_agent_config
+from src.agent.config import REFLECTION_MAX_LESSONS_PER_RUN
 from src.agent.memory import MemoryStore
 from src.agent.memory.tag_utils import flatten_tag_mapping, slugify_token
 from src.agent.memory.types import EpisodicEntry, ProceduralEntry
@@ -85,7 +85,7 @@ def persist_reflection_to_memory(
 ) -> ReflectionPersistResult:
     """Persist reflector output: all procedural rows first, then optional episodic row."""
     if max_procedural_lessons is None:
-        max_procedural_lessons = get_agent_config().reflection_max_lessons_per_run
+        max_procedural_lessons = REFLECTION_MAX_LESSONS_PER_RUN
 
     created_at = utc_now_iso()
     result = ReflectionPersistResult()
@@ -159,3 +159,30 @@ def persist_reflection_to_memory(
         result.episodic_id = eid
 
     return result
+
+
+def update_lesson_outcomes(
+    store: MemoryStore,
+    retrieved_ids: list[str],
+    victory: bool,
+) -> None:
+    """After a run, update times_validated or times_contradicted on retrieved procedural lessons."""
+    procedural_rows = list(store.procedural_entries)
+    dirty = False
+    retrieved_procedural = {
+        rid.replace("procedural:", "")
+        for rid in retrieved_ids
+        if rid.startswith("procedural:")
+    }
+    for i, entry in enumerate(procedural_rows):
+        if entry.id not in retrieved_procedural:
+            continue
+        e = entry.model_copy(deep=True)
+        if victory:
+            e.times_validated = int(e.times_validated) + 1
+        else:
+            e.times_contradicted = int(e.times_contradicted) + 1
+        procedural_rows[i] = e
+        dirty = True
+    if dirty:
+        store.rewrite_procedural(procedural_rows)

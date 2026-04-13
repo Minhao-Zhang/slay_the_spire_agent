@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 
 EXCEL_PATH = Path("data/raw/Slay the Spire Reference.xlsx")
-OUTPUT_DIR = Path("data/processed")
+OUTPUT_DIR = Path("data/reference")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -235,12 +235,6 @@ def main():
     save_json(extract_monsters(xl), "monsters.json")
     save_json(extract_bosses(xl), "bosses.json")
     save_json(extract_events(xl), "events.json")
-    save_json(extract_score_bonuses(xl), "score_bonuses.json")
-    save_json(extract_global_statistics(xl), "global_statistics.json")
-
-    acts = extract_acts(xl)
-    save_json(acts, "acts.json")
-    print(f"Saved acts.json: {sum(len(v) for v in acts.values())} total rows across 3 acts")
 
 
 if __name__ == "__main__":

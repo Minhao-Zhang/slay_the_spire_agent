@@ -85,12 +85,12 @@ class TurnConversation:
     scene_key: str | None = None
     messages: list[dict[str, str]] = field(default_factory=list)
     action_history: list[str] = field(default_factory=list)
-    strategy_memory: dict[str, str] = field(
+    strategy_notes: dict[str, str] = field(
         default_factory=lambda: {
-            "deck_plan": "",
-            "pathing_goal": "",
-            "boss_prep": "",
-            "constraints": "",
+            "deck_trajectory": "",
+            "pathing_intent": "",
+            "threat_assessment": "",
+            "resource_plan": "",
         }
     )
     compaction_count: int = 0
@@ -132,74 +132,16 @@ class TurnConversation:
     def remember_action(self, action: str) -> None:
         self.action_history.append(action)
 
-    def update_strategy_memory(self, vm: dict) -> None:
-        inv = vm.get("inventory")
-        inventory = inv if isinstance(inv, dict) else {}
-        deck = inventory.get("deck") or []
-        if not isinstance(deck, list):
-            deck = []
-        type_counts: dict[str, int] = {}
-        for card in deck:
-            if not isinstance(card, dict):
+    def update_strategy_notes(self, notes: dict[str, str]) -> None:
+        for key, value in notes.items():
+            if not value or not str(value).strip():
                 continue
-            card_type = ((card.get("kb") or {}).get("type") or card.get("type") or "").upper()
-            if not card_type:
-                continue
-            type_counts[card_type] = type_counts.get(card_type, 0) + 1
+            self.strategy_notes[str(key)] = str(value).strip()
 
-        if type_counts:
-            dominant_type = max(type_counts.items(), key=lambda item: item[1])[0]
-            self.strategy_memory["deck_plan"] = (
-                f"Deck leans toward {dominant_type}; keep picks/upgrades coherent with this axis."
-            )
-
-        hdr = vm.get("header")
-        header = hdr if isinstance(hdr, dict) else {}
-        floor = header.get("floor")
-        hp_display = str(header.get("hp_display", ""))
-        hp_ratio = 1.0
-        if "/" in hp_display:
-            try:
-                cur, max_hp = hp_display.split("/", 1)
-                hp_ratio = max(0.0, min(1.0, int(cur) / max(1, int(max_hp))))
-            except ValueError:
-                hp_ratio = 1.0
-
-        scr = vm.get("screen")
-        screen = scr if isinstance(scr, dict) else {}
-        if screen.get("type") == "MAP":
-            if hp_ratio < 0.45:
-                self.strategy_memory["pathing_goal"] = "Prefer safer pathing with rest sites and avoid risky elite chains."
-            else:
-                self.strategy_memory["pathing_goal"] = "Take high-value pathing when deck can handle elites."
-
-        m = vm.get("map")
-        map_state = m if isinstance(m, dict) else {}
-        act = header.get("act")
-        if isinstance(act, int) and self._last_seen_act is not None and act > self._last_seen_act:
-            # Act advanced; clear stale boss line until game sends the new act_boss name.
-            self.strategy_memory["boss_prep"] = ""
-        if isinstance(act, int):
-            self._last_seen_act = act
-
-        boss_name = map_state.get("boss_name")
-        if boss_name:
-            self.strategy_memory["boss_prep"] = f"Prepare for upcoming boss: {boss_name}."
-
-        cbt = vm.get("combat")
-        combat = cbt if isinstance(cbt, dict) else {}
-        powers = combat.get("player_powers") or []
-        if any(
-            str(p.get("name", "")).lower() == "no draw"
-            for p in powers
-            if isinstance(p, dict)
-        ):
-            self.strategy_memory["constraints"] = "Current turn has draw constraint (No Draw); avoid draw-dependent lines."
-
-    def strategy_memory_lines(self) -> list[str]:
+    def strategy_notes_lines(self) -> list[str]:
         lines: list[str] = []
-        for key in ("deck_plan", "pathing_goal", "boss_prep", "constraints"):
-            value = self.strategy_memory.get(key, "").strip()
+        for key in ("deck_trajectory", "pathing_intent", "threat_assessment", "resource_plan"):
+            value = self.strategy_notes.get(key, "").strip()
             if value:
                 lines.append(f"{key}: {value}")
         return lines

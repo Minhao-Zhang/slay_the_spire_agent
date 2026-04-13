@@ -1,0 +1,38 @@
+# Sources & verification (not retrieved into prompts)
+
+Knowledge corpus files are short paraphrases. Below: credible tiers and where key claims were cross-checked (February 2026).
+
+## Source tiers
+
+1. Slay the Spire Wiki (Fandom) — Primary verifier for mechanics, attacks, buffs, boss tips.
+2. Slay the Spire Wiki (wiki.gg) — Second read on boss pages.
+3. slaythespire.gg guides — Community opinion; heuristics not raw numbers.
+4. Reddit / Steam — Tertiary consensus when aligned with wiki.
+
+Official game text + in-game intents are ground truth after patches.
+
+## Reference vs knowledge (powers)
+
+- `data/reference/powers.json` holds **per-power effect strings** used in prompts (`effect=` on powers, **BUFF GLOSSARY**). That is the right place for “what does Vulnerable do?” style facts.
+- `data/knowledge/fundamentals/game_mechanics.md` should explain **how systems combine** (turn flow, hand cap, card keywords vs combat powers, float damage, orb Focus rules) without copying those effect lines.
+
+## Topic notes
+
+- Neow's Lament: next 3 combats enemies at 1 HP — applies to normal, elite, boss; preview map before blessing.
+- Gremlin Nob: Skills trigger Rage/Strength — favor Attacks and burst.
+- Hexaghost Divider: damage scales with current HP at attack time — read in-game intent.
+- Time Eater: 12 cards played ends player turn early; gains Strength.
+- Book of Stabbing: Wounds on unblocked hits — end fast.
+- Awakened One: gains Strength from Powers in phase 1 — delay non-essential Powers.
+- Donu & Deca: focus Donu if Circle of Power out-scales block; focus Deca if Dazes choke low-draw decks.
+- Corrupt Heart: Beat of Death chips per card played; per-turn damage cap — sustained plans beat one-turn gimmicks.
+- Bronze Automaton: Hyper Beam is telegraphed — use intent, not memorized turn counts.
+
+Original synthesis also drew on slaythespire.gg strategy guide cross-checked to Fandom for mechanics.
+
+## Local reference (not retrieved)
+
+- `data/Slay the Spire Mechanics Guide.md` — mechanics reference for authoring `fundamentals/game_mechanics.md` and related snippets.
+- `data/Slay the Spire Strategy Guide.md` — strategy reference for deckbuilding, removal heuristics, economy, pathing, act pacing (content distilled into `data/knowledge/**/*.md`).
+
+Cross-check: both guides were read in full for corpus gaps (April 2026). Numeric claims in community PDFs can drift from live game—**in-game intent and tool output** beat static prose when they disagree.

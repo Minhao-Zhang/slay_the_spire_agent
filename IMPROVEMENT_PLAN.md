@@ -516,13 +516,11 @@ data/
 │   ├── bosses.json
 │   ├── events.json
 │   ├── potions.json
-│   ├── powers.json
-│   ├── buff_descriptions.json
+│   ├── powers.json               ← power/buff display text (+ tool `get_power_info`); no separate buff_descriptions file
 │   └── orb_mechanics.json
 ├── memory/                       ← unchanged (runtime NDJSON)
-└── archive/
-    ├── Slay the Spire Strategy Guide.md   ← source material, not loaded
-    └── legacy/                            ← old strategy/ and expert_guides/ for reference
+├── Slay the Spire Mechanics Guide.md    ← human reference only; NOT loaded by MemoryStore
+└── Slay the Spire Strategy Guide.md     ← human reference only; NOT loaded by MemoryStore
 ```
 
 **Files to delete from active directories:** `acts.json`, `score_bonuses.json`, `global_statistics.json` (unused by any code).
@@ -670,7 +668,7 @@ Extract the full potion economy section from the strategy guide (~800 chars) wit
 | "Relic Ecosystem" | `knowledge/combat/relics_and_synergies.md` |
 | "Top-Down Framework" | `knowledge/fundamentals/deckbuilding.md` (the "why") |
 
-**The original file goes to `data/archive/` for human reference.**
+**Keep long-form guides at repo paths like `data/Slay the Spire Strategy Guide.md` for human reference only** (outside `knowledge/` so `MemoryStore` never ingests them as retrieved docs).
 
 ---
 
@@ -1199,7 +1197,7 @@ Add endpoint `GET /api/experiments` that runs the `compare_experiments()` logic 
 | 0.3 | `src/agent/prompt_builder.py` | — | — |
 | 0.4 | `src/agent/memory/store.py` | — | — |
 | 0.5 | `src/agent/schemas.py`, `src/agent/tracing.py`, `src/agent/graph.py` | — | — |
-| 1.1 | — | 15+ knowledge .md files | old `data/strategy/`, `data/expert_guides/` (moved to archive) |
+| 1.1 | — | 15+ knowledge .md files | superseded dirs removed; git history is rollback |
 | 1.2 | `src/agent/config.py`, `src/agent/memory/store.py`, `src/agent/graph.py`, `.env.example` | — | — |
 | 1.3 | `src/agent/prompts/system_prompt.md` | `data/knowledge/fundamentals/game_mechanics.md` | — |
 | 1.4 | `src/agent/prompts/system_prompt.md` | `data/knowledge/fundamentals/potion_tactics.md` | — |
@@ -1235,9 +1233,9 @@ Each phase should be tested before merging:
 
 | Risk | Mitigation |
 |---|---|
-| Knowledge reorg breaks retrieval quality | Keep old files in `data/archive/legacy/`. A/B test by toggling `KNOWLEDGE_DIR` between old and new. |
+| Knowledge reorg breaks retrieval quality | Roll back via git; A/B by pointing `KNOWLEDGE_DIR` at a branch or copy of the old tree. |
 | Strategist adds latency (extra LLM call per scene) | Only runs on scene change, not every turn. Uses fast model. Budget ~1-2s per call. |
 | Strategist hallucinates bad strategy | Include previous strategy in prompt for continuity. Monitor via `strategy_notes` in traces. |
 | Map analysis function has bugs | Unit test with known maps. Path counts are verifiable by hand. |
 | Reflection outcome tracking has selection bias | Lessons retrieved in both wins and losses are most informative. Track both counters. |
-| Data folder reorg is a large diff | Do it in a single commit with clear commit message. Keep archive/ for rollback. |
+| Data folder reorg is a large diff | Do it in a single commit with a clear message; rely on git for rollback. |
