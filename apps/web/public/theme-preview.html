@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spire Agent — theme sampler (v3)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@450;600&family=Sora:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Sora", system-ui, sans-serif;
+        background: #08080a;
+        color: #b8b8bc;
+        line-height: 1.5;
+        padding: 2rem 1.5rem 4rem;
+      }
+      h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin: 0 0 0.5rem;
+        color: #e8e8ec;
+      }
+      .intro {
+        font-size: 0.875rem;
+        color: #7a7a82;
+        max-width: 44rem;
+        margin-bottom: 2rem;
+      }
+      .intro code {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.8em;
+        background: #1a1a1e;
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+      }
+      .grid {
+        display: grid;
+        gap: 1.5rem;
+        max-width: 1400px;
+        grid-template-columns: 1fr;
+      }
+      @media (min-width: 720px) {
+        .grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (min-width: 1100px) {
+        .grid {
+          grid-template-columns: repeat(4, 1fr);
+        }
+      }
+      .card {
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        display: flex;
+        flex-direction: column;
+      }
+      .card h2 {
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        margin: 0;
+        padding: 0.65rem 1rem;
+        font-family: "Sora", sans-serif;
+      }
+      .swatches {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: 1rem;
+        flex: 1;
+        align-content: flex-start;
+      }
+      .sw {
+        width: 4.5rem;
+        text-align: center;
+        font-size: 0.58rem;
+        font-family: "JetBrains Mono", monospace;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+      .sw i {
+        display: block;
+        height: 2.75rem;
+        border-radius: 6px;
+        margin-bottom: 0.35rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      }
+      .mock {
+        padding: 1rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+        font-size: 0.7rem;
+      }
+      .mock-top {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+      }
+      .pill {
+        font-family: "Sora", sans-serif;
+        font-size: 0.58rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        border: 1px solid;
+      }
+      .mock-strip {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.65rem;
+        padding: 0.5rem 0.6rem;
+        border-radius: 6px;
+        border: 1px solid;
+      }
+      .mock-kpis {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.4rem;
+        margin-top: 0.5rem;
+      }
+      .kpi {
+        padding: 0.45rem;
+        border-radius: 4px;
+        border: 1px solid;
+      }
+      .kpi span {
+        display: block;
+        font-size: 0.52rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        opacity: 0.8;
+        margin-bottom: 0.15rem;
+      }
+
+      /* D — Lunar telemetry */
+      .d h2 {
+        background: linear-gradient(180deg, #161825 0%, #12141f 100%);
+        color: #b8c4ff;
+        border-bottom: 1px solid #2a3148;
+      }
+      .d .swatches {
+        background: linear-gradient(180deg, #0e1018 0%, #0a0b10 100%);
+      }
+      .d .mock {
+        background: #12141f;
+      }
+      .d .pill-live {
+        border-color: #4a5f8a;
+        background: rgba(158, 176, 255, 0.12);
+        color: #b8c4ff;
+      }
+      .d .pill-off {
+        border-color: #5c4a55;
+        background: rgba(201, 123, 132, 0.1);
+        color: #d4a0a6;
+      }
+      .d .mock-strip {
+        background: #0a0b10;
+        border-color: #2a3148;
+        color: #8b91a8;
+      }
+      .d .kpi {
+        background: #161825;
+        border-color: #2a3148;
+        color: #e4e6f0;
+      }
+
+      /* E — Brass gate */
+      .e h2 {
+        background: linear-gradient(180deg, #221e18 0%, #1a1712 100%);
+        color: #d4b356;
+        border-bottom: 1px solid #4a3f2e;
+      }
+      .e .swatches {
+        background: linear-gradient(180deg, #161410 0%, #100e0b 100%);
+      }
+      .e .mock {
+        background: #1a1712;
+      }
+      .e .pill-live {
+        border-color: #5c6b4a;
+        background: rgba(109, 143, 122, 0.15);
+        color: #8fbc9f;
+      }
+      .e .pill-off {
+        border-color: #6b4545;
+        background: rgba(184, 92, 92, 0.12);
+        color: #d49898;
+      }
+      .e .mock-strip {
+        background: #100e0b;
+        border-color: #4a3f2e;
+        color: #9a9488;
+      }
+      .e .kpi {
+        background: #221e18;
+        border-color: #4a3f2e;
+        color: #eae6dc;
+      }
+
+      /* F — Tide pool */
+      .f h2 {
+        background: linear-gradient(180deg, #182428 0%, #141c20 100%);
+        color: #6ed4c4;
+        border-bottom: 1px solid #2a3d42;
+      }
+      .f .swatches {
+        background: linear-gradient(180deg, #101618 0%, #0c1012 100%);
+      }
+      .f .mock {
+        background: #141c20;
+      }
+      .f .pill-live {
+        border-color: #3a6b62;
+        background: rgba(94, 184, 168, 0.12);
+        color: #7ee0d0;
+      }
+      .f .pill-off {
+        border-color: #6b4a4a;
+        background: rgba(214, 123, 123, 0.1);
+        color: #e0a0a0;
+      }
+      .f .mock-strip {
+        background: #0c1012;
+        border-color: #2a3d42;
+        color: #7d8f94;
+      }
+      .f .kpi {
+        background: #182428;
+        border-color: #2a3d42;
+        color: #e2ecec;
+      }
+
+      /* G — Spire parchment (game-inspired, ui_improvement.md Option G) */
+      .g {
+        border-color: rgba(212, 168, 75, 0.2);
+      }
+      .g h2 {
+        background: linear-gradient(180deg, #3d3428 0%, #2a2319 100%);
+        color: #d4a84b;
+        border-bottom: 1px solid #4a3f32;
+        text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+      }
+      .g .swatches {
+        background: linear-gradient(180deg, #1f1812 0%, #16100c 100%);
+      }
+      .g .mock {
+        background: #2a2319;
+        border-top-color: #4a3f32;
+      }
+      .g .pill-live {
+        border-color: #8a7340;
+        background: rgba(212, 168, 75, 0.18);
+        color: #e8c97a;
+      }
+      .g .pill-off {
+        border-color: #8b4545;
+        background: rgba(196, 75, 75, 0.15);
+        color: #e8a0a0;
+      }
+      .g .mock-strip {
+        background: #3d3428;
+        border-color: #4a3f32;
+        color: #a69b8c;
+      }
+      .g .kpi {
+        background: #221c16;
+        border-color: #4a3f32;
+        color: #f0e6d8;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Theme sampler · v3</h1>
+    <p class="intro">
+      <strong>D–F</strong> — operator consoles (cool / brass / teal).
+      <strong>G · Spire parchment</strong> — warm parchment + gold + blood red + relic violet,
+      inspired by in-game UI (see <code>ui_improvement.md</code> Option G; not official hexes).
+      Run Vite and open <code>http://localhost:5173/theme-preview.html</code> —
+      <strong>pick one for approval</strong> before wiring into the app.
+    </p>
+
+    <div class="grid">
+      <section class="card d">
+        <h2>D · Lunar telemetry</h2>
+        <div class="swatches">
+          <div class="sw"><i style="background: #0a0b10"></i>canvas</div>
+          <div class="sw"><i style="background: #12141f"></i>panel</div>
+          <div class="sw"><i style="background: #2a3148"></i>border</div>
+          <div class="sw"><i style="background: #9eb0ff"></i>rim / accent</div>
+          <div class="sw"><i style="background: #7d9b8c"></i>success</div>
+          <div class="sw"><i style="background: #c97b84"></i>danger</div>
+          <div class="sw"><i style="background: #b8a9d9"></i>AI</div>
+          <div class="sw"><i style="background: #8b91a8"></i>muted</div>
+        </div>
+        <div class="mock">
+          <div class="mock-top">
+            <span class="pill pill-live">● Live</span>
+            <span class="pill pill-off" style="opacity: 0.55">Offline</span>
+          </div>
+          <div class="mock-strip">SPIRE AGENT · MONITOR — seed 8G21…</div>
+          <div class="mock-kpis">
+            <div class="kpi"><span>HP</span>48/75</div>
+            <div class="kpi"><span>Gold</span>111</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card e">
+        <h2>E · Brass gate</h2>
+        <div class="swatches">
+          <div class="sw"><i style="background: #100e0b"></i>canvas</div>
+          <div class="sw"><i style="background: #1a1712"></i>panel</div>
+          <div class="sw"><i style="background: #4a3f2e"></i>border</div>
+          <div class="sw"><i style="background: #c9a43a"></i>brass</div>
+          <div class="sw"><i style="background: #6d8f7a"></i>success</div>
+          <div class="sw"><i style="background: #b85c5c"></i>danger</div>
+          <div class="sw"><i style="background: #8b7cb8"></i>AI</div>
+          <div class="sw"><i style="background: #9a9488"></i>muted</div>
+        </div>
+        <div class="mock">
+          <div class="mock-top">
+            <span class="pill pill-live">● Live</span>
+            <span class="pill pill-off" style="opacity: 0.55">Offline</span>
+          </div>
+          <div class="mock-strip">SPIRE AGENT · MONITOR — seed 8G21…</div>
+          <div class="mock-kpis">
+            <div class="kpi"><span>HP</span>48/75</div>
+            <div class="kpi"><span>Gold</span>111</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card f">
+        <h2>F · Tide pool</h2>
+        <div class="swatches">
+          <div class="sw"><i style="background: #0c1012"></i>canvas</div>
+          <div class="sw"><i style="background: #141c20"></i>panel</div>
+          <div class="sw"><i style="background: #2a3d42"></i>border</div>
+          <div class="sw"><i style="background: #5eb8a8"></i>sea-glass</div>
+          <div class="sw"><i style="background: #7eb3d0"></i>harbor</div>
+          <div class="sw"><i style="background: #d4a574"></i>warn</div>
+          <div class="sw"><i style="background: #d67b7b"></i>danger</div>
+          <div class="sw"><i style="background: #7d8f94"></i>muted</div>
+        </div>
+        <div class="mock">
+          <div class="mock-top">
+            <span class="pill pill-live">● Live</span>
+            <span class="pill pill-off" style="opacity: 0.55">Offline</span>
+          </div>
+          <div class="mock-strip">SPIRE AGENT · MONITOR — seed 8G21…</div>
+          <div class="mock-kpis">
+            <div class="kpi"><span>HP</span>48/75</div>
+            <div class="kpi"><span>Gold</span>111</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card g">
+        <h2>G · Spire parchment</h2>
+        <div class="swatches">
+          <div class="sw"><i style="background: #16100c"></i>canvas</div>
+          <div class="sw"><i style="background: #2a2319"></i>panel</div>
+          <div class="sw"><i style="background: #3d3428"></i>parchment</div>
+          <div class="sw"><i style="background: #4a3f32"></i>border</div>
+          <div class="sw"><i style="background: #d4a84b"></i>gold</div>
+          <div class="sw"><i style="background: #6d8c72"></i>sage</div>
+          <div class="sw"><i style="background: #c44b4b"></i>blood</div>
+          <div class="sw"><i style="background: #8b7eae"></i>relic</div>
+        </div>
+        <div class="mock">
+          <div class="mock-top">
+            <span class="pill pill-live">● Live</span>
+            <span class="pill pill-off" style="opacity: 0.55">Offline</span>
+          </div>
+          <div class="mock-strip">SPIRE AGENT · MONITOR — seed 8G21…</div>
+          <div class="mock-kpis">
+            <div class="kpi"><span>HP</span>48/75</div>
+            <div class="kpi"><span>Gold</span>111</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

@@ -112,7 +112,7 @@ export interface DebugSnapshotPayload {
   ingress_ready_for_command?: boolean | null;
   error: string | null;
   agent?: AgentSnapshotDTO | null;
-  /** False when no feed or last ``/update_state`` older than ``DASHBOARD_INGRESS_MAX_AGE_SECONDS``. */
+  /** False when no feed or last ``/update_state`` older than ``DASHBOARD_MAX_INGRESS_AGE_SECONDS`` (dashboard env). */
   live_ingress?: boolean;
   /** Seconds since last ingress touch (game line or debug paste); omit if unknown. */
   ingress_age_seconds?: number | null;
