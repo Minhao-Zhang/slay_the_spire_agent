@@ -6,10 +6,10 @@ import type { GameScreenDTO, ViewModelDTO } from "../../types/viewModel";
 import { MapView, type MapVizData } from "./MapView";
 
 const strip =
-  "flex shrink-0 items-center border-b border-slate-700/85 bg-slate-800/95 px-3 py-2 font-console text-sm font-semibold uppercase tracking-[0.12em] text-slate-300";
+  "flex shrink-0 items-center border-b-2 border-spire-border-subtle bg-spire-canvas px-3 py-2 font-console text-sm font-bold uppercase tracking-[0.12em] text-spire-primary";
 
 const optionBase =
-  "w-full max-w-xl rounded border border-slate-700 bg-slate-800/60 px-3 py-2.5 text-left font-telemetry text-sm text-slate-200 transition hover:border-sky-600/70 hover:bg-slate-800/90 disabled:cursor-not-allowed disabled:opacity-45";
+  "w-full max-w-xl rounded-md border-2 border-spire-border-subtle bg-spire-canvas px-3 py-2.5 text-left font-telemetry text-sm font-medium text-spire-primary shadow-sm transition hover:border-spire-accent hover:bg-spire-panel-raised disabled:cursor-not-allowed disabled:opacity-45";
 
 function cardDesc(card: Record<string, unknown>): string {
   const raw = card.description;
@@ -36,20 +36,20 @@ function CardPickTile({
       type="button"
       onClick={onPick}
       title={typeHint ? `Type: ${typeHint}` : undefined}
-      className="relative flex min-h-[4.5rem] w-[9.5rem] shrink-0 flex-col rounded border border-slate-700 bg-slate-900/90 p-2 text-left shadow-sm transition hover:border-sky-600/80 hover:bg-slate-800/90"
+      className="relative flex min-h-[4.5rem] w-[9.5rem] shrink-0 flex-col rounded-md border-2 border-spire-border-subtle bg-spire-canvas p-2 text-left shadow-sm transition hover:border-spire-accent hover:bg-spire-panel-raised"
     >
-      <span className="absolute top-1.5 right-1.5 flex h-5 min-w-[1.25rem] items-center justify-center rounded bg-sky-700 px-1 font-console text-[10px] font-bold text-white">
+      <span className="absolute top-1.5 right-1.5 flex h-5 min-w-[1.25rem] items-center justify-center rounded bg-spire-accent px-1 font-console text-[13px] font-bold text-spire-primary">
         {fmtGameStatDisplay(card.cost ?? "—")}
       </span>
       <span className={`pr-6 text-sm leading-tight ${cardNameClass(card.type)}`}>
         {String(card.name ?? "?")}
         {up}
       </span>
-      <span className="mt-1 line-clamp-4 border-t border-slate-800 pt-1 text-xs leading-snug text-slate-400">
+      <span className="mt-1 line-clamp-4 border-t border-spire-border-muted pt-1 text-xs leading-snug text-spire-muted">
         {cardDesc(card)}
       </span>
       {footer ? (
-        <div className="mt-auto border-t border-slate-800 pt-1 text-center font-console text-xs font-semibold text-sky-400">
+        <div className="mt-auto border-t border-spire-border-muted pt-1 text-center font-console text-xs font-semibold text-spire-accent">
           {footer}
         </div>
       ) : null}
@@ -73,6 +73,29 @@ export function GameScreenPanel({
 
   const map = vm.map as MapVizData | null | undefined;
 
+  const mapVisitedPath = useMemo(() => {
+    const m = vm.map as Record<string, unknown> | null | undefined;
+    const raw = m?.visited_path;
+    if (!Array.isArray(raw) || raw.length === 0) return undefined;
+    const out: { x: number; y: number }[] = [];
+    for (const p of raw) {
+      if (!p || typeof p !== "object") continue;
+      const o = p as Record<string, unknown>;
+      const x = o.x;
+      const y = o.y;
+      if (typeof x === "number" && typeof y === "number") {
+        out.push({ x, y });
+        continue;
+      }
+      if (typeof x === "string" && typeof y === "string") {
+        const xi = Number(x);
+        const yi = Number(y);
+        if (Number.isFinite(xi) && Number.isFinite(yi)) out.push({ x: xi, y: yi });
+      }
+    }
+    return out.length > 0 ? out : undefined;
+  }, [vm.map]);
+
   /** Single human-readable line (avoid showing title + raw type side by side). */
   const title = useMemo(() => {
     const t = screen?.title?.trim();
@@ -93,7 +116,7 @@ export function GameScreenPanel({
         );
         return (
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-3">
-            <div className="shrink-0 font-console text-xs font-medium text-sky-400/95">
+            <div className="shrink-0 font-console text-xs font-medium text-spire-accent">
               {posLabel || "Selecting first node"}
             </div>
             <div className="min-h-0 flex-1 overflow-auto">
@@ -101,12 +124,14 @@ export function GameScreenPanel({
                 mapData={map}
                 onChoose={onChoose}
                 bossAvailable={bossAvail}
+                hideBossNode={bossAvail}
+                visitedPath={mapVisitedPath}
               />
             </div>
             {bossAvail ? (
               <button
                 type="button"
-                className="shrink-0 rounded border border-red-800/80 bg-red-950/50 py-2 font-console text-sm font-semibold uppercase tracking-wide text-red-100 hover:bg-red-900/60"
+                className="shrink-0 rounded border border-spire-danger/50 bg-spire-danger/12 py-2 font-console text-sm font-semibold uppercase tracking-wide text-spire-primary hover:bg-spire-danger/18"
                 onClick={() => onChoose("choose boss")}
               >
                 Challenge Boss
@@ -120,10 +145,10 @@ export function GameScreenPanel({
         const opts = (content.options as Record<string, unknown>[]) ?? [];
         return (
           <div className="custom-scroll min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300">
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-spire-primary">
               {asStr(content.body_text)}
             </p>
-            <div className="font-console text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+            <div className="font-console text-xs font-semibold uppercase tracking-[0.14em] text-spire-label">
               Options
             </div>
             <div className="flex max-w-xl flex-col gap-2">
@@ -138,10 +163,10 @@ export function GameScreenPanel({
                     className={optionBase}
                     onClick={() => onChoose(`choose ${idx}`)}
                   >
-                    <div className="font-semibold text-slate-100">
+                    <div className="font-semibold text-spire-primary">
                       {asStr(o.label)}
                     </div>
-                    <div className="mt-1 text-sm text-slate-500">
+                    <div className="mt-1 text-sm text-spire-label">
                       {asStr(o.text)}
                     </div>
                   </button>
@@ -170,7 +195,7 @@ export function GameScreenPanel({
                   >
                     <div>{asStr(r.label)}</div>
                     {rkb && asStr(rkb.description) ? (
-                      <div className="mt-1 text-xs text-slate-500">
+                      <div className="mt-1 text-xs text-spire-label">
                         {asStr(rkb.description)}
                       </div>
                     ) : null}
@@ -214,10 +239,10 @@ export function GameScreenPanel({
                     onChoose(`choose ${asStr(o.choice_name)}`)
                   }
                 >
-                  <div className="font-semibold text-slate-100">
+                  <div className="font-semibold text-spire-primary">
                     {asStr(o.label)}
                   </div>
-                  <div className="mt-1 text-sm text-slate-500">
+                  <div className="mt-1 text-sm text-spire-label">
                     {asStr(o.description)}
                   </div>
                 </button>
@@ -236,9 +261,9 @@ export function GameScreenPanel({
         return (
           <div className="custom-scroll min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
             {reason ? (
-              <p className="text-sm text-slate-400">{reason}</p>
+              <p className="text-sm text-spire-muted">{reason}</p>
             ) : null}
-            <p className="font-semibold text-sky-400/95">
+            <p className="font-semibold text-spire-accent">
               Pick {fmtIntEn(num)} card(s)
             </p>
             <div className="flex flex-wrap gap-3">
@@ -293,14 +318,14 @@ export function GameScreenPanel({
         const purgeCost = content.purge_cost;
         return (
           <div className="custom-scroll min-h-0 flex-1 space-y-5 overflow-y-auto p-3">
-            <div className="font-telemetry text-sm font-semibold text-amber-200/95">
+            <div className="font-telemetry text-sm font-semibold text-spire-warning">
               Gold:{" "}
               {gold === undefined || gold === null
                 ? "?"
                 : fmtGameStatDisplay(gold)}
             </div>
             <div>
-              <h3 className="mb-2 font-console text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              <h3 className="mb-2 font-console text-xs font-semibold uppercase tracking-[0.14em] text-spire-label">
                 Cards
               </h3>
               <div className="flex flex-wrap gap-3">
@@ -319,7 +344,7 @@ export function GameScreenPanel({
               </div>
             </div>
             <div>
-              <h3 className="mb-2 font-console text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              <h3 className="mb-2 font-console text-xs font-semibold uppercase tracking-[0.14em] text-spire-label">
                 Relics
               </h3>
               <div className="flex flex-wrap gap-2">
@@ -334,11 +359,11 @@ export function GameScreenPanel({
                     >
                       <div className="font-semibold">{asStr(r.name)}</div>
                       {kb && asStr(kb.description) ? (
-                        <div className="mt-1 text-xs text-slate-500">
+                        <div className="mt-1 text-xs text-spire-label">
                           {asStr(kb.description)}
                         </div>
                       ) : null}
-                      <div className="mt-1 font-mono text-sky-400">
+                      <div className="mt-1 font-mono text-spire-accent">
                         {fmtGameStatDisplay(asStr(r.price) || "—")} Gold
                       </div>
                     </button>
@@ -347,7 +372,7 @@ export function GameScreenPanel({
               </div>
             </div>
             <div>
-              <h3 className="mb-2 font-console text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              <h3 className="mb-2 font-console text-xs font-semibold uppercase tracking-[0.14em] text-spire-label">
                 Potions
               </h3>
               <div className="flex flex-wrap gap-2">
@@ -359,7 +384,7 @@ export function GameScreenPanel({
                     onClick={() => onChoose(`choose ${asStr(p.name)}`)}
                   >
                     <div className="font-semibold">{asStr(p.name)}</div>
-                    <div className="mt-1 font-mono text-sky-400">
+                    <div className="mt-1 font-mono text-spire-accent">
                       {fmtGameStatDisplay(asStr(p.price) || "—")} Gold
                     </div>
                   </button>
@@ -369,7 +394,7 @@ export function GameScreenPanel({
             {purge ? (
               <button
                 type="button"
-                className="max-w-md rounded border border-red-800/80 bg-red-950/45 py-2 font-console text-sm font-semibold text-red-100 hover:bg-red-900/55"
+                className="max-w-md rounded border border-spire-danger/50 bg-spire-danger/10 py-2 font-console text-sm font-semibold text-spire-primary hover:bg-spire-danger/16"
                 onClick={() => onChoose("choose purge")}
               >
                 Remove Card (
@@ -386,10 +411,10 @@ export function GameScreenPanel({
       case "CHEST":
         return (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6">
-            <p className="text-slate-400">{asStr(content.chest_type) || "Chest"}</p>
+            <p className="text-spire-muted">{asStr(content.chest_type) || "Chest"}</p>
             <button
               type="button"
-              className="w-full max-w-sm rounded border border-sky-800/80 bg-sky-950/60 py-2 font-console text-sm font-semibold text-sky-100 hover:bg-sky-900/75"
+              className="w-full max-w-sm rounded border border-spire-live-border bg-spire-live-surface py-2 font-console text-sm font-semibold text-spire-primary hover:bg-spire-tab-active/90"
               onClick={() => onChoose("choose open")}
             >
               Open Chest
@@ -413,7 +438,7 @@ export function GameScreenPanel({
                   >
                     <div className="font-semibold">{asStr(r.name)}</div>
                     {kb && asStr(kb.description) ? (
-                      <div className="mt-1 text-xs text-slate-500">
+                      <div className="mt-1 text-xs text-spire-label">
                         {asStr(kb.description)}
                       </div>
                     ) : null}
@@ -428,10 +453,10 @@ export function GameScreenPanel({
       case "GAME_OVER":
         return (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
-            <div className="font-console text-2xl font-bold text-slate-100">
+            <div className="font-console text-2xl font-bold text-spire-primary">
               {content.victory ? "Victory!" : "Defeated"}
             </div>
-            <div className="text-slate-500">
+            <div className="text-spire-label">
               Score: {fmtGameStatDisplay(content.score ?? 0)}
             </div>
           </div>
@@ -440,10 +465,10 @@ export function GameScreenPanel({
       case "COMPLETE":
         return (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
-            <div className="font-console text-xl font-bold text-emerald-300/95">
+            <div className="font-console text-xl font-bold text-spire-success">
               Run complete
             </div>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-spire-label">
               {title.replace(/_/g, " ")}
             </p>
           </div>
@@ -472,20 +497,20 @@ export function GameScreenPanel({
         }
         return (
           <div className="custom-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
-            <p className="text-sm italic text-slate-500">
+            <p className="text-sm italic text-spire-label">
               No choices available for this screen type ({type || "unknown"}).
             </p>
             {raw !== undefined ? (
               <div className="mt-2">
                 <button
                   type="button"
-                  className="font-console text-xs text-sky-400 hover:underline"
+                  className="font-console text-xs text-spire-accent hover:underline"
                   onClick={() => setRawOpen((v) => !v)}
                 >
                   {rawOpen ? "Hide" : "Show"} raw screen state
                 </button>
                 {rawOpen ? (
-                  <pre className="mt-2 max-h-48 overflow-auto rounded border border-slate-800 bg-slate-950/80 p-2 font-mono text-[11px] text-slate-400">
+                  <pre className="mt-2 max-h-48 overflow-auto rounded border border-spire-border-muted bg-spire-inset/80 p-2 font-mono text-[13px] text-spire-muted">
                     {JSON.stringify(raw, null, 2)}
                   </pre>
                 ) : null}
@@ -498,7 +523,7 @@ export function GameScreenPanel({
   })();
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-900/40">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-spire-canvas/40">
       <div className={strip} title={type ? `Screen type: ${type}` : undefined}>
         <span className="min-w-0 flex-1 truncate">{title}</span>
       </div>

@@ -11,14 +11,6 @@ function wsUrl(): string {
   return `${proto}//${window.location.host}/ws`;
 }
 
-export type SessionLogLine = {
-  t: string;
-  kind: string;
-  msg: string;
-  /** Present when identical consecutive lines (STATE) were merged; show as xN in the UI. */
-  repeat?: number;
-};
-
 /** Logged ``*.ai.json`` next to a replay frame, mapped on the server to ``proposal`` / HITL. */
 export type ReplayAiSidecarState =
   | null
@@ -34,32 +26,22 @@ export type ReplayAiSidecarState =
 export function useControlPlane() {
   const [snapshot, setSnapshot] = useState<DebugSnapshotPayload | null>(null);
   const [connected, setConnected] = useState(false);
-  const [logLines, setLogLines] = useState<SessionLogLine[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   /** While true, ignore WebSocket snapshots so replay frames are not overwritten by server broadcasts. */
   const replayActiveRef = useRef(false);
 
+  /** Diagnostic hook (no UI): high-volume STATE lines are omitted; errors go to console.error. */
   const pushLog = useCallback((kind: string, msg: string) => {
+    if (kind === "STATE") return;
     const t = new Date().toLocaleTimeString(undefined, {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
       hour12: false,
     });
-    setLogLines((prev) => {
-      const base = prev.slice(-200);
-      if (
-        kind === "STATE" &&
-        base.length > 0 &&
-        base[base.length - 1].kind === "STATE" &&
-        base[base.length - 1].msg === msg
-      ) {
-        const last = base[base.length - 1];
-        const repeat = (last.repeat ?? 1) + 1;
-        return [...base.slice(0, -1), { ...last, t, repeat }];
-      }
-      return [...base, { t, kind, msg }];
-    });
+    const line = `[SpireAgent ${t}] [${kind}] ${msg}`;
+    if (kind === "ERROR") console.error(line);
+    else console.info(line);
   }, []);
 
   const applyPayload = useCallback(
@@ -394,7 +376,6 @@ export function useControlPlane() {
   return {
     snapshot,
     connected,
-    logLines,
     fetchSnapshot,
     postIngress,
     queueManualCommand,

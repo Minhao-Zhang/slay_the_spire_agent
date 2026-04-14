@@ -116,6 +116,8 @@ export interface DebugSnapshotPayload {
   live_ingress?: boolean;
   /** Seconds since last ingress touch (game line or debug paste); omit if unknown. */
   ingress_age_seconds?: number | null;
+  /** Basename under ``logs/games/`` for the run directory the bridge is writing (when set). */
+  active_log_run?: string | null;
 }
 
 export interface WsMessage {

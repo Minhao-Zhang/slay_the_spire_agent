@@ -8,7 +8,7 @@
 - **Model visibility** — The same context the decision model sees (including strategist notes and combat framing), plus reasoning when the API returns it, final JSON commands, and a timestamped session log.
 - **Human in the loop** — `manual`, `propose` (approve each line), or `auto` from the UI; retry and mode switches without restarting the game.
 - **Grounded strategy** — Markdown guides under `data/knowledge/`, factual tables in `data/reference/`, optional map analysis, and a **support** model that maintains high-level notes while a **decision** model picks plays. Post-run reflection can write lessons into `MEMORY_DIR` and consolidate them over time.
-- **Run analytics** — Per-run metrics, multi-run compare, and map replay over folders under `logs/` (see [`apps/web/README.md`](apps/web/README.md) for routes).
+- **Run analytics** — Per-run metrics and map replay over folders under `logs/` (see [`apps/web/README.md`](apps/web/README.md) for routes).
 
 ## Dashboard
 
@@ -48,7 +48,7 @@ or `./run_api.sh` (runs `uv run uvicorn src.ui.dashboard:app --host 127.0.0.1 --
 npm run dev:web
 ```
 
-Open **`http://127.0.0.1:5173/`** for the monitor; **`/metrics`**, **`/metrics/compare`**, and **`/metrics/map`** for analytics. The API alone is at **`http://127.0.0.1:8000/`**. Production static build: `npm run build:web` → `apps/web/dist/`.
+Open **`http://127.0.0.1:5173/`** for the monitor; **`/metrics`** and **`/metrics/map`** for analytics. The API alone is at **`http://127.0.0.1:8000/`**. Production static build: `npm run build:web` → `apps/web/dist/`.
 
 **C — Game bridge:**
 
@@ -96,7 +96,7 @@ flowchart TB
   UI -.->|approve · mode| Dash
 
   Bridge --> Logs[("Run logs")]
-  Logs --> Replay["Replay · metrics · compare"]
+  Logs --> Replay["Replay · metrics · map"]
   Logs -.-> Post
   Post --> Mem
 ```

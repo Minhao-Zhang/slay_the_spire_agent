@@ -4,10 +4,10 @@
  */
 export function cardNameClass(type: unknown): string {
   const t = String(type ?? "").trim().toUpperCase();
-  if (t === "ATTACK") return "font-bold text-red-400";
-  if (t === "SKILL") return "font-bold text-blue-400";
-  if (t === "POWER") return "font-bold text-purple-400";
-  if (t === "STATUS") return "font-bold text-amber-300";
-  if (t === "CURSE") return "font-bold text-amber-400";
-  return "font-bold text-slate-300";
+  if (t === "ATTACK") return "font-bold text-spire-danger";
+  if (t === "SKILL") return "font-bold text-spire-secondary";
+  if (t === "POWER") return "font-bold text-spire-success";
+  if (t === "STATUS") return "font-bold text-spire-warning";
+  if (t === "CURSE") return "font-bold text-spire-warning";
+  return "font-bold text-spire-label";
 }

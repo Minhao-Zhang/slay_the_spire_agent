@@ -13,6 +13,9 @@ export type RunMetricsRunBarProps = {
   variant: "metrics" | "map";
   mapLoading?: boolean;
   mapError?: string | null;
+  /** Keep `?run=` aligned with the bridge’s active log directory (metrics only). */
+  followLive?: boolean;
+  onFollowLiveChange?: (on: boolean) => void;
 };
 
 function metricsReasonLabel(reason: string): string {
@@ -43,8 +46,16 @@ export function RunMetricsRunBar({
   variant,
   mapLoading,
   mapError,
+  followLive = false,
+  onFollowLiveChange,
 }: RunMetricsRunBarProps) {
-  const runQ = run ? `?run=${encodeURIComponent(run)}` : "";
+  const runQ = (() => {
+    const p = new URLSearchParams();
+    if (run) p.set("run", run);
+    if (followLive) p.set("follow", "1");
+    const s = p.toString();
+    return s ? `?${s}` : "";
+  })();
   const showFrameRow =
     variant !== "map" &&
     typeof recordsLength === "number" &&
@@ -53,17 +64,17 @@ export function RunMetricsRunBar({
   const spirePage = variant === "map" ? "map" : "metrics";
 
   return (
-    <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-700/90 bg-slate-900/80 px-4 py-3 backdrop-blur-sm">
+    <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-panel)_88%,transparent)] px-4 py-3 backdrop-blur-sm">
       <SpireAgentNav page={spirePage} runQuery={runQ} />
 
       <label className="flex items-center gap-2">
-        <span className="text-xs uppercase tracking-wide text-slate-500">
+        <span className="text-xs uppercase tracking-wide text-spire-label">
           Run
         </span>
         <select
           value={run}
           onChange={(e) => onRunChange(e.target.value)}
-          className="font-console h-8 max-w-[18rem] rounded border border-slate-700 bg-slate-950/80 px-2 text-xs text-slate-200 outline-none"
+          className="font-console h-8 max-w-[18rem] rounded border border-spire-border-subtle bg-spire-inset/80 px-2 text-xs text-spire-primary outline-none"
           aria-label="Log run"
         >
           <option value="">Select run…</option>
@@ -75,33 +86,47 @@ export function RunMetricsRunBar({
         </select>
       </label>
 
+      {variant !== "map" && onFollowLiveChange ? (
+        <label className="flex cursor-pointer items-center gap-2">
+          <input
+            type="checkbox"
+            checked={followLive}
+            onChange={(e) => onFollowLiveChange(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-spire-border-strong"
+          />
+          <span className="text-xs uppercase tracking-wide text-spire-label">
+            Follow live
+          </span>
+        </label>
+      ) : null}
+
       {variant !== "map" && loading ? (
-        <span className="text-xs text-slate-500">Loading…</span>
+        <span className="text-xs text-spire-label">Loading…</span>
       ) : null}
       {variant === "map" && mapLoading ? (
-        <span className="text-xs text-slate-500">Loading map…</span>
+        <span className="text-xs text-spire-label">Loading map…</span>
       ) : null}
 
       {variant !== "map" && metricsReason ? (
-        <span className="text-xs text-amber-400" title={metricsReason}>
+        <span className="text-xs text-spire-warning" title={metricsReason}>
           {metricsReasonLabel(metricsReason)}
         </span>
       ) : null}
 
       {variant === "map" && mapError ? (
-        <span className="text-xs text-amber-400" title={mapError}>
+        <span className="text-xs text-spire-warning" title={mapError}>
           {mapError}
         </span>
       ) : null}
 
       {showFrameRow ? (
-        <span className="font-telemetry text-xs tabular-nums text-slate-500">
+        <span className="font-telemetry text-xs tabular-nums text-spire-label">
           Frames: {fmtIntEn(frameCount)} · Rows: {fmtIntEn(recordsLength)}
         </span>
       ) : null}
 
       {variant === "map" && run && frameCount !== null ? (
-        <span className="font-telemetry text-xs tabular-nums text-slate-500">
+        <span className="font-telemetry text-xs tabular-nums text-spire-label">
           Frames: {fmtIntEn(frameCount)}
         </span>
       ) : null}

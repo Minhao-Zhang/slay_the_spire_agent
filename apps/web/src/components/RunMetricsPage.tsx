@@ -1,4 +1,11 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
+import { Link } from "react-router-dom";
 import {
   Area,
   AreaChart,
@@ -18,45 +25,71 @@ import {
 } from "recharts";
 
 import { useRunMetricsData } from "../hooks/useRunMetricsData";
+import { useRunMetricsModel } from "../hooks/useRunMetricsModel";
 import {
   fmtFiniteIntLikeEn,
   fmtIntEn,
   fmtNumEn,
-  formatMonitorClassAscension,
   tickFmtIntEn,
   tickFmtNumberEn,
 } from "../lib/formatDisplayNumber";
+import { chartColors, PIE_COLORS } from "../lib/chartTheme";
 import {
-  actTransitionMidXs,
-  aiExecutedForSeries,
-  binNumeric,
-  buildEventIndexToFloorKey,
-  deriveAiRows,
-  deriveFloorAiAggRows,
-  deriveFloorCumulativeTokens,
-  deriveFloorStateAggRows,
-  deriveLatestPlayerRunLabel,
-  deriveStateRows,
-  parsePlayerClassAscFromRunName,
-  type AiRow,
   type BinnedNumeric,
   type FloorAiAggRow,
   type FloorStateAggRow,
   type MetricsSummary,
   type StateRow,
-  uncachedInputTokensForAiRow,
 } from "../lib/runMetricsDerive";
+import {
+  TelemetryChartPanel,
+  TelemetryTooltipFrame,
+} from "./metrics/TelemetryChartPanel";
 import { RunMetricsRunBar } from "./RunMetricsRunBar";
 
 const CHART_H = 220;
-const SLATE_AXIS = { stroke: "#64748b", fontSize: 11 };
-const GRID = { stroke: "#334155", strokeDasharray: "3 3" };
+const HERO_H = 112;
+const ESTIMATED_TPS_CHART_CAP = 200;
+const CHART_AXIS_TICK = { stroke: chartColors.axis, fontSize: 14 };
+const GRID = { stroke: chartColors.grid, strokeDasharray: "3 3" };
 
 const X_AXIS_EVENT_INDEX = {
-  ...SLATE_AXIS,
+  ...CHART_AXIS_TICK,
   tickFormatter: tickFmtIntEn,
 };
-const Y_AXIS_DEFAULT = { ...SLATE_AXIS, tickFormatter: tickFmtNumberEn };
+const Y_AXIS_DEFAULT = { ...CHART_AXIS_TICK, tickFormatter: tickFmtNumberEn };
+
+type MetricsTabId = "prog" | "ai" | "dist";
+
+const METRICS_TAB_ORDER: MetricsTabId[] = ["prog", "ai", "dist"];
+
+const METRICS_TAB_META: Record<
+  MetricsTabId,
+  { tabId: string; panelId: string; label: string }
+> = {
+  prog: {
+    tabId: "spire-metrics-tab-prog",
+    panelId: "spire-metrics-panel-prog",
+    label: "Progression",
+  },
+  ai: {
+    tabId: "spire-metrics-tab-ai",
+    panelId: "spire-metrics-panel-ai",
+    label: "AI cost and latency",
+  },
+  dist: {
+    tabId: "spire-metrics-tab-dist",
+    panelId: "spire-metrics-panel-dist",
+    label: "Distributions",
+  },
+};
+
+const METRICS_TAB_INACTIVE_CLS =
+  "text-[var(--text-label)] hover:text-[var(--text-primary)]";
+const METRICS_TAB_ACTIVE_CLS =
+  "bg-[color-mix(in_srgb,var(--accent-primary)_28%,transparent)] text-[var(--text-primary)]";
+const LEVEL_MODE_SELECTED_CLS =
+  "bg-[color-mix(in_srgb,var(--accent-primary)_24%,var(--bg-panel-raised))] text-[var(--text-primary)]";
 
 /** Raw token count with digit grouping (e.g. 1,234,567). */
 function fmtTokensCommas(n: number): string {
@@ -80,16 +113,6 @@ function yAxisTickSeconds(value: number): string {
   });
 }
 
-const PIE_COLORS = [
-  "#38bdf8",
-  "#a78bfa",
-  "#f472b6",
-  "#fbbf24",
-  "#34d399",
-  "#f87171",
-  "#94a3b8",
-];
-
 const CHART_MARGIN_TIGHT = { top: 8, right: 8, left: 0, bottom: 0 };
 const CHART_MARGIN_LEFT4 = { top: 8, right: 8, left: 4, bottom: 0 };
 const CHART_MARGIN_PIE = { top: 8, right: 8, bottom: 8, left: 8 };
@@ -99,8 +122,8 @@ const Y_LABEL_K_TOKENS = {
   value: "k tokens",
   angle: -90,
   position: "insideLeft" as const,
-  fill: "#64748b",
-  fontSize: 10,
+  fill: chartColors.axis,
+  fontSize: 13,
   dx: -4,
 };
 
@@ -108,8 +131,8 @@ const Y_LABEL_LATENCY_S = {
   value: "s",
   angle: -90,
   position: "insideLeft" as const,
-  fill: "#64748b",
-  fontSize: 10,
+  fill: chartColors.axis,
+  fontSize: 13,
   dx: -4,
 };
 
@@ -117,18 +140,15 @@ const Y_LABEL_TPS = {
   value: "tokens/s",
   angle: -90,
   position: "insideLeft" as const,
-  fill: "#64748b",
-  fontSize: 10,
+  fill: chartColors.axis,
+  fontSize: 13,
   dx: -4,
 };
 
-/** Y-axis max for estimated throughput chart (values above are clipped for display). */
-const ESTIMATED_TPS_CHART_CAP = 200;
-
-const X_AXIS_BAR_TICK = { fontSize: 9 };
+const X_AXIS_BAR_TICK = { fontSize: 12 };
 
 const X_AXIS_FLOOR_LEVEL = {
-  ...SLATE_AXIS,
+  ...CHART_AXIS_TICK,
   dataKey: "floor" as const,
   type: "number" as const,
   tickFormatter: tickFmtIntEn,
@@ -143,7 +163,7 @@ function FloorActDividerLines({ xs }: { xs: readonly number[] }) {
         <ReferenceLine
           key={`floor-act-${i}-${x}`}
           x={x}
-          stroke="#64748b"
+          stroke={chartColors.refLine}
           strokeWidth={2}
           strokeOpacity={0.9}
         />
@@ -161,13 +181,13 @@ function FloorLevelTooltipHeader(props: {
     typeof props.floor === "number" && Number.isFinite(props.floor);
   return (
     <>
-      <div className="font-mono text-slate-200">
+      <div className="font-mono text-[var(--text-primary)]">
         {hasFloor
           ? `Level ${fmtIntEn(Math.round(props.floor!))}`
           : props.floor_label ?? "Unknown"}
       </div>
       {props.act != null && Number.isFinite(props.act) && (
-        <div className="text-[10px] text-slate-500">
+        <div className="text-[13px] text-[var(--text-label)]">
           Act {fmtIntEn(Math.round(props.act))}
         </div>
       )}
@@ -213,12 +233,12 @@ function HistogramTooltipInput(tp: TooltipLite) {
   if (!tp.active || !tp.payload?.[0]) return null;
   const p = tp.payload[0].payload as BinnedNumeric;
   return (
-    <div className="rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+    <TelemetryTooltipFrame>
       <div className="tabular-nums">count: {fmtIntEn(p.count)}</div>
       <div>
         range: {fmtNumEn(p.lo, 2)}–{fmtNumEn(p.hi, 2)} tokens
       </div>
-    </div>
+    </TelemetryTooltipFrame>
   );
 }
 
@@ -226,21 +246,105 @@ function HistogramTooltipLatency(tp: TooltipLite) {
   if (!tp.active || !tp.payload?.[0]) return null;
   const p = tp.payload[0].payload as BinnedNumeric;
   return (
-    <div className="rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+    <TelemetryTooltipFrame>
       <div className="tabular-nums">count: {fmtIntEn(p.count)}</div>
       <div>
         range: {fmtNumEn(p.lo, 1)}–{fmtNumEn(p.hi, 1)} ms
       </div>
-    </div>
+    </TelemetryTooltipFrame>
   );
 }
 
 export function RunMetricsPage() {
   const [levelMode, setLevelMode] = useState<"event" | "floor">("event");
+  const [metricsTab, setMetricsTab] = useState<"prog" | "ai" | "dist">(() => {
+    try {
+      const t = sessionStorage.getItem("spireMetricsTab");
+      if (t === "prog" || t === "ai" || t === "dist") return t;
+    } catch {
+      /* ignore */
+    }
+    return "prog";
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("spireMetricsTab", metricsTab);
+    } catch {
+      /* ignore */
+    }
+  }, [metricsTab]);
+
+  const eventLevelBtnRef = useRef<HTMLButtonElement>(null);
+  const floorLevelBtnRef = useRef<HTMLButtonElement>(null);
+  const metricsTabBtnRef = useRef<
+    Record<MetricsTabId, HTMLButtonElement | null>
+  >({ prog: null, ai: null, dist: null });
+
+  const focusMetricsTabButton = useCallback((id: MetricsTabId) => {
+    queueMicrotask(() => {
+      metricsTabBtnRef.current[id]?.focus();
+    });
+  }, []);
+
+  const onMetricsTabListKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const i = METRICS_TAB_ORDER.indexOf(metricsTab);
+        const next = METRICS_TAB_ORDER[(i + 1) % METRICS_TAB_ORDER.length];
+        setMetricsTab(next);
+        focusMetricsTabButton(next);
+        return;
+      }
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const i = METRICS_TAB_ORDER.indexOf(metricsTab);
+        const next =
+          METRICS_TAB_ORDER[
+            (i - 1 + METRICS_TAB_ORDER.length) % METRICS_TAB_ORDER.length
+          ];
+        setMetricsTab(next);
+        focusMetricsTabButton(next);
+        return;
+      }
+      if (e.key === "Home") {
+        e.preventDefault();
+        setMetricsTab("prog");
+        focusMetricsTabButton("prog");
+        return;
+      }
+      if (e.key === "End") {
+        e.preventDefault();
+        setMetricsTab("dist");
+        focusMetricsTabButton("dist");
+      }
+    },
+    [metricsTab, focusMetricsTabButton],
+  );
+
+  const onLevelResolutionKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setLevelMode("floor");
+        queueMicrotask(() => floorLevelBtnRef.current?.focus());
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setLevelMode("event");
+        queueMicrotask(() => eventLevelBtnRef.current?.focus());
+      }
+    },
+    [],
+  );
+
   const {
     runs,
     run,
     setRun,
+    followLive,
+    setFollowLive,
+    dashboardSnapshot,
     loading,
     payload,
     frameCount,
@@ -248,157 +352,24 @@ export function RunMetricsPage() {
     parseErrors,
   } = useRunMetricsData();
 
-  const stateRows = useMemo(() => deriveStateRows(records), [records]);
-  const aiRows = useMemo(() => deriveAiRows(records), [records]);
-  const aiExec = useMemo(() => aiExecutedForSeries(aiRows), [aiRows]);
-  const floorStateAggs = useMemo(
-    () => deriveFloorStateAggRows(stateRows),
-    [stateRows],
-  );
-  const eventToFloorKey = useMemo(
-    () => buildEventIndexToFloorKey(stateRows),
-    [stateRows],
-  );
-  const floorAiAggs = useMemo(
-    () => deriveFloorAiAggRows(aiExec, eventToFloorKey, floorStateAggs),
-    [aiExec, eventToFloorKey, floorStateAggs],
-  );
-  const floorStateChartRows = useMemo(
-    () =>
-      floorStateAggs.filter(
-        (r): r is FloorStateAggRow & { floor: number } =>
-          typeof r.floor === "number" && Number.isFinite(r.floor),
-      ),
-    [floorStateAggs],
-  );
-  const floorStateActDividers = useMemo(
-    () => actTransitionMidXs(floorStateChartRows),
-    [floorStateChartRows],
-  );
-  const floorAiRowsNumeric = useMemo(
-    () =>
-      floorAiAggs.filter(
-        (r): r is FloorAiAggRow & { floor: number } =>
-          typeof r.floor === "number" && Number.isFinite(r.floor),
-      ),
-    [floorAiAggs],
-  );
-  const floorAiActDividers = useMemo(
-    () => actTransitionMidXs(floorAiRowsNumeric),
-    [floorAiRowsNumeric],
-  );
-  const floorCumulative = useMemo(
-    () => deriveFloorCumulativeTokens(floorAiRowsNumeric),
-    [floorAiRowsNumeric],
-  );
-  const floorAiChart = useMemo(
-    () =>
-      floorAiRowsNumeric.map((r) => ({
-        ...r,
-        sum_input_k: r.sum_input_tokens / 1000,
-        sum_output_k: r.sum_output_tokens / 1000,
-        mean_latency_s: (r.mean_latency_ms ?? 0) / 1000,
-      })),
-    [floorAiRowsNumeric],
-  );
+  const {
+    stateRows,
+    floorStateChartRows,
+    floorStateActDividers,
+    floorAiActDividers,
+    floorCumulative,
+    floorAiChart,
+    tokenSeries,
+    estimatedTpsSeries,
+    inputTokBins,
+    latencyBins,
+    statusPie,
+    aiRowCount,
+    summary,
+    executedInOutTokens,
+    playerRunLabelDisplay,
+  } = useRunMetricsModel(records, run, payload);
 
-  const tokenSeries = useMemo(
-    () =>
-      aiExec
-        .filter((r) => typeof r.event_index === "number")
-        .map((r) => {
-          const row = r as AiRow;
-          const input = numOrZero(r.input_tokens);
-          const output = numOrZero(r.output_tokens);
-          const total = numOrZero(r.total_tokens);
-          const cachedIn =
-            typeof r.cached_input_tokens === "number" &&
-            Number.isFinite(r.cached_input_tokens)
-              ? r.cached_input_tokens
-              : 0;
-          const uncachedIn = uncachedInputTokensForAiRow(row);
-          const latMs = numOrZero(r.latency_ms);
-          return {
-            event_index: r.event_index as number,
-            total_tokens: total,
-            input_tokens: input,
-            uncached_input_tokens: uncachedIn,
-            output_tokens: output,
-            cached_input_tokens: cachedIn,
-            input_k: input / 1000,
-            output_k: output / 1000,
-            total_k: total / 1000,
-            latency_ms: latMs,
-            latency_s: latMs / 1000,
-            decision_id: String(r.decision_id ?? "—"),
-            status: String(r.status ?? "—"),
-            llm_model_used: String(r.llm_model_used ?? "—"),
-            experiment_id: String(r.experiment_id ?? "—"),
-            strategist_ran: Boolean(r.strategist_ran),
-            timestamp: String(r.timestamp ?? "—"),
-          };
-        })
-        .sort((a, b) => a.event_index - b.event_index),
-    [aiExec],
-  );
-
-  /**
-   * Ballpark effective output throughput: output_tokens / request latency (not raw decode speed).
-   * Chart uses `estimated_tps_clipped` capped at ESTIMATED_TPS_CHART_CAP for display.
-   */
-  const estimatedTpsSeries = useMemo(
-    () =>
-      tokenSeries.map((p) => {
-        const lat = p.latency_ms;
-        const out = p.output_tokens;
-        const raw =
-          typeof lat === "number" &&
-          Number.isFinite(lat) &&
-          lat > 0 &&
-          typeof out === "number" &&
-          Number.isFinite(out) &&
-          out >= 0
-            ? (out * 1000) / lat
-            : null;
-        const clipped =
-          raw === null ? null : Math.min(ESTIMATED_TPS_CHART_CAP, raw);
-        return {
-          ...p,
-          estimated_tps_raw: raw,
-          estimated_tps_clipped: clipped,
-        };
-      }),
-    [tokenSeries],
-  );
-
-  const inputTokBins = useMemo(() => {
-    const vals = aiExec
-      .map((r) =>
-        typeof r.input_tokens === "number" ? r.input_tokens : null,
-      )
-      .filter((x): x is number => x !== null && x >= 0);
-    return binNumeric(vals, 12);
-  }, [aiExec]);
-
-  const latencyBins = useMemo(() => {
-    const vals = aiExec
-      .map((r) =>
-        typeof r.latency_ms === "number" ? r.latency_ms : null,
-      )
-      .filter((x): x is number => x !== null && x >= 0);
-    return binNumeric(vals, 12);
-  }, [aiExec]);
-
-  const statusPie = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const r of aiRows) {
-      const k = String(r.status ?? "unknown");
-      counts[k] = (counts[k] ?? 0) + 1;
-    }
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [aiRows]);
-
-  const aiRowCount = aiRows.length;
   const statusPieTooltipContent = useCallback(
     (tp: TooltipLite) => {
       if (!tp.active || !tp.payload?.[0]) return null;
@@ -408,103 +379,19 @@ export function RunMetricsPage() {
           ? fmtNumEn((d.value / aiRowCount) * 100, 1)
           : fmtNumEn(0, 1);
       return (
-        <div className="rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
-          <div className="font-medium text-slate-200">{d.name}</div>
+        <TelemetryTooltipFrame>
+          <div className="font-medium text-[var(--text-primary)]">{d.name}</div>
           <div className="tabular-nums">
             count: {fmtIntEn(d.value)} ({pct}%)
           </div>
-        </div>
+        </TelemetryTooltipFrame>
       );
     },
     [aiRowCount],
   );
 
-  const summary = payload?.ok === true ? payload.summary : undefined;
-
-  const executedInOutTokens = useMemo(() => {
-    const sIn = summary?.input_tokens_executed;
-    const sOut = summary?.output_tokens_executed;
-    const sCached = summary?.cached_input_tokens_executed;
-    const sUncached = summary?.uncached_input_tokens_executed;
-    if (typeof sIn === "number" && typeof sOut === "number") {
-      let cacheRead = typeof sCached === "number" ? sCached : 0;
-      if (typeof sCached !== "number") {
-        for (const r of aiExec) {
-          const tc = r.cached_input_tokens;
-          if (typeof tc === "number" && Number.isFinite(tc)) cacheRead += tc;
-        }
-      }
-      let uncached: number;
-      if (typeof sUncached === "number" && Number.isFinite(sUncached)) {
-        uncached = sUncached;
-      } else {
-        uncached = 0;
-        for (const r of aiExec) {
-          uncached += uncachedInputTokensForAiRow(r as AiRow);
-        }
-      }
-      const hasData =
-        (summary?.ai_executed_row_count ?? 0) > 0 ||
-        sIn > 0 ||
-        sOut > 0 ||
-        aiExec.length > 0;
-      return {
-        inputTotal: sIn,
-        uncached,
-        cacheRead,
-        output: sOut,
-        hasData,
-      };
-    }
-    let inputTotal = 0;
-    let output = 0;
-    let cacheRead = 0;
-    let uncached = 0;
-    for (const r of aiExec) {
-      const ti = r.input_tokens;
-      const to = r.output_tokens;
-      const tc = r.cached_input_tokens;
-      if (typeof ti === "number" && Number.isFinite(ti)) inputTotal += ti;
-      if (typeof to === "number" && Number.isFinite(to)) output += to;
-      if (typeof tc === "number" && Number.isFinite(tc)) cacheRead += tc;
-      uncached += uncachedInputTokensForAiRow(r as AiRow);
-    }
-    return {
-      inputTotal,
-      uncached,
-      cacheRead,
-      output,
-      hasData: aiExec.length > 0,
-    };
-  }, [summary, aiExec]);
-
-  const playerRunLabelDisplay = useMemo(() => {
-    const clsRaw = summary?.player_class;
-    const cls =
-      typeof clsRaw === "string" ? clsRaw.trim() : String(clsRaw ?? "").trim();
-    if (
-      cls &&
-      cls !== "Main Menu" &&
-      cls !== "?" &&
-      cls !== "-"
-    ) {
-      const asc = summary?.player_ascension;
-      const a =
-        typeof asc === "number" && Number.isFinite(asc) ? asc : 0;
-      return formatMonitorClassAscension(cls, a);
-    }
-    const fromRows = deriveLatestPlayerRunLabel(stateRows);
-    if (fromRows) return fromRows;
-    const parsed = run.trim()
-      ? parsePlayerClassAscFromRunName(run)
-      : null;
-    if (parsed)
-      return formatMonitorClassAscension(parsed.classId, parsed.ascension);
-    return "—";
-  }, [summary?.player_class, summary?.player_ascension, stateRows, run]);
-
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-[#0a0d11] to-[#06080a] text-sm text-slate-300">
+    <div className="metrics-page-bg min-h-screen text-sm text-[var(--text-primary)]">
       <RunMetricsRunBar
         runs={runs}
         run={run}
@@ -516,12 +403,47 @@ export function RunMetricsPage() {
           payload && !payload.ok ? payload.reason : null
         }
         variant="metrics"
+        followLive={followLive}
+        onFollowLiveChange={setFollowLive}
       />
 
       <main className="space-y-6 px-4 py-5">
+        {followLive &&
+        dashboardSnapshot &&
+        !dashboardSnapshot.active_log_run?.trim() ? (
+          <div
+            className="rounded border border-spire-warning/50 bg-spire-warning/15 px-3 py-2 text-xs text-spire-primary"
+            role="status"
+          >
+            <span className="font-semibold">Follow live:</span> dashboard
+            reports no active log run yet (between games or logging off).
+          </div>
+        ) : null}
+        {!followLive &&
+        dashboardSnapshot?.active_log_run?.trim() &&
+        run &&
+        dashboardSnapshot.active_log_run !== run &&
+        dashboardSnapshot.live_ingress ? (
+          <div
+            className="flex flex-wrap items-center gap-2 rounded border border-spire-secondary/40 bg-spire-secondary/12 px-3 py-2 text-xs text-spire-primary"
+            role="status"
+          >
+            <span>
+              Live session is writing{" "}
+              <span className="font-mono">{dashboardSnapshot.active_log_run}</span>
+              ; you are viewing <span className="font-mono">{run}</span>.
+            </span>
+            <Link
+              className="font-console font-semibold text-[var(--accent-primary)] underline"
+              to={`/metrics?run=${encodeURIComponent(dashboardSnapshot.active_log_run!)}&follow=1`}
+            >
+              Jump to live run
+            </Link>
+          </div>
+        ) : null}
         {parseErrors.length > 0 ? (
           <div
-            className="rounded border border-amber-800/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-100"
+            className="rounded border border-spire-warning/55 bg-spire-warning/18 px-3 py-2 text-xs text-spire-primary"
             role="alert"
           >
             <span className="font-semibold">Parse warnings: </span>
@@ -533,31 +455,47 @@ export function RunMetricsPage() {
         ) : null}
 
         {payload?.ok && records.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-3 rounded border border-slate-700/80 bg-slate-950/40 px-3 py-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <div className="flex flex-wrap items-center gap-3 rounded border border-[color-mix(in_srgb,var(--border-strong)_78%,transparent)] bg-[color-mix(in_srgb,var(--bg-canvas)_48%,transparent)] px-3 py-2">
+            <span
+              className="text-xs font-semibold uppercase tracking-wide text-[var(--text-label)]"
+              id="spire-resolution-label"
+            >
               Resolution
             </span>
-            <div className="inline-flex rounded border border-slate-600 bg-slate-900 p-0.5">
+            <div
+              role="radiogroup"
+              aria-labelledby="spire-resolution-label"
+              onKeyDown={onLevelResolutionKeyDown}
+              className="inline-flex rounded border border-[var(--border-subtle)] bg-spire-inset p-0.5"
+            >
               <button
+                ref={eventLevelBtnRef}
                 type="button"
+                role="radio"
+                aria-checked={levelMode === "event"}
+                tabIndex={levelMode === "event" ? 0 : -1}
                 onClick={() => setLevelMode("event")}
                 className={
                   "rounded px-3 py-1 font-console text-xs font-semibold uppercase tracking-wide transition " +
                   (levelMode === "event"
-                    ? "bg-slate-700 text-slate-100"
-                    : "text-slate-500 hover:text-slate-300")
+                    ? LEVEL_MODE_SELECTED_CLS
+                    : METRICS_TAB_INACTIVE_CLS)
                 }
               >
                 Event level
               </button>
               <button
+                ref={floorLevelBtnRef}
                 type="button"
+                role="radio"
+                aria-checked={levelMode === "floor"}
+                tabIndex={levelMode === "floor" ? 0 : -1}
                 onClick={() => setLevelMode("floor")}
                 className={
                   "rounded px-3 py-1 font-console text-xs font-semibold uppercase tracking-wide transition " +
                   (levelMode === "floor"
-                    ? "bg-slate-700 text-slate-100"
-                    : "text-slate-500 hover:text-slate-300")
+                    ? LEVEL_MODE_SELECTED_CLS
+                    : METRICS_TAB_INACTIVE_CLS)
                 }
               >
                 Floor level
@@ -637,13 +575,177 @@ export function RunMetricsPage() {
 
         {payload?.ok && records.length > 0 ? (
           <>
-            <section>
-              <h2 className="mb-3 font-console text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <div className="flex flex-col gap-3 rounded border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-panel)_45%,transparent)] p-3 sm:flex-row sm:items-center sm:justify-between">
+              <span className="font-console text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
+                Metrics groups
+              </span>
+              <div
+                role="tablist"
+                aria-label="Metrics chart groups"
+                onKeyDown={onMetricsTabListKeyDown}
+                className="inline-flex flex-wrap gap-1 rounded border border-[var(--border-subtle)] bg-spire-inset p-0.5"
+              >
+                {METRICS_TAB_ORDER.map((id) => {
+                  const { tabId, panelId, label } = METRICS_TAB_META[id];
+                  return (
+                    <button
+                      key={id}
+                      ref={(el) => {
+                        metricsTabBtnRef.current[id] = el;
+                      }}
+                      id={tabId}
+                      type="button"
+                      role="tab"
+                      aria-selected={metricsTab === id}
+                      tabIndex={metricsTab === id ? 0 : -1}
+                      aria-controls={
+                        metricsTab === id ? panelId : undefined
+                      }
+                      onClick={() => setMetricsTab(id)}
+                      className={
+                        "rounded px-3 py-1.5 font-console text-xs font-semibold uppercase tracking-wide transition " +
+                        (metricsTab === id
+                          ? METRICS_TAB_ACTIVE_CLS
+                          : METRICS_TAB_INACTIVE_CLS)
+                      }
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <TelemetryChartPanel
+              title="Run health"
+              caption={
+                levelMode === "event"
+                  ? "HP, gold, and floor vs event index."
+                  : "Mean HP, mean gold, and floor from floor aggregates."
+              }
+            >
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                {levelMode === "event" ? (
+                  <>
+                    <ResponsiveContainer width="100%" height={HERO_H}>
+                      <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
+                        <CartesianGrid {...GRID} />
+                        <XAxis dataKey="event_index" type="number" hide {...X_AXIS_EVENT_INDEX} />
+                        <YAxis hide width={0} />
+                        <Tooltip content={TooltipStateHp} isAnimationActive={false} />
+                        <Line
+                          type="monotone"
+                          dataKey="line_current_hp"
+                          stroke={chartColors.hp}
+                          dot={false}
+                          strokeWidth={1.5}
+                          isAnimationActive={false}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                    <ResponsiveContainer width="100%" height={HERO_H}>
+                      <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
+                        <CartesianGrid {...GRID} />
+                        <XAxis dataKey="event_index" type="number" hide {...X_AXIS_EVENT_INDEX} />
+                        <YAxis hide width={0} />
+                        <Tooltip content={TooltipStateGold} isAnimationActive={false} />
+                        <Line
+                          type="monotone"
+                          dataKey="line_gold"
+                          stroke={chartColors.gold}
+                          dot={false}
+                          strokeWidth={1.5}
+                          isAnimationActive={false}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                    <ResponsiveContainer width="100%" height={HERO_H}>
+                      <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
+                        <CartesianGrid {...GRID} />
+                        <XAxis dataKey="event_index" type="number" hide {...X_AXIS_EVENT_INDEX} />
+                        <YAxis hide width={0} />
+                        <Tooltip content={TooltipStateFloor} isAnimationActive={false} />
+                        <Line
+                          type="stepAfter"
+                          dataKey="line_floor"
+                          stroke={chartColors.floor}
+                          dot={false}
+                          strokeWidth={1.5}
+                          isAnimationActive={false}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </>
+                ) : (
+                  <>
+                    <ResponsiveContainer width="100%" height={HERO_H}>
+                      <LineChart data={floorStateChartRows} margin={CHART_MARGIN_TIGHT}>
+                        <CartesianGrid {...GRID} />
+                        <XAxis {...X_AXIS_FLOOR_LEVEL} hide />
+                        <YAxis hide width={0} />
+                        <Tooltip content={TooltipFloorStateHp} isAnimationActive={false} />
+                        <Line
+                          type="monotone"
+                          dataKey="mean_current_hp"
+                          stroke={chartColors.hp}
+                          dot={false}
+                          strokeWidth={1.5}
+                          isAnimationActive={false}
+                        />
+                        <FloorActDividerLines xs={floorStateActDividers} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                    <ResponsiveContainer width="100%" height={HERO_H}>
+                      <LineChart data={floorStateChartRows} margin={CHART_MARGIN_TIGHT}>
+                        <CartesianGrid {...GRID} />
+                        <XAxis {...X_AXIS_FLOOR_LEVEL} hide />
+                        <YAxis hide width={0} />
+                        <Tooltip content={TooltipFloorStateGold} isAnimationActive={false} />
+                        <Line
+                          type="monotone"
+                          dataKey="mean_gold"
+                          stroke={chartColors.gold}
+                          dot={false}
+                          strokeWidth={1.5}
+                          isAnimationActive={false}
+                        />
+                        <FloorActDividerLines xs={floorStateActDividers} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                    <ResponsiveContainer width="100%" height={HERO_H}>
+                      <LineChart data={floorStateChartRows} margin={CHART_MARGIN_TIGHT}>
+                        <CartesianGrid {...GRID} />
+                        <XAxis {...X_AXIS_FLOOR_LEVEL} hide />
+                        <YAxis hide width={0} />
+                        <Tooltip content={HeroFloorSparkTooltip} isAnimationActive={false} />
+                        <Line
+                          type="stepAfter"
+                          dataKey="floor"
+                          stroke={chartColors.floor}
+                          dot={false}
+                          strokeWidth={1.5}
+                          isAnimationActive={false}
+                        />
+                        <FloorActDividerLines xs={floorStateActDividers} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </>
+                )}
+              </div>
+            </TelemetryChartPanel>
+
+            {metricsTab === "prog" ? (
+            <section
+              id={METRICS_TAB_META.prog.panelId}
+              role="tabpanel"
+              aria-labelledby={METRICS_TAB_META.prog.tabId}
+            >
+              <h2 className="mb-3 font-console text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 Progression
               </h2>
               {levelMode === "event" ? (
               <div className="grid gap-6 lg:grid-cols-2">
-                <ChartCard title="HP & Max HP">
+                <TelemetryChartPanel title="HP & Max HP">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -657,7 +759,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="line_current_hp"
                         name="current_hp"
-                        stroke="#f87171"
+                        stroke={chartColors.hp}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -667,7 +769,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="line_max_hp"
                         name="max_hp"
-                        stroke="#94a3b8"
+                        stroke={chartColors.maxHp}
                         dot={false}
                         strokeWidth={1.5}
                         connectNulls
@@ -675,8 +777,8 @@ export function RunMetricsPage() {
                       />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Gold">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Gold">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -690,7 +792,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="line_gold"
                         name="gold"
-                        stroke="#fbbf24"
+                        stroke={chartColors.gold}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -698,8 +800,8 @@ export function RunMetricsPage() {
                       />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Floor">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Floor">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -713,7 +815,7 @@ export function RunMetricsPage() {
                         type="stepAfter"
                         dataKey="line_floor"
                         name="floor"
-                        stroke="#38bdf8"
+                        stroke={chartColors.floor}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -721,8 +823,8 @@ export function RunMetricsPage() {
                       />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Legal actions">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Legal actions">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -736,7 +838,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="line_legal_action_count"
                         name="legal_action_count"
-                        stroke="#a78bfa"
+                        stroke={chartColors.legal}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -744,8 +846,8 @@ export function RunMetricsPage() {
                       />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Enemy HP (sum)">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Enemy HP (sum)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -759,7 +861,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="monster_hp_sum"
                         name="enemy_hp_sum"
-                        stroke="#f472b6"
+                        stroke={chartColors.enemy}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -767,8 +869,8 @@ export function RunMetricsPage() {
                       />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Hand size">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Hand size">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -782,15 +884,15 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="hand_size"
                         name="hand_size"
-                        stroke="#34d399"
+                        stroke={chartColors.hand}
                         dot={false}
                         strokeWidth={2}
                         isAnimationActive={false}
                       />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Deck size">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Deck size">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -804,7 +906,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="line_deck_size"
                         name="deck_size"
-                        stroke="#38bdf8"
+                        stroke={chartColors.deck}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -812,8 +914,8 @@ export function RunMetricsPage() {
                       />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Relics">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Relics">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={stateRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -827,7 +929,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="line_relic_count"
                         name="relic_count"
-                        stroke="#c084fc"
+                        stroke={chartColors.relic}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -835,11 +937,11 @@ export function RunMetricsPage() {
                       />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
+                </TelemetryChartPanel>
               </div>
             ) : (
               <div className="grid gap-6 lg:grid-cols-2">
-                <ChartCard title="HP (mean)">
+                <TelemetryChartPanel title="HP (mean)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={floorStateChartRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -853,7 +955,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="mean_current_hp"
                         name="mean_current_hp"
-                        stroke="#f87171"
+                        stroke={chartColors.hp}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -862,8 +964,8 @@ export function RunMetricsPage() {
                       <FloorActDividerLines xs={floorStateActDividers} />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Max HP (mean)">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Max HP (mean)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={floorStateChartRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -877,7 +979,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="mean_max_hp"
                         name="mean_max_hp"
-                        stroke="#94a3b8"
+                        stroke={chartColors.maxHp}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -886,8 +988,8 @@ export function RunMetricsPage() {
                       <FloorActDividerLines xs={floorStateActDividers} />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Gold (mean)">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Gold (mean)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={floorStateChartRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -898,7 +1000,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="mean_gold"
                         name="mean_gold"
-                        stroke="#fbbf24"
+                        stroke={chartColors.gold}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -907,8 +1009,8 @@ export function RunMetricsPage() {
                       <FloorActDividerLines xs={floorStateActDividers} />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Legal Actions (mean)">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Legal Actions (mean)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={floorStateChartRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -919,7 +1021,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="mean_legal"
                         name="mean_legal"
-                        stroke="#a78bfa"
+                        stroke={chartColors.legal}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -928,8 +1030,8 @@ export function RunMetricsPage() {
                       <FloorActDividerLines xs={floorStateActDividers} />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Enemy HP (mean)">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Enemy HP (mean)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={floorStateChartRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -940,7 +1042,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="mean_monster_hp_sum"
                         name="mean_enemy_hp_sum"
-                        stroke="#f472b6"
+                        stroke={chartColors.enemy}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -949,8 +1051,8 @@ export function RunMetricsPage() {
                       <FloorActDividerLines xs={floorStateActDividers} />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Hand size (mean)">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Hand size (mean)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={floorStateChartRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -961,7 +1063,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="mean_hand_size"
                         name="mean_hand_size"
-                        stroke="#34d399"
+                        stroke={chartColors.hand}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -970,8 +1072,8 @@ export function RunMetricsPage() {
                       <FloorActDividerLines xs={floorStateActDividers} />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Deck size (min)">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Deck size (min)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={floorStateChartRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -982,7 +1084,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="min_deck_size"
                         name="min_deck_size"
-                        stroke="#38bdf8"
+                        stroke={chartColors.deck}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -991,8 +1093,8 @@ export function RunMetricsPage() {
                       <FloorActDividerLines xs={floorStateActDividers} />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Relics (min)">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Relics (min)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={floorStateChartRows} margin={CHART_MARGIN_TIGHT}>
                       <CartesianGrid {...GRID} />
@@ -1003,7 +1105,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="min_relic_count"
                         name="min_relic_count"
-                        stroke="#c084fc"
+                        stroke={chartColors.relic}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -1012,18 +1114,24 @@ export function RunMetricsPage() {
                       <FloorActDividerLines xs={floorStateActDividers} />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
+                </TelemetryChartPanel>
               </div>
             )}
             </section>
+            ) : null}
 
-            <section>
-              <h2 className="mb-4 font-console text-xs font-semibold uppercase tracking-wide text-slate-400">
+            {metricsTab === "ai" ? (
+            <section
+              id={METRICS_TAB_META.ai.panelId}
+              role="tabpanel"
+              aria-labelledby={METRICS_TAB_META.ai.tabId}
+            >
+              <h2 className="mb-4 font-console text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 AI decisions
               </h2>
               {levelMode === "event" ? (
               <div className="grid gap-6 lg:grid-cols-2">
-                <ChartCard title="Input (k/call)">
+                <TelemetryChartPanel title="Input (k/call)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={tokenSeries} margin={CHART_MARGIN_LEFT4}>
                       <CartesianGrid {...GRID} />
@@ -1042,15 +1150,15 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="input_k"
                         name="input_k"
-                        stroke="#818cf8"
+                        stroke={chartColors.aiInput}
                         dot={false}
                         strokeWidth={2}
                         isAnimationActive={false}
                       />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Output (k/call)">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Output (k/call)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={tokenSeries} margin={CHART_MARGIN_LEFT4}>
                       <CartesianGrid {...GRID} />
@@ -1069,15 +1177,15 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="output_k"
                         name="output_k"
-                        stroke="#c084fc"
+                        stroke={chartColors.aiOutput}
                         dot={false}
                         strokeWidth={2}
                         isAnimationActive={false}
                       />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Estimated output tokens / s (clipped at 200)">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Estimated output tokens / s (clipped at 200)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={estimatedTpsSeries} margin={CHART_MARGIN_LEFT4}>
                       <CartesianGrid {...GRID} />
@@ -1096,7 +1204,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="estimated_tps_clipped"
                         name="estimated_tps_clipped"
-                        stroke="#22d3ee"
+                        stroke={chartColors.throughput}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -1104,8 +1212,8 @@ export function RunMetricsPage() {
                       />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Latency (s)">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Latency (s)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={tokenSeries} margin={CHART_MARGIN_LEFT4}>
                       <CartesianGrid {...GRID} />
@@ -1124,7 +1232,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="latency_s"
                         name="latency_s"
-                        stroke="#fbbf24"
+                        stroke={chartColors.latency}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -1132,11 +1240,11 @@ export function RunMetricsPage() {
                       />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
+                </TelemetryChartPanel>
               </div>
               ) : (
               <div className="grid gap-6 lg:grid-cols-2">
-                <ChartCard title="Input total (k/floor)">
+                <TelemetryChartPanel title="Input total (k/floor)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={floorAiChart} margin={CHART_MARGIN_LEFT4}>
                       <CartesianGrid {...GRID} />
@@ -1147,7 +1255,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="sum_input_k"
                         name="sum_input_k"
-                        stroke="#818cf8"
+                        stroke={chartColors.aiInput}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -1156,8 +1264,8 @@ export function RunMetricsPage() {
                       <FloorActDividerLines xs={floorAiActDividers} />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Output total (k/floor)">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Output total (k/floor)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={floorAiChart} margin={CHART_MARGIN_LEFT4}>
                       <CartesianGrid {...GRID} />
@@ -1168,7 +1276,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="sum_output_k"
                         name="sum_output_k"
-                        stroke="#c084fc"
+                        stroke={chartColors.aiOutput}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -1177,20 +1285,20 @@ export function RunMetricsPage() {
                       <FloorActDividerLines xs={floorAiActDividers} />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Cumulative (k) by floor">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Cumulative (k) by floor">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <AreaChart data={floorCumulative} margin={CHART_MARGIN_LEFT4}>
                       <CartesianGrid {...GRID} />
                       <XAxis {...X_AXIS_FLOOR_LEVEL} />
                       <YAxis {...Y_AXIS_DEFAULT} tickFormatter={yAxisTickKTokens} width={56} label={Y_LABEL_K_TOKENS} />
                       <Tooltip content={TooltipFloorCumulative} isAnimationActive={false} />
-                      <Area type="monotone" dataKey="cumulative_total_k" name="cumulative_k" stroke="#22d3ee" fill="#22d3ee33" strokeWidth={2} isAnimationActive={false} />
+                      <Area type="monotone" dataKey="cumulative_total_k" name="cumulative_k" stroke={chartColors.cumulativeStroke} fill={chartColors.cumulativeFill} strokeWidth={2} isAnimationActive={false} />
                       <FloorActDividerLines xs={floorAiActDividers} />
                     </AreaChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Latency mean (s/floor)">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Latency mean (s/floor)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <LineChart data={floorAiChart} margin={CHART_MARGIN_LEFT4}>
                       <CartesianGrid {...GRID} />
@@ -1201,7 +1309,7 @@ export function RunMetricsPage() {
                         type="monotone"
                         dataKey="mean_latency_s"
                         name="mean_latency_s"
-                        stroke="#fbbf24"
+                        stroke={chartColors.latency}
                         dot={false}
                         strokeWidth={2}
                         connectNulls
@@ -1210,19 +1318,25 @@ export function RunMetricsPage() {
                       <FloorActDividerLines xs={floorAiActDividers} />
                     </LineChart>
                   </ResponsiveContainer>
-                </ChartCard>
+                </TelemetryChartPanel>
               </div>
               )}
             </section>
+            ) : null}
 
-            <section>
-              <h2 className="mb-3 font-console text-xs font-semibold uppercase tracking-wide text-slate-400">
+            {metricsTab === "dist" ? (
+            <section
+              id={METRICS_TAB_META.dist.panelId}
+              role="tabpanel"
+              aria-labelledby={METRICS_TAB_META.dist.tabId}
+            >
+              <h2 className="mb-3 font-console text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 Distributions
               </h2>
               <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
-                <ChartCard title="AI status">
+                <TelemetryChartPanel title="AI status">
                   {statusPie.length === 0 ? (
-                    <p className="py-8 text-center text-xs text-slate-500">
+                    <p className="py-8 text-center text-xs text-[var(--text-label)]">
                       No AI decision rows.
                     </p>
                   ) : (
@@ -1252,14 +1366,14 @@ export function RunMetricsPage() {
                       </PieChart>
                     </ResponsiveContainer>
                   )}
-                </ChartCard>
-                <ChartCard title="Input tokens (histogram)">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Input tokens (histogram)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <BarChart data={inputTokBins} margin={CHART_MARGIN_BAR}>
                       <CartesianGrid {...GRID} />
                       <XAxis
                         dataKey="label"
-                        {...SLATE_AXIS}
+                        {...CHART_AXIS_TICK}
                         angle={-25}
                         textAnchor="end"
                         height={48}
@@ -1273,20 +1387,20 @@ export function RunMetricsPage() {
                       />
                       <Bar
                         dataKey="count"
-                        fill="#818cf8"
+                        fill={chartColors.histInput}
                         radius={[4, 4, 0, 0]}
                         isAnimationActive={false}
                       />
                     </BarChart>
                   </ResponsiveContainer>
-                </ChartCard>
-                <ChartCard title="Latency (histogram, ms)">
+                </TelemetryChartPanel>
+                <TelemetryChartPanel title="Latency (histogram, ms)">
                   <ResponsiveContainer width="100%" height={CHART_H}>
                     <BarChart data={latencyBins} margin={CHART_MARGIN_BAR}>
                       <CartesianGrid {...GRID} />
                       <XAxis
                         dataKey="label"
-                        {...SLATE_AXIS}
+                        {...CHART_AXIS_TICK}
                         angle={-25}
                         textAnchor="end"
                         height={48}
@@ -1300,25 +1414,21 @@ export function RunMetricsPage() {
                       />
                       <Bar
                         dataKey="count"
-                        fill="#f472b6"
+                        fill={chartColors.histLatency}
                         radius={[4, 4, 0, 0]}
                         isAnimationActive={false}
                       />
                     </BarChart>
                   </ResponsiveContainer>
-                </ChartCard>
+                </TelemetryChartPanel>
               </div>
             </section>
+            ) : null}
           </>
         ) : null}
       </main>
     </div>
   );
-}
-
-function numOrZero(v: unknown): number {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  return 0;
 }
 
 function latencyMeanMedianSecondsKpi(summary: MetricsSummary): string {
@@ -1382,45 +1492,17 @@ function Kpi({
   return (
     <div
       className={
-        "rounded border border-slate-700/80 bg-slate-950/50 px-3 py-2 " +
+        "rounded border border-[color-mix(in_srgb,var(--border-strong)_78%,transparent)] bg-[color-mix(in_srgb,var(--bg-canvas)_52%,transparent)] px-3 py-2 " +
         className
       }
       title={title}
     >
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+      <div className="text-[13px] font-semibold uppercase tracking-wide text-[var(--text-label)]">
         {label}
       </div>
-      <div className="font-telemetry mt-0.5 text-lg tabular-nums text-slate-100">
+      <div className="font-telemetry mt-0.5 text-lg tabular-nums text-[var(--text-primary)]">
         {value}
       </div>
-    </div>
-  );
-}
-
-function ChartCard({
-  title,
-  caption,
-  children,
-  className = "",
-}: {
-  title: string;
-  caption?: ReactNode;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={`rounded border border-slate-700/80 bg-slate-950/40 p-3 ${className}`}>
-      <h3
-        className={`font-console text-[11px] font-semibold uppercase tracking-wide text-slate-400 ${caption ? "mb-1" : "mb-2"}`}
-      >
-        {title}
-      </h3>
-      {caption ? (
-        <p className="mb-2 text-[10px] font-normal normal-case leading-snug text-slate-500">
-          {caption}
-        </p>
-      ) : null}
-      {children}
     </div>
   );
 }
@@ -1442,12 +1524,12 @@ function StateTooltip({
       ? `${row.state_id.slice(0, 28)}…`
       : row.state_id;
   return (
-    <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
-      <div className="font-mono text-slate-200">
+    <TelemetryTooltipFrame>
+      <div className="font-mono text-[var(--text-primary)]">
         Event {fmtIntEn(row.event_index)}
       </div>
-      <div className="text-slate-400">{row.timestamp}</div>
-      <div className="truncate text-slate-500" title={row.state_id}>
+      <div className="text-[var(--text-muted)]">{row.timestamp}</div>
+      <div className="truncate text-[var(--text-label)]" title={row.state_id}>
         State: {sid}
       </div>
       {keys.includes("hp") ? (
@@ -1474,7 +1556,7 @@ function StateTooltip({
       {keys.includes("legal") ? (
         <>
           <div>Legal actions: {fmtNumEn(row.vm.legal_action_count)}</div>
-          <div className="break-all font-mono text-[10px] text-slate-500">
+          <div className="break-all font-mono text-[13px] text-[var(--text-label)]">
             Fingerprint: {row.vm.legal_commands_fingerprint ?? "—"}
           </div>
         </>
@@ -1483,11 +1565,11 @@ function StateTooltip({
         <>
           <div>Enemy HP sum: {fmtNumEn(row.monster_hp_sum)}</div>
           {row.monster_tooltip ? (
-            <pre className="mt-1 whitespace-pre-wrap text-[10px] text-slate-400">
+            <pre className="mt-1 whitespace-pre-wrap text-[13px] text-[var(--text-muted)]">
               {row.monster_tooltip}
             </pre>
           ) : (
-            <div className="text-slate-500">No enemies in snapshot</div>
+            <div className="text-[var(--text-label)]">No enemies in snapshot</div>
           )}
         </>
       ) : null}
@@ -1499,7 +1581,7 @@ function StateTooltip({
               ? fmtIntEn(row.hand_size)
               : String(row.hand_size)}
           </div>
-          <div className="text-[10px] text-slate-400">{row.hand_names_preview}</div>
+          <div className="text-[13px] text-[var(--text-muted)]">{row.hand_names_preview}</div>
         </>
       ) : null}
       {keys.includes("deck") ? (
@@ -1508,7 +1590,7 @@ function StateTooltip({
       {keys.includes("relic") ? (
         <div>Relics: {fmtNumEn(row.line_relic_count)}</div>
       ) : null}
-    </div>
+    </TelemetryTooltipFrame>
   );
 }
 
@@ -1528,45 +1610,45 @@ function AiTokenTooltip({
   const rawCached = Number(p.cached_input_tokens) || 0;
   const rawUncached = Number(p.uncached_input_tokens) || 0;
   return (
-    <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+    <TelemetryTooltipFrame>
       <div className="font-mono">
         Event {fmtFiniteIntLikeEn(p.event_index)}
       </div>
       <div>Decision: {String(p.decision_id)}</div>
-      <div className="mt-1 text-slate-400">This call</div>
-      <div className="tabular-nums text-slate-100">
+      <div className="mt-1 text-[var(--text-muted)]">This call</div>
+      <div className="tabular-nums text-[var(--text-primary)]">
         prompt in (total): {fmtTokensCommas(rawIn)} tokens
       </div>
-      <div className="tabular-nums text-slate-100">
+      <div className="tabular-nums text-[var(--text-primary)]">
         non-cached: {fmtTokensCommas(rawUncached)} tokens
       </div>
       {rawCached > 0 ? (
-        <div className="tabular-nums text-slate-100">
+        <div className="tabular-nums text-[var(--text-primary)]">
           cache hits: {fmtTokensCommas(rawCached)} tokens
         </div>
       ) : null}
-      <div className="tabular-nums text-slate-100">
+      <div className="tabular-nums text-[var(--text-primary)]">
         output: {fmtTokensCommas(rawOut)} tokens
       </div>
-      <div className="tabular-nums text-slate-100">
+      <div className="tabular-nums text-[var(--text-primary)]">
         total: {fmtTokensCommas(rawTot)} tokens
       </div>
-      <div className="mt-1 border-t border-slate-700 pt-1 text-slate-400">Latency</div>
-      <div className="tabular-nums text-slate-100">
+      <div className="mt-1 border-t border-[var(--border-subtle)] pt-1 text-[var(--text-muted)]">Latency</div>
+      <div className="tabular-nums text-[var(--text-primary)]">
         total (request→done): {fmtTokensCommas(Number(p.latency_ms) || 0)} ms
       </div>
       <div>status: {String(p.status)}</div>
       <div className="truncate" title={String(p.llm_model_used)}>
         model: {String(p.llm_model_used)}
       </div>
-      <div className="truncate text-[10px] text-slate-500" title={String(p.experiment_id)}>
+      <div className="truncate text-[13px] text-[var(--text-label)]" title={String(p.experiment_id)}>
         experiment: {String(p.experiment_id)}
       </div>
-      <div className="text-[10px] text-slate-500">
+      <div className="text-[13px] text-[var(--text-label)]">
         strategist: {p.strategist_ran ? "yes" : "no"}
       </div>
-      <div className="text-[10px] text-slate-500">{String(p.timestamp)}</div>
-    </div>
+      <div className="text-[13px] text-[var(--text-label)]">{String(p.timestamp)}</div>
+    </TelemetryTooltipFrame>
   );
 }
 
@@ -1582,20 +1664,20 @@ function LatencySecondsTooltip({
   if (!p) return null;
   const ms = Number(p.latency_ms) || 0;
   return (
-    <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+    <TelemetryTooltipFrame>
       <div className="font-mono">
         Event {fmtFiniteIntLikeEn(p.event_index)}
       </div>
       <div>Decision: {String(p.decision_id)}</div>
-      <div className="mt-1 text-slate-400">Latency</div>
-      <div className="tabular-nums text-slate-100">
+      <div className="mt-1 text-[var(--text-muted)]">Latency</div>
+      <div className="tabular-nums text-[var(--text-primary)]">
         total: {fmtTokensCommas(ms)} ms
       </div>
       <div>status: {String(p.status)}</div>
-      <div className="truncate text-[10px] text-slate-500" title={String(p.llm_model_used)}>
+      <div className="truncate text-[13px] text-[var(--text-label)]" title={String(p.llm_model_used)}>
         {String(p.llm_model_used)}
       </div>
-    </div>
+    </TelemetryTooltipFrame>
   );
 }
 
@@ -1621,46 +1703,63 @@ function EstimatedTpsTooltip({
   const ms = Number(p.latency_ms) || 0;
   const out = Number(p.output_tokens) || 0;
   return (
-    <div className="max-w-xs rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
-      <div className="font-mono text-slate-200">
+    <TelemetryTooltipFrame>
+      <div className="font-mono text-[var(--text-primary)]">
         Event {fmtFiniteIntLikeEn(p.event_index)}
       </div>
-      <div className="mt-1 border-t border-slate-700 pt-1 text-slate-400">
+      <div className="mt-1 border-t border-[var(--border-subtle)] pt-1 text-[var(--text-muted)]">
         Ballpark throughput (output ÷ latency)
       </div>
       {rawNum === null ? (
-        <div className="text-slate-500">No estimate (missing latency or tokens).</div>
+        <div className="text-[var(--text-label)]">No estimate (missing latency or tokens).</div>
       ) : (
         <>
-          <div className="tabular-nums text-slate-100">
+          <div className="tabular-nums text-[var(--text-primary)]">
             Raw: {fmtNumEn(rawNum, 1)} t/s
             {isClipped ? (
-              <span className="text-amber-400/90">
+              <span className="text-spire-warning">
                 {" "}
                 — chart clipped at {fmtIntEn(ESTIMATED_TPS_CHART_CAP)} t/s
               </span>
             ) : null}
           </div>
           {clippedNum !== null && isClipped ? (
-            <div className="tabular-nums text-slate-400">
+            <div className="tabular-nums text-[var(--text-muted)]">
               Plotted: {fmtNumEn(clippedNum, 1)} t/s
             </div>
           ) : null}
         </>
       )}
-      <div className="mt-1 border-t border-slate-700 pt-1 text-slate-400">
+      <div className="mt-1 border-t border-[var(--border-subtle)] pt-1 text-[var(--text-muted)]">
         Basis
       </div>
-      <div className="tabular-nums text-slate-100">
+      <div className="tabular-nums text-[var(--text-primary)]">
         Output: {fmtTokensCommas(out)} tok · Latency: {fmtTokensCommas(ms)} ms
       </div>
-      <div className="mt-1 text-[10px] text-slate-500">
+      <div className="mt-1 text-[13px] text-[var(--text-label)]">
         Full request time, not decode-only speed.
       </div>
-      <div className="mt-1 truncate text-[10px] text-slate-500" title={String(p.decision_id)}>
+      <div className="mt-1 truncate text-[13px] text-[var(--text-label)]" title={String(p.decision_id)}>
         {String(p.decision_id)}
       </div>
-    </div>
+    </TelemetryTooltipFrame>
+  );
+}
+
+function HeroFloorSparkTooltip(tp: TooltipLite) {
+  if (!tp.active || !tp.payload?.[0]) return null;
+  const row = tp.payload[0].payload as FloorStateAggRow & { floor: number };
+  return (
+    <TelemetryTooltipFrame>
+      <FloorLevelTooltipHeader
+        floor={row.floor}
+        act={row.act}
+        floor_label={row.floor_label}
+      />
+      <div className="tabular-nums text-[var(--text-primary)]">
+        Floor {fmtNumEn(Math.round(row.floor))}
+      </div>
+    </TelemetryTooltipFrame>
   );
 }
 
@@ -1668,15 +1767,15 @@ function TooltipFloorStateHp(tp: TooltipLite) {
   if (!tp.active || !tp.payload?.[0]) return null;
   const row = tp.payload[0].payload as FloorStateAggRow;
   return (
-    <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+    <TelemetryTooltipFrame>
       <FloorLevelTooltipHeader
         floor={row.floor}
         act={row.act}
         floor_label={row.floor_label}
       />
-      <div className="text-slate-400">HP (mean)</div>
+      <div className="text-[var(--text-muted)]">HP (mean)</div>
       <div className="tabular-nums">{fmtNumEn(row.mean_current_hp)}</div>
-    </div>
+    </TelemetryTooltipFrame>
   );
 }
 
@@ -1684,15 +1783,15 @@ function TooltipFloorStateMaxHp(tp: TooltipLite) {
   if (!tp.active || !tp.payload?.[0]) return null;
   const row = tp.payload[0].payload as FloorStateAggRow;
   return (
-    <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+    <TelemetryTooltipFrame>
       <FloorLevelTooltipHeader
         floor={row.floor}
         act={row.act}
         floor_label={row.floor_label}
       />
-      <div className="text-slate-400">Max HP (mean)</div>
+      <div className="text-[var(--text-muted)]">Max HP (mean)</div>
       <div className="tabular-nums">{fmtNumEn(row.mean_max_hp)}</div>
-    </div>
+    </TelemetryTooltipFrame>
   );
 }
 
@@ -1700,14 +1799,14 @@ function TooltipFloorStateGold(tp: TooltipLite) {
   if (!tp.active || !tp.payload?.[0]) return null;
   const row = tp.payload[0].payload as FloorStateAggRow;
   return (
-    <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+    <TelemetryTooltipFrame>
       <FloorLevelTooltipHeader
         floor={row.floor}
         act={row.act}
         floor_label={row.floor_label}
       />
       <div className="tabular-nums">Gold (mean): {fmtNumEn(row.mean_gold)}</div>
-    </div>
+    </TelemetryTooltipFrame>
   );
 }
 
@@ -1715,7 +1814,7 @@ function TooltipFloorStateLegal(tp: TooltipLite) {
   if (!tp.active || !tp.payload?.[0]) return null;
   const row = tp.payload[0].payload as FloorStateAggRow;
   return (
-    <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+    <TelemetryTooltipFrame>
       <FloorLevelTooltipHeader
         floor={row.floor}
         act={row.act}
@@ -1724,7 +1823,7 @@ function TooltipFloorStateLegal(tp: TooltipLite) {
       <div className="tabular-nums">
         Legal Actions (mean): {fmtNumEn(row.mean_legal)}
       </div>
-    </div>
+    </TelemetryTooltipFrame>
   );
 }
 
@@ -1732,7 +1831,7 @@ function TooltipFloorStateMonsters(tp: TooltipLite) {
   if (!tp.active || !tp.payload?.[0]) return null;
   const row = tp.payload[0].payload as FloorStateAggRow;
   return (
-    <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+    <TelemetryTooltipFrame>
       <FloorLevelTooltipHeader
         floor={row.floor}
         act={row.act}
@@ -1741,7 +1840,7 @@ function TooltipFloorStateMonsters(tp: TooltipLite) {
       <div className="tabular-nums">
         Enemy HP (mean): {fmtNumEn(row.mean_monster_hp_sum)}
       </div>
-    </div>
+    </TelemetryTooltipFrame>
   );
 }
 
@@ -1749,7 +1848,7 @@ function TooltipFloorStateHand(tp: TooltipLite) {
   if (!tp.active || !tp.payload?.[0]) return null;
   const row = tp.payload[0].payload as FloorStateAggRow;
   return (
-    <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+    <TelemetryTooltipFrame>
       <FloorLevelTooltipHeader
         floor={row.floor}
         act={row.act}
@@ -1758,7 +1857,7 @@ function TooltipFloorStateHand(tp: TooltipLite) {
       <div className="tabular-nums">
         Hand (mean): {fmtNumEn(row.mean_hand_size, 2)}
       </div>
-    </div>
+    </TelemetryTooltipFrame>
   );
 }
 
@@ -1766,7 +1865,7 @@ function TooltipFloorStateDeck(tp: TooltipLite) {
   if (!tp.active || !tp.payload?.[0]) return null;
   const row = tp.payload[0].payload as FloorStateAggRow;
   return (
-    <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+    <TelemetryTooltipFrame>
       <FloorLevelTooltipHeader
         floor={row.floor}
         act={row.act}
@@ -1775,7 +1874,7 @@ function TooltipFloorStateDeck(tp: TooltipLite) {
       <div className="tabular-nums">
         Deck size (min): {fmtNumEn(row.min_deck_size)}
       </div>
-    </div>
+    </TelemetryTooltipFrame>
   );
 }
 
@@ -1783,7 +1882,7 @@ function TooltipFloorStateRelic(tp: TooltipLite) {
   if (!tp.active || !tp.payload?.[0]) return null;
   const row = tp.payload[0].payload as FloorStateAggRow;
   return (
-    <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+    <TelemetryTooltipFrame>
       <FloorLevelTooltipHeader
         floor={row.floor}
         act={row.act}
@@ -1792,7 +1891,7 @@ function TooltipFloorStateRelic(tp: TooltipLite) {
       <div className="tabular-nums">
         Relics (min): {fmtNumEn(row.min_relic_count)}
       </div>
-    </div>
+    </TelemetryTooltipFrame>
   );
 }
 
@@ -1800,23 +1899,23 @@ function TooltipFloorAiInput(tp: TooltipLite) {
   if (!tp.active || !tp.payload?.[0]) return null;
   const row = tp.payload[0].payload as FloorAiAggRow & Record<string, unknown>;
   return (
-    <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+    <TelemetryTooltipFrame>
       <FloorLevelTooltipHeader
         floor={row.floor}
         act={row.act}
         floor_label={row.floor_label}
       />
       <div>Calls: {fmtIntEn(row.decision_count)}</div>
-      <div className="tabular-nums text-slate-100">
+      <div className="tabular-nums text-[var(--text-primary)]">
         Prompt in (total): {fmtTokensCommas(row.sum_input_tokens)} (
         {fmtNumEn(Number(row.sum_input_k), 2)}k)
       </div>
       {row.sum_uncached_input_tokens !== row.sum_input_tokens ? (
-        <div className="tabular-nums text-slate-100">
+        <div className="tabular-nums text-[var(--text-primary)]">
           Non-cached: {fmtTokensCommas(row.sum_uncached_input_tokens)}
         </div>
       ) : null}
-    </div>
+    </TelemetryTooltipFrame>
   );
 }
 
@@ -1824,18 +1923,18 @@ function TooltipFloorAiOutput(tp: TooltipLite) {
   if (!tp.active || !tp.payload?.[0]) return null;
   const row = tp.payload[0].payload as FloorAiAggRow & Record<string, unknown>;
   return (
-    <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+    <TelemetryTooltipFrame>
       <FloorLevelTooltipHeader
         floor={row.floor}
         act={row.act}
         floor_label={row.floor_label}
       />
       <div>Calls: {fmtIntEn(row.decision_count)}</div>
-      <div className="tabular-nums text-slate-100">
+      <div className="tabular-nums text-[var(--text-primary)]">
         Output: {fmtTokensCommas(row.sum_output_tokens)} tokens (
         {fmtNumEn(Number(row.sum_output_k), 2)}k)
       </div>
-    </div>
+    </TelemetryTooltipFrame>
   );
 }
 
@@ -1846,7 +1945,7 @@ function TooltipFloorCumulative(tp: TooltipLite) {
     cumulative_total_k: number;
   };
   return (
-    <div className="max-w-xs rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+    <TelemetryTooltipFrame>
       <FloorLevelTooltipHeader
         floor={row.floor}
         act={row.act}
@@ -1856,10 +1955,10 @@ function TooltipFloorCumulative(tp: TooltipLite) {
         Cumulative: {fmtTokensCommas(row.cumulative_total)} tokens (
         {fmtNumEn(row.cumulative_total_k, 2)}k)
       </div>
-      <div className="text-slate-400">
+      <div className="text-[var(--text-muted)]">
         Floor sum: {fmtTokensCommas(row.sum_total_tokens)}
       </div>
-    </div>
+    </TelemetryTooltipFrame>
   );
 }
 
@@ -1867,7 +1966,7 @@ function TooltipFloorLatency(tp: TooltipLite) {
   if (!tp.active || !tp.payload?.[0]) return null;
   const row = tp.payload[0].payload as FloorAiAggRow & Record<string, unknown>;
   return (
-    <div className="max-w-sm rounded border border-slate-600 bg-slate-950/95 px-2 py-1.5 text-[11px] shadow-lg">
+    <TelemetryTooltipFrame>
       <FloorLevelTooltipHeader
         floor={row.floor}
         act={row.act}
@@ -1878,7 +1977,7 @@ function TooltipFloorLatency(tp: TooltipLite) {
         Latency (mean): {fmtNumEn(Number(row.mean_latency_s), 3)} s (
         {fmtTokensCommas(row.mean_latency_ms ?? 0)} ms)
       </div>
-    </div>
+    </TelemetryTooltipFrame>
   );
 }
 

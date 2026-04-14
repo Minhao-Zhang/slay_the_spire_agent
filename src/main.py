@@ -744,7 +744,12 @@ def main():
         ):
             last_ai_execution = {"trace": None, "state_id": None, "action": None, "source": None}
         vm = process_state(state)
-        notify_dashboard("/update_state", {"state": state, "meta": {"state_id": state_id}})
+        meta: dict = {"state_id": state_id}
+        if session and session.game_dir:
+            meta["active_log_run"] = session.game_dir.name
+        else:
+            meta["active_log_run"] = None
+        notify_dashboard("/update_state", {"state": state, "meta": meta})
 
         in_game = bool(state.get("in_game", True))
 

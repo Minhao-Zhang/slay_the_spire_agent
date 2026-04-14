@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import type { JsonRecord, MetricsSummary } from "../lib/runMetricsDerive";
+import type { DebugSnapshotPayload } from "../types/viewModel";
 
 export type MetricsResponse =
   | {
@@ -21,6 +22,7 @@ export type MetricsResponse =
 
 const METRICS_POLL_MS = 3000;
 const RUNS_POLL_MS = 8000;
+const DASH_SNAPSHOT_POLL_MS = 5000;
 
 function fingerprintMetricsResponse(data: MetricsResponse): string {
   const recs = data.records ?? [];
@@ -36,9 +38,36 @@ function fingerprintRunsPayload(body: { runs?: string[] }): string {
   return JSON.stringify({ runs: body.runs ?? [] });
 }
 
+function fingerprintDashSnapshot(s: DebugSnapshotPayload | null): string {
+  if (!s) return "null";
+  return JSON.stringify({
+    active: s.active_log_run ?? null,
+    live: s.live_ingress ?? null,
+    sid: s.state_id ?? null,
+  });
+}
+
 export function useRunMetricsData() {
   const [searchParams, setSearchParams] = useSearchParams();
   const run = searchParams.get("run")?.trim() ?? "";
+  const followLive =
+    searchParams.get("follow") === "1" ||
+    searchParams.get("follow") === "true";
+
+  const setFollowLive = useCallback(
+    (on: boolean) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (on) next.set("follow", "1");
+          else next.delete("follow");
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
 
   const setRun = useCallback(
     (value: string) => {
@@ -48,6 +77,7 @@ export function useRunMetricsData() {
           const next = new URLSearchParams(prev);
           if (v) next.set("run", v);
           else next.delete("run");
+          next.delete("follow");
           return next;
         },
         { replace: true },
@@ -60,9 +90,12 @@ export function useRunMetricsData() {
   const [loading, setLoading] = useState(false);
   const [payload, setPayload] = useState<MetricsResponse | null>(null);
   const [frameCount, setFrameCount] = useState<number | null>(null);
+  const [dashboardSnapshot, setDashboardSnapshot] =
+    useState<DebugSnapshotPayload | null>(null);
 
   const lastMetricsFpRef = useRef<string | null>(null);
   const lastRunsFpRef = useRef<string | null>(null);
+  const lastDashFpRef = useRef<string | null>(null);
   const metricsRequestGen = useRef(0);
   const runRef = useRef(run);
   runRef.current = run;
@@ -191,9 +224,16 @@ export function useRunMetricsData() {
   /** Zip archives are not listed; clear stale `?run=…zip` bookmarks. */
   useEffect(() => {
     if (run.toLowerCase().endsWith(".zip")) {
-      setRun("");
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete("run");
+          return next;
+        },
+        { replace: true },
+      );
     }
-  }, [run, setRun]);
+  }, [run, setSearchParams]);
 
   useEffect(() => {
     if (!run) return;
@@ -206,6 +246,46 @@ export function useRunMetricsData() {
     return () => window.clearInterval(id);
   }, [run, loadMetrics]);
 
+  useEffect(() => {
+    if (!followLive) {
+      lastDashFpRef.current = null;
+      setDashboardSnapshot(null);
+      return;
+    }
+    const tick = async () => {
+      if (document.visibilityState === "hidden") return;
+      try {
+        const r = await fetch("/api/debug/snapshot");
+        if (!r.ok) return;
+        const j = (await r.json()) as DebugSnapshotPayload;
+        const fp = fingerprintDashSnapshot(j);
+        if (fp === lastDashFpRef.current) return;
+        lastDashFpRef.current = fp;
+        setDashboardSnapshot(j);
+      } catch {
+        /* ignore */
+      }
+    };
+    void tick();
+    const id = window.setInterval(tick, DASH_SNAPSHOT_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [followLive]);
+
+  useEffect(() => {
+    if (!followLive) return;
+    const ar = dashboardSnapshot?.active_log_run?.trim();
+    if (!ar || ar === runRef.current) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("run", ar);
+        next.set("follow", "1");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [followLive, dashboardSnapshot?.active_log_run, setSearchParams]);
+
   const records = payload?.records ?? [];
   const parseErrors = payload?.parse_errors ?? [];
 
@@ -213,6 +293,9 @@ export function useRunMetricsData() {
     runs,
     run,
     setRun,
+    followLive,
+    setFollowLive,
+    dashboardSnapshot,
     loading,
     payload,
     frameCount,

@@ -1,9 +1,9 @@
 import { Link } from "react-router-dom";
 
-export type SpireNavPage = "monitor" | "metrics" | "map" | "compare";
+export type SpireNavPage = "monitor" | "metrics" | "map";
 
 const linkCls =
-  "font-console text-xs font-semibold uppercase tracking-wide text-sky-400 hover:text-sky-300";
+  "font-console text-xs font-semibold uppercase tracking-wide text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)]";
 
 export type SpireAgentNavProps = {
   page: SpireNavPage;
@@ -15,19 +15,18 @@ const pageLabel: Record<SpireNavPage, string> = {
   monitor: "Monitor",
   metrics: "Run metrics",
   map: "Run map",
-  compare: "Compare runs",
 };
 
 export function SpireAgentNav({ page, runQuery }: SpireAgentNavProps) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-      <span className="font-console text-sm font-bold tracking-[0.12em] text-slate-100">
+      <span className="font-console text-sm font-bold tracking-[0.12em] text-[var(--text-primary)]">
         SPIRE AGENT
-        <span className="ml-2 text-slate-500">·</span>
-        <span className="ml-2 text-sky-400/90">{pageLabel[page]}</span>
+        <span className="ml-2 text-[var(--text-label)]">·</span>
+        <span className="ml-2 text-[var(--accent-primary)]">{pageLabel[page]}</span>
       </span>
       <nav
-        className="flex flex-wrap items-center gap-x-2 gap-y-1 border-l border-slate-600/70 pl-3"
+        className="flex flex-wrap items-center gap-x-2 gap-y-1 border-l border-[color-mix(in_srgb,var(--border-subtle)_85%,transparent)] pl-3"
         aria-label="Other pages"
       >
         {page !== "monitor" ? (
@@ -46,11 +45,6 @@ export function SpireAgentNav({ page, runQuery }: SpireAgentNavProps) {
             className={linkCls}
           >
             Run map
-          </Link>
-        ) : null}
-        {page !== "compare" ? (
-          <Link to="/metrics/compare" className={linkCls}>
-            Compare runs
           </Link>
         ) : null}
       </nav>

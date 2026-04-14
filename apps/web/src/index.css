@@ -1,26 +1,154 @@
 @import "tailwindcss";
 
+/* Light parchment / book — stronger ink & borders for WCAG-friendly contrast on cream. */
+:root {
+  --bg-canvas: #f5efe3;
+  --bg-canvas-wash: #faf7ef;
+  --bg-panel: #e8dcc8;
+  --bg-panel-raised: #d9cbb4;
+  --border-subtle: #b5a286;
+  --border-strong: #8f7a5e;
+  --text-primary: #14110c;
+  --text-muted: #3d342a;
+  --text-label: #524738;
+  /* Jewel accents — saturated R/B/G on cream (ink + paper neutrals unchanged). */
+  --accent-primary: #7a5500;
+  --accent-primary-hover: #9a6d00;
+  --accent-secondary: #1d4ed8;
+  --success: #059669;
+  --danger: #dc2626;
+  --warning: #ea580c;
+
+  --chart-axis: #3d342a;
+  --chart-grid: #cfc3ae;
+  --chart-ref-line: #9a8a72;
+  --chart-hp: #dc2626;
+  --chart-max-hp: #4a3f34;
+  --chart-gold: #7a5500;
+  --chart-floor: #2563eb;
+  --chart-legal: #10b981;
+  --chart-enemy: #b91c1c;
+  --chart-hand: #5c4818;
+  --chart-deck: #059669;
+  --chart-relic: #5b21b6;
+  --chart-ai-input: #7a5500;
+  --chart-ai-output: #1d4ed8;
+  --chart-throughput: #0891b2;
+  --chart-latency: #7a5500;
+  --chart-cumulative: #5c4818;
+  --chart-cumulative-fill: rgb(92 72 24 / 0.28);
+  --chart-hist-input: #7a5500;
+  --chart-hist-latency: #2563eb;
+  --chart-pie-1: #7a5500;
+  --chart-pie-2: #2563eb;
+  --chart-pie-3: #10b981;
+  --chart-pie-4: #ef4444;
+  --chart-pie-5: #ea580c;
+  --chart-pie-6: #5c4818;
+  --chart-pie-7: #4a3f34;
+
+  --text-faint: #6b5e4e;
+  --border-muted: #e2d8c6;
+  --bg-inset: #d0c2a8;
+  --ring-focus: color-mix(in srgb, var(--accent-secondary) 55%, transparent);
+  --surface-live: color-mix(in srgb, var(--accent-primary) 18%, var(--bg-panel));
+  --border-live: color-mix(in srgb, var(--accent-primary) 48%, var(--border-strong));
+  --tab-active-bg: color-mix(in srgb, var(--accent-primary) 28%, var(--bg-panel));
+  --overlay-scrim: color-mix(in srgb, var(--text-primary) 32%, transparent);
+}
+
 @theme {
   --font-telemetry: "JetBrains Mono", ui-monospace, monospace;
-  /* Sora: geometric / operator-console — pairs with mono readouts */
   --font-console: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --color-spire-canvas: var(--bg-canvas);
+  --color-spire-panel: var(--bg-panel);
+  --color-spire-panel-raised: var(--bg-panel-raised);
+  --color-spire-accent: var(--accent-primary);
+  --color-spire-accent-hover: var(--accent-primary-hover);
+  --color-spire-muted: var(--text-muted);
+  --color-spire-primary: var(--text-primary);
+  --color-spire-label: var(--text-label);
+  --color-spire-faint: var(--text-faint);
+  --color-spire-border-subtle: var(--border-subtle);
+  --color-spire-border-strong: var(--border-strong);
+  --color-spire-border-muted: var(--border-muted);
+  --color-spire-inset: var(--bg-inset);
+  --color-spire-success: var(--success);
+  --color-spire-danger: var(--danger);
+  --color-spire-warning: var(--warning);
+  --color-spire-secondary: var(--accent-secondary);
+  --color-spire-ring-focus: var(--ring-focus);
+  --color-spire-live-surface: var(--surface-live);
+  --color-spire-live-border: var(--border-live);
+  --color-spire-tab-active: var(--tab-active-bg);
 }
 
 @layer base {
+  /** Slightly larger UI: scales all rem-based Tailwind type (text-sm, text-xs, …). */
+  html {
+    font-size: 114%;
+  }
+
   body {
     font-family: var(--font-console);
-    @apply bg-[#080a0c] text-slate-300 antialiased;
+    background-color: var(--bg-canvas);
+    color: var(--text-muted);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
-/* Fused deck readout — inset chassis */
+/* Fused deck readout — pressed paper / plate */
 .deck-telemetry {
   font-family: var(--font-telemetry);
-  background: linear-gradient(180deg, rgb(15 23 42 / 0.92) 0%, rgb(2 6 23 / 0.98) 100%);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-panel) 88%, white) 0%,
+    var(--bg-inset) 100%
+  );
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.05),
-    inset 0 -1px 0 rgb(0 0 0 / 0.35),
-    0 1px 3px rgb(0 0 0 / 0.4);
+    inset 0 1px 0 rgb(255 255 255 / 0.75),
+    inset 0 -1px 0 rgb(20 17 12 / 0.12),
+    0 1px 3px rgb(20 17 12 / 0.09);
+}
+
+.metrics-page-bg {
+  background: linear-gradient(
+    180deg,
+    var(--bg-canvas-wash) 0%,
+    var(--bg-canvas) 100%
+  );
+}
+
+@keyframes spire-section-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.spire-section-reveal {
+  animation: spire-section-in 0.45s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spire-section-reveal {
+    animation: none;
+  }
 }
 
 .custom-scroll::-webkit-scrollbar {
@@ -31,11 +159,11 @@
   background: transparent;
 }
 .custom-scroll::-webkit-scrollbar-thumb {
-  background: #64748b;
+  background: var(--border-strong);
   border-radius: 4px;
 }
 .custom-scroll::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--text-muted);
 }
 
 .sts-card {
@@ -45,3 +173,11 @@
   transform: translateY(-8px);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .sts-card {
+    transition: none;
+  }
+  .sts-card:hover {
+    transform: none;
+  }
+}

@@ -6,8 +6,9 @@ import {
   useRef,
   useState,
 } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { Link } from "react-router-dom";
 import { useControlPlane } from "../hooks/useControlPlane";
 import { GameScreenPanel } from "./gameScreen/GameScreenPanel";
 import { SpireAgentNav } from "./SpireAgentNav";
@@ -167,7 +168,7 @@ function HoverTip({
           <div
             role="tooltip"
             style={pos}
-            className="custom-scroll pointer-events-none rounded-md border border-slate-600 bg-slate-800 px-2.5 py-2 text-left font-telemetry text-sm font-normal leading-snug tracking-normal whitespace-pre-wrap text-slate-200 shadow-xl"
+            className="custom-scroll pointer-events-none rounded-md border border-spire-border-strong bg-spire-panel px-2.5 py-2 text-left font-telemetry text-sm font-normal leading-snug tracking-normal whitespace-pre-wrap text-spire-primary shadow-xl"
           >
             {text}
           </div>,
@@ -177,59 +178,63 @@ function HoverTip({
   );
 }
 
-/** Operator controls — sized for the AI rail + legible type. */
+/** Operator controls — stronger borders + weight for parchment contrast. */
 const osdBtnBase =
-  "font-console inline-flex h-8 shrink-0 items-center justify-center rounded border px-3 text-sm font-semibold uppercase tracking-[0.08em] transition duration-150 disabled:cursor-not-allowed disabled:opacity-35";
+  "font-console inline-flex h-9 shrink-0 items-center justify-center rounded-md border-2 px-3 text-sm font-bold uppercase tracking-[0.06em] shadow-sm transition duration-150 disabled:cursor-not-allowed disabled:opacity-35";
 
 const osdBtnGhost =
-  `${osdBtnBase} border-slate-600/90 bg-slate-800/80 text-slate-400 hover:border-slate-500 hover:bg-slate-700/75 hover:text-slate-200`;
+  `${osdBtnBase} border-spire-border-strong bg-spire-canvas text-spire-primary hover:bg-spire-panel-raised hover:border-spire-border-strong`;
 
 /** Replay toolbar — matches `h-7` replay `<select>` height. */
 const osdReplayBtn =
-  "font-console inline-flex h-7 shrink-0 items-center justify-center rounded border border-slate-600/90 bg-slate-800/80 px-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400 transition duration-150 hover:border-slate-500 hover:bg-slate-700/75 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-35";
+  "font-console inline-flex h-8 shrink-0 items-center justify-center rounded-md border-2 border-spire-border-strong bg-spire-canvas px-2.5 text-xs font-bold uppercase tracking-[0.08em] text-spire-primary shadow-sm transition duration-150 hover:bg-spire-panel-raised disabled:cursor-not-allowed disabled:opacity-35";
 
 const osdReplayInput =
-  "font-console h-7 w-11 rounded border border-slate-700 bg-slate-950/80 px-1 text-center text-xs font-medium text-slate-200 outline-none ring-inset focus-visible:ring-2 focus-visible:ring-indigo-400/45 tabular-nums";
+  "font-console h-8 w-11 rounded-md border-2 border-spire-border-subtle bg-spire-canvas px-1 text-center text-xs font-bold text-spire-primary shadow-sm outline-none ring-inset focus-visible:ring-2 focus-visible:ring-spire-ring-focus/45 tabular-nums";
 
 /** Solid fill, same chrome family as Approve / CTA (no outline accent bar). */
 const osdBtnRetry =
-  `${osdBtnBase} border-amber-800/80 bg-amber-900/75 text-amber-50 hover:bg-amber-800/85`;
+  `${osdBtnBase} border-spire-warning bg-spire-canvas text-spire-primary hover:bg-spire-warning/18`;
 
 const osdBtnApprove =
-  `${osdBtnBase} border-emerald-800/70 bg-emerald-950/70 text-emerald-100 hover:bg-emerald-900/80`;
+  `${osdBtnBase} border-spire-success bg-spire-canvas text-spire-primary hover:bg-spire-success/18`;
 const osdBtnReject =
-  `${osdBtnBase} border-slate-600/90 bg-slate-800/90 text-slate-300 hover:bg-slate-700/85`;
+  `${osdBtnBase} border-spire-border-strong bg-spire-panel-raised text-spire-primary hover:bg-spire-panel`;
 const osdBtnCta =
-  `${osdBtnBase} border-indigo-700/85 bg-indigo-800 text-indigo-50 hover:bg-indigo-700`;
+  `${osdBtnBase} border-spire-secondary bg-spire-secondary/25 text-spire-primary hover:bg-spire-secondary/35`;
 
 /** Fixed height so Relics / Enemies / Hand / AI control (and other rails) align across columns. */
 const osdPanelStrip =
-  "flex h-12 min-h-12 shrink-0 items-center justify-between gap-2 overflow-hidden border-b border-slate-700/85 bg-slate-800/95 px-3 font-console text-sm font-semibold uppercase tracking-[0.12em] text-slate-300";
+  "flex h-12 min-h-12 shrink-0 items-center justify-between gap-2 overflow-hidden border-b-2 border-spire-border-subtle bg-spire-canvas px-3 font-console text-sm font-bold uppercase tracking-[0.12em] text-spire-primary";
+
+/** Shorter strip for combat board (enemies + hand) so the band uses less vertical chrome. */
+const osdCombatBoardStrip =
+  "flex h-9 min-h-9 shrink-0 items-center justify-between gap-2 overflow-hidden border-b-2 border-spire-border-subtle bg-spire-canvas px-2 font-console text-xs font-bold uppercase tracking-[0.12em] text-spire-primary";
 
 const osdSectionLabel =
-  "font-console text-sm font-semibold uppercase tracking-[0.12em] text-slate-500";
+  "font-console text-sm font-bold uppercase tracking-[0.12em] text-spire-label";
 
 const osdStatCaption =
-  "font-console text-sm font-semibold uppercase tracking-[0.18em] text-slate-500";
+  "font-console text-sm font-bold uppercase tracking-[0.18em] text-spire-label";
 
 /** Tighter label for the HUD stats strip (label + value stack). */
 const osdHudLabel =
-  "font-console text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500 leading-none";
+  "font-console text-[13px] font-semibold uppercase tracking-[0.22em] text-spire-label leading-none";
 const osdHudValue =
-  "font-telemetry text-[15px] font-semibold tabular-nums leading-none";
+  "font-telemetry text-[17px] font-semibold tabular-nums leading-none";
 
 function actionBtnClass(style: string): string {
   const map: Record<string, string> = {
     danger:
-      "border-red-800/90 bg-red-950/75 text-red-100 hover:bg-red-900/90",
+      "border-2 border-spire-danger bg-spire-canvas text-spire-primary shadow-sm hover:bg-spire-danger/12",
     primary:
-      "border-sky-800/85 bg-sky-950/60 text-sky-100 hover:bg-sky-900/75",
+      "border-2 border-spire-accent bg-spire-tab-active text-spire-primary shadow-sm hover:bg-spire-live-surface",
     success:
-      "border-emerald-800/85 bg-emerald-950/60 text-emerald-100 hover:bg-emerald-900/75",
+      "border-2 border-spire-success bg-spire-canvas text-spire-primary shadow-sm hover:bg-spire-success/15",
     secondary:
-      "border-slate-600/90 bg-slate-800/80 text-slate-200 hover:bg-slate-700/90",
+      "border-2 border-spire-border-strong bg-spire-canvas text-spire-primary shadow-sm hover:bg-spire-panel-raised",
   };
-  return `font-console rounded border py-1 px-2.5 text-sm font-semibold uppercase tracking-wide transition ${map[style] ?? map.secondary}`;
+  return `font-console rounded-md py-1.5 px-3 text-sm font-bold uppercase tracking-wide transition ${map[style] ?? map.secondary}`;
 }
 
 type PileKind = "draw" | "discard" | "exhaust";
@@ -259,30 +264,30 @@ function PileTelemetryBar({
       label: "Draw",
       title: "Draw pile — click to inspect",
       n: drawN,
-      tint: "text-cyan-200/95",
-      glow: "group-hover:text-cyan-100",
+      tint: "text-spire-secondary",
+      glow: "group-hover:text-spire-primary",
     },
     {
       kind: "discard",
       label: "Discard",
       title: "Discard pile — click to inspect",
       n: discN,
-      tint: "text-amber-200/90",
-      glow: "group-hover:text-amber-100",
+      tint: "text-spire-warning",
+      glow: "group-hover:text-spire-primary",
     },
     {
       kind: "exhaust",
       label: "Exhaust",
       title: "Exhaust pile — click to inspect",
       n: exhN,
-      tint: "text-rose-200/85",
-      glow: "group-hover:text-rose-100",
+      tint: "text-spire-danger",
+      glow: "group-hover:text-spire-primary",
     },
   ];
 
   return (
     <div
-      className="deck-telemetry flex h-8 max-h-8 shrink-0 overflow-hidden rounded-md border border-slate-700/90"
+      className="deck-telemetry flex h-8 max-h-8 shrink-0 overflow-hidden rounded-md border border-spire-border-subtle/90"
       role="group"
       aria-label="Draw, Discard, Exhaust piles — click to inspect"
     >
@@ -294,12 +299,12 @@ function PileTelemetryBar({
           title={s.title}
           className={
             "group relative flex h-full min-h-0 min-w-0 flex-1 items-center justify-between gap-2 px-2 py-0 text-left transition-[background-color,box-shadow] duration-150 " +
-            "hover:bg-slate-800/40 active:bg-slate-800/65 " +
-            "focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400/45 " +
-            (i > 0 ? "border-l border-slate-700/55 " : "")
+            "hover:bg-spire-panel/40 active:bg-spire-panel/65 " +
+            "focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-spire-ring-focus/45 " +
+            (i > 0 ? "border-l border-spire-border-subtle/55 " : "")
           }
         >
-          <span className="min-w-0 truncate font-console text-[11px] font-semibold uppercase tracking-wide text-slate-500 transition-colors group-hover:text-slate-400">
+          <span className="min-w-0 truncate font-console text-[13px] font-semibold uppercase tracking-wide text-spire-label transition-colors group-hover:text-spire-muted">
             {s.label}
           </span>
           <span
@@ -346,7 +351,7 @@ function KeysLetters({
     <span
       className={
         "min-w-[0.65rem] text-center text-sm font-bold tabular-nums " +
-        (on ? onClass : "text-slate-600")
+        (on ? onClass : "text-spire-faint")
       }
     >
       {letter}
@@ -358,11 +363,11 @@ function KeysLetters({
         className="flex items-center gap-0.5 font-console tracking-tight"
         aria-label="Act 3 keys: Ruby, Sapphire, Emerald"
       >
-        {cell("R", ruby, "text-red-400")}
-        <span className="text-[10px] text-slate-600">·</span>
-        {cell("S", sapphire, "text-sky-400")}
-        <span className="text-[10px] text-slate-600">·</span>
-        {cell("E", emerald, "text-emerald-400")}
+        {cell("R", ruby, "text-spire-danger")}
+        <span className="text-[13px] text-spire-faint">·</span>
+        {cell("S", sapphire, "text-spire-accent")}
+        <span className="text-[13px] text-spire-faint">·</span>
+        {cell("E", emerald, "text-spire-success")}
       </div>
     </HoverTip>
   );
@@ -377,30 +382,32 @@ function EnemyCard({ m }: { m: Record<string, unknown> }) {
   const tip = monsterTooltip(m);
 
   return (
-    <div className="flex flex-col overflow-hidden rounded border border-slate-700 bg-slate-800/30">
-      <div className="flex items-center justify-between border-b border-slate-700/50 bg-slate-800/50 px-3 py-1.5">
-        <div className="flex min-w-0 items-baseline gap-2">
+    <div className="flex flex-col overflow-hidden rounded-md border border-spire-border-subtle bg-spire-canvas shadow-sm">
+      <div className="flex items-center justify-between border-b border-spire-border-muted bg-spire-canvas px-2 py-1">
+        <div className="flex min-w-0 items-baseline gap-1.5">
           <HoverTip
             tip={tip}
             side="bottom"
             className="inline-flex min-w-0 max-w-[55%] shrink"
           >
-            <span className="cursor-help truncate font-console text-sm font-bold text-red-400 underline decoration-red-400/40 decoration-dotted underline-offset-2">
+            <span className="cursor-help truncate font-console text-xs font-bold text-spire-danger underline decoration-spire-danger/40 decoration-dotted underline-offset-2">
               {name}
             </span>
           </HoverTip>
-          <span className={osdStatCaption}>HP</span>
-          <span className="font-telemetry text-sm font-medium text-slate-200">
+          <span className="font-console text-xs font-bold uppercase tracking-[0.18em] text-spire-label">
+            HP
+          </span>
+          <span className="font-telemetry text-xs font-medium text-spire-primary">
             {hp ? fmtGameStatDisplay(hp) : "—"}
           </span>
         </div>
-        <div className="shrink-0 font-console text-xs font-semibold uppercase tracking-wide text-red-400">
+        <div className="max-w-[48%] shrink-0 truncate font-console text-[13px] font-semibold uppercase tracking-wide text-spire-danger">
           {intent || "—"}
         </div>
       </div>
-      <div className="flex flex-wrap gap-2 px-3 py-2">
+      <div className="flex flex-wrap gap-1 px-2 py-1">
         {powers.length === 0 ? (
-          <span className="text-xs text-slate-600">—</span>
+          <span className="text-[13px] text-spire-faint">—</span>
         ) : (
           powers.map((p, i) => (
             <HoverTip
@@ -411,7 +418,7 @@ function EnemyCard({ m }: { m: Record<string, unknown> }) {
               side="bottom"
               className="inline-flex"
             >
-              <span className="inline-flex cursor-help rounded border border-purple-700/50 bg-purple-900/40 px-1.5 py-0.5 text-xs text-purple-300">
+              <span className="inline-flex cursor-help rounded border border-spire-secondary/50 bg-spire-canvas px-1 py-0.5 text-[13px] font-semibold text-spire-secondary shadow-sm">
                 {powerChipLabel(p)}
               </span>
             </HoverTip>
@@ -424,38 +431,38 @@ function EnemyCard({ m }: { m: Record<string, unknown> }) {
 
 function CardTable({ cards }: { cards: Record<string, unknown>[] }) {
   return (
-    <table className="w-full text-left whitespace-nowrap [&_td:last-child]:whitespace-normal">
-      <thead className="sticky top-0 z-10 bg-slate-900 font-console text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+    <table className="w-full table-fixed text-left leading-snug whitespace-nowrap [&_td:last-child]:whitespace-normal">
+      <thead className="sticky top-0 z-10 bg-spire-canvas font-console text-xs font-semibold uppercase tracking-[0.14em] text-spire-label">
         <tr>
-          <th className="w-8 border-b border-slate-800 py-2 px-3 font-semibold">
+          <th className="w-8 border-b border-spire-border-muted py-1 px-2 font-semibold">
             #
           </th>
-          <th className="w-24 border-b border-slate-800 py-2 px-3 font-semibold">
+          <th className="w-24 border-b border-spire-border-muted py-1 px-2 font-semibold">
             Hash
           </th>
-          <th className="w-8 border-b border-slate-800 py-2 px-3 text-center font-semibold">
+          <th className="w-8 border-b border-spire-border-muted py-1 px-2 text-center font-semibold">
             $
           </th>
-          <th className="w-36 border-b border-slate-800 py-2 px-3 font-semibold">
+          <th className="w-[22%] border-b border-spire-border-muted py-1 px-2 font-semibold">
             Name
           </th>
-          <th className="w-full border-b border-slate-800 py-2 px-3 font-semibold">
+          <th className="min-w-0 border-b border-spire-border-muted py-1 px-2 font-semibold">
             Text
           </th>
         </tr>
       </thead>
-      <tbody className="divide-y divide-slate-800 font-telemetry text-sm text-slate-400">
+      <tbody className="divide-y divide-spire-border-muted font-telemetry text-xs font-medium text-spire-primary">
         {cards.map((c, idx) => (
-            <tr key={idx} className="hover:bg-slate-800/50">
-              <td className="py-2 px-3">{fmtIntEn(idx + 1)}</td>
-              <td className="py-2 px-3 text-slate-500">{cardHash(c.uuid)}</td>
-              <td className="py-2 px-3 text-center">
-                <span className="font-bold text-cyan-400">
+            <tr key={idx} className="hover:bg-spire-panel-raised/35">
+              <td className="py-1 px-2">{fmtIntEn(idx + 1)}</td>
+              <td className="py-1 px-2 text-spire-label">{cardHash(c.uuid)}</td>
+              <td className="py-1 px-2 text-center">
+                <span className="font-extrabold tabular-nums text-spire-secondary">
                   {fmtGameStatDisplay(c.cost ?? "—")}
                 </span>
               </td>
               <td
-                className={`py-2 px-3 ${cardNameClass(c.type)}`}
+                className={`min-w-0 py-1 px-2 ${cardNameClass(c.type)}`}
                 title={
                   String(c.type ?? "").trim()
                     ? `Type: ${String(c.type)}`
@@ -464,7 +471,7 @@ function CardTable({ cards }: { cards: Record<string, unknown>[] }) {
               >
                 {String(c.name ?? "?")}
               </td>
-              <td className="max-w-md py-2 px-3 break-words text-slate-300">
+              <td className="min-w-0 py-1 px-2 break-words text-spire-primary">
                 {cardTableText(c)}
               </td>
             </tr>
@@ -494,21 +501,21 @@ function PileInspectModal({
   return (
     <div
       role="presentation"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-scrim)] p-4 backdrop-blur-[2px]"
       onClick={onClose}
     >
       <div
         role="dialog"
         aria-label={title}
-        className="custom-scroll flex max-h-[85vh] max-w-4xl flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-900 shadow-xl"
+        className="custom-scroll flex max-h-[85vh] max-w-4xl flex-col overflow-hidden rounded-lg border border-spire-border-subtle bg-spire-canvas shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className={osdPanelStrip}>
           <div className="flex min-w-0 items-baseline gap-3 normal-case tracking-normal">
-            <span className="truncate font-console text-xs font-bold text-slate-100">
+            <span className="truncate font-console text-xs font-bold text-spire-primary">
               {title}
             </span>
-            <span className="shrink-0 font-telemetry text-xs text-slate-500">
+            <span className="shrink-0 font-telemetry text-xs text-spire-label">
               {fmtIntEn(cards.length)} cards
             </span>
           </div>
@@ -518,7 +525,7 @@ function PileInspectModal({
         </div>
         <div className="custom-scroll min-h-0 flex-1 overflow-auto p-3">
           {cards.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-500">Empty pile</p>
+            <p className="py-8 text-center text-sm text-spire-label">Empty pile</p>
           ) : (
             <CardTable cards={cards} />
           )}
@@ -562,7 +569,7 @@ function AgentModeBar({
   const current = normalizeAgentMode(modeRaw);
   return (
     <div
-      className="flex w-full shrink-0 overflow-hidden rounded border border-slate-600/90 font-console text-[11px] font-semibold uppercase tracking-[0.12em]"
+      className="flex w-full shrink-0 overflow-hidden rounded-md border-2 border-spire-border-strong bg-spire-canvas font-console text-[13px] font-bold uppercase tracking-[0.12em] shadow-sm"
       role="group"
       aria-label="Agent mode"
     >
@@ -579,10 +586,10 @@ function AgentModeBar({
                 : "AI runs without approval when allowed."
           }
           className={
-            "min-w-0 flex-1 border-r border-slate-700/80 px-1 py-1.5 last:border-r-0 transition " +
+            "min-w-0 flex-1 border-r border-spire-border-subtle/80 px-1 py-1.5 last:border-r-0 transition " +
             (current === m
-              ? "bg-sky-900/85 text-sky-100"
-              : "bg-slate-950/90 text-slate-500 hover:bg-slate-800/90 hover:text-slate-300")
+              ? "bg-spire-tab-active text-spire-primary font-bold"
+              : "bg-spire-canvas text-spire-label hover:bg-spire-panel-raised hover:text-spire-primary")
           }
           onClick={() => onSelect(m)}
         >
@@ -597,7 +604,6 @@ export function MonitorDashboard() {
   const {
     snapshot,
     connected,
-    logLines,
     queueManualCommand,
     setAgentMode,
     setAutoStartNextGame,
@@ -638,12 +644,52 @@ export function MonitorDashboard() {
   const [pileInspect, setPileInspect] = useState<PileKind | null>(null);
   const [deckInspectOpen, setDeckInspectOpen] = useState(false);
   const [replayJumpInput, setReplayJumpInput] = useState("");
+  const [railWidthPx, setRailWidthPx] = useState(520);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("spireRailWidthPx");
+      const n = raw ? Number.parseInt(raw, 10) : NaN;
+      if (Number.isFinite(n) && n >= 320 && n <= 960) setRailWidthPx(n);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const vm: ViewModelDTO | null = snapshot?.view_model ?? null;
   const showScreenPanel = Boolean(vm?.screen);
   const stateId = snapshot?.state_id ?? null;
   /** Recent CommunicationMod / bridge feed — not merely WebSocket connected to the dashboard. */
   const gameFeedLive = snapshot?.live_ingress === true;
+  const inReplay = replayRunName !== "" && replayFiles.length > 0;
+  const dashOk = connected;
+
+  const onRailResizeMouseDown = useCallback(
+    (e: ReactMouseEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = railWidthPx;
+      const onMove = (ev: MouseEvent) => {
+        const dx = startX - ev.clientX;
+        setRailWidthPx(Math.min(960, Math.max(320, startW + dx)));
+      };
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        setRailWidthPx((w) => {
+          try {
+            localStorage.setItem("spireRailWidthPx", String(w));
+          } catch {
+            /* ignore */
+          }
+          return w;
+        });
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    },
+    [railWidthPx],
+  );
 
   const agentForRail = useMemo((): AgentSnapshotDTO | undefined => {
     const base = snapshot?.agent;
@@ -884,7 +930,7 @@ export function MonitorDashboard() {
         title: "AI starting",
         message:
           sysMsg ||
-          "The game process is checking LLM configuration (see session log).",
+          "The game process is checking LLM configuration (see browser console or game output).",
       };
     }
 
@@ -1111,40 +1157,101 @@ export function MonitorDashboard() {
   }, [replayFiles.length, replayJumpInput, replayJumpToFrame]);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-gradient-to-b from-slate-900 via-[#0a0d11] to-[#06080a] text-sm text-slate-300 select-none">
+    <div className="metrics-page-bg flex h-screen flex-col overflow-hidden text-sm text-[var(--text-primary)] select-none">
       {/* Top bar — game / session controls only; combat readouts live in the stats strip */}
-      <header className="flex shrink-0 items-center border-b border-slate-700/90 bg-slate-900/80 px-3 py-2 backdrop-blur-sm">
+      <header className="flex shrink-0 items-center border-b border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-panel)_88%,transparent)] px-3 py-2 backdrop-blur-sm">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
           <SpireAgentNav page="monitor" runQuery="" />
-          <div
-            className={`font-console flex h-7 items-center gap-1.5 rounded border px-2.5 text-xs font-semibold uppercase tracking-wide ${
-              gameFeedLive
-                ? "border-emerald-700/50 bg-emerald-950/35 text-emerald-400"
-                : "border-red-800/55 bg-red-950/30 text-red-400"
-            }`}
-            title={
-              gameFeedLive
-                ? "Fresh game state is arriving."
-                : !connected
-                  ? "Dashboard WebSocket disconnected."
-                  : "No fresh game state (game stopped or stale)."
-            }
-          >
-            <span className="relative flex h-1.5 w-1.5">
-              {gameFeedLive ? (
-                <>
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                </>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <div
+              className={`font-console flex h-7 items-center gap-1.5 rounded border px-2 text-[13px] font-semibold uppercase tracking-wide ${
+                dashOk
+                  ? "border-spire-success/50 bg-spire-success/10 text-spire-success"
+                  : "border-spire-danger/45 bg-spire-danger/8 text-spire-danger"
+              }`}
+              title={
+                dashOk
+                  ? "Dashboard WebSocket connected — this tab can receive pushes."
+                  : "Dashboard WebSocket disconnected — reconnect to send commands and receive live snapshots."
+              }
+              aria-label={
+                dashOk
+                  ? "Dashboard link: connected"
+                  : "Dashboard link: disconnected"
+              }
+            >
+              <span className="relative flex h-1.5 w-1.5 shrink-0">
+                {dashOk ? (
+                  <>
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-spire-success opacity-60" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-spire-success" />
+                  </>
+                ) : (
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-spire-danger" />
+                )}
+              </span>
+              <span>Dash {dashOk ? "OK" : "off"}</span>
+            </div>
+            <div
+              className={`font-console flex h-7 items-center gap-1.5 rounded border px-2 text-[13px] font-semibold uppercase tracking-wide ${
+                inReplay
+                  ? "border-spire-secondary/45 bg-spire-secondary/10 text-spire-secondary"
+                  : gameFeedLive
+                    ? "border-spire-success/50 bg-spire-success/10 text-spire-success"
+                    : "border-spire-warning/40 bg-spire-warning/8 text-spire-warning"
+              }`}
+              title={
+                inReplay
+                  ? "Replay mode: frames load from disk; live ingress does not apply."
+                  : gameFeedLive
+                    ? "Fresh game state is arriving from the bridge or debug ingress."
+                    : !dashOk
+                      ? "WebSocket offline — feed status may be unknown until connected."
+                      : "Feed stale or idle — game stopped, paused, or past dashboard staleness threshold."
+              }
+              aria-label={
+                inReplay
+                  ? "Game feed: replaying log frames"
+                  : gameFeedLive
+                    ? "Game feed: live"
+                    : "Game feed: stale or idle"
+              }
+            >
+              {!inReplay ? (
+                <span className="relative flex h-1.5 w-1.5 shrink-0">
+                  {gameFeedLive ? (
+                    <>
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-spire-success opacity-60" />
+                      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-spire-success" />
+                    </>
+                  ) : (
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-spire-warning" />
+                  )}
+                </span>
               ) : (
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-500" />
+                <span className="relative inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-spire-secondary" />
               )}
-            </span>
-            {gameFeedLive ? "Live" : "Offline"}
+              <span>
+                {inReplay
+                  ? "Replay"
+                  : gameFeedLive
+                    ? "Feed live"
+                    : "Feed stale"}
+              </span>
+            </div>
           </div>
 
+          {snapshot?.active_log_run ? (
+            <Link
+              to={`/metrics?run=${encodeURIComponent(snapshot.active_log_run)}&follow=1`}
+              className="font-console shrink-0 text-xs font-semibold uppercase tracking-wide text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)]"
+            >
+              Metrics (this run)
+            </Link>
+          ) : null}
+
           <div
-            className="flex flex-wrap items-center gap-x-3 gap-y-1 border-l border-slate-600/70 pl-4"
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 border-l border-spire-border-strong/70 pl-4"
             title="Replay loads frames from logs; live snapshots are paused until you clear the run."
           >
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -1158,7 +1265,7 @@ export function MonitorDashboard() {
                   else clearReplaySelection();
                 }}
                 disabled={replayBusy}
-                className="font-console h-7 max-w-[14rem] rounded border border-slate-700 bg-slate-950/80 px-2 text-xs font-medium text-slate-200 outline-none"
+                className="font-console h-8 max-w-[14rem] rounded-md border-2 border-spire-border-subtle bg-spire-canvas px-2 text-xs font-bold text-spire-primary shadow-sm outline-none"
                 aria-label="Log run directory under logs/"
               >
                 <option value="">Select run…</option>
@@ -1187,7 +1294,7 @@ export function MonitorDashboard() {
                   >
                     Prev
                   </button>
-                  <span className="font-telemetry min-w-[4.5rem] text-center text-xs tabular-nums text-slate-400">
+                  <span className="font-telemetry min-w-[4.5rem] text-center text-xs tabular-nums text-spire-muted">
                     {fmtIntEn(replayIndex + 1)}/{fmtIntEn(replayFiles.length)}
                   </span>
                   <input
@@ -1240,22 +1347,23 @@ export function MonitorDashboard() {
         </div>
       </header>
 
-      {snapshot?.live_ingress === false ? (
+      {snapshot?.live_ingress === false && !inReplay ? (
         <div
-          className="shrink-0 border-b border-amber-900/50 bg-amber-950/40 px-3 py-2 text-sm text-amber-100/95"
+          className="shrink-0 border-b border-spire-warning/35 bg-spire-warning/10 px-3 py-2 text-sm text-spire-primary/95"
           role="status"
         >
-          <span className="font-console font-semibold uppercase tracking-wide text-amber-300">
-            No live game feed
+          <span className="font-console font-semibold uppercase tracking-wide text-spire-warning">
+            Feed stale
           </span>
-          <span className="text-amber-100/85">
+          <span className="text-spire-primary/90">
             {" "}
-            — stale feed; start the game bridge or use{" "}
+            — matches the amber <span className="font-medium">Feed stale</span>{" "}
+            pill; start the game bridge or use{" "}
             <span className="font-medium">Replay</span>.
             {typeof snapshot.ingress_age_seconds === "number" ? (
-              <span className="text-amber-200/80">
+              <span className="text-spire-warning/90">
                 {" "}
-                Last state ~{fmtIntEn(Math.round(snapshot.ingress_age_seconds))}s
+                Last ingress ~{fmtIntEn(Math.round(snapshot.ingress_age_seconds))}s
                 ago.
               </span>
             ) : null}
@@ -1264,7 +1372,7 @@ export function MonitorDashboard() {
       ) : null}
 
       {/* Stats + potions — compact HUD row */}
-      <div className="flex min-h-0 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-700/85 bg-slate-800/75 px-3 py-1.5">
+      <div className="flex min-h-0 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b-2 border-spire-border-subtle bg-spire-canvas px-3 py-1.5">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="flex min-h-[2.25rem] flex-col justify-center gap-1">
             <span className={osdHudLabel}>Seed</span>
@@ -1274,7 +1382,7 @@ export function MonitorDashboard() {
               onClick={() => {
                 if (runSeedRaw) void copyClipboard(runSeedRaw, "seed");
               }}
-              className="max-w-[4.5rem] truncate rounded border border-slate-600/90 bg-slate-900/80 px-1.5 py-0.5 text-left font-mono text-[10px] font-medium tabular-nums text-slate-300 transition hover:border-slate-500 hover:bg-slate-800/90 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+              className="max-w-[4.5rem] truncate rounded border border-spire-border-strong/90 bg-spire-canvas/80 px-1.5 py-0.5 text-left font-mono text-[13px] font-medium tabular-nums text-spire-primary transition hover:border-spire-border-strong hover:bg-spire-panel/90 hover:text-spire-primary disabled:cursor-not-allowed disabled:opacity-40"
               title={
                 runSeedRaw
                   ? `Click to copy full seed (${runSeedRaw.length} chars)`
@@ -1286,14 +1394,14 @@ export function MonitorDashboard() {
           </div>
           <div className="flex min-h-[2.25rem] flex-col justify-center gap-1">
             <span className={osdHudLabel}>Class</span>
-            <span className={`${osdHudValue} text-orange-300`}>
+            <span className={`${osdHudValue} text-spire-warning`}>
               {(() => {
                 const name = displayPlayerClassName(headerClass(header));
                 if (name === "—") return "—";
                 return (
                   <>
                     {name}
-                    <span className="text-slate-500"> · </span>
+                    <span className="text-spire-label"> · </span>
                     <span className="tabular-nums">
                       A{fmtIntEn(ascensionDisplay(header))}
                     </span>
@@ -1304,9 +1412,9 @@ export function MonitorDashboard() {
           </div>
           {(
             [
-              ["Floor", header?.floor ?? "—", "text-slate-200"],
-              ["HP", header?.hp_display ?? "—", "text-red-400"],
-              ["Gold", header?.gold ?? "—", "text-amber-400"],
+              ["Floor", header?.floor ?? "—", "text-spire-primary"],
+              ["HP", header?.hp_display ?? "—", "text-spire-danger"],
+              ["Gold", header?.gold ?? "—", "text-spire-warning"],
             ] as const
           ).map(([label, val, col]) => (
             <div
@@ -1319,11 +1427,11 @@ export function MonitorDashboard() {
               </span>
             </div>
           ))}
-          <div className="flex flex-wrap items-center gap-x-4 border-l border-slate-600/55 pl-4">
+          <div className="flex flex-wrap items-center gap-x-4 border-l border-spire-border-strong/55 pl-4">
             {(
               [
-                ["Energy", header?.energy ?? "—", "text-cyan-400"],
-                ["Turn", header?.turn ?? "—", "text-slate-50"],
+                ["Energy", header?.energy ?? "—", "text-spire-secondary"],
+                ["Turn", header?.turn ?? "—", "text-spire-primary"],
               ] as const
             ).map(([label, val, col]) => (
               <div
@@ -1337,12 +1445,12 @@ export function MonitorDashboard() {
               </div>
             ))}
           </div>
-          <div className="flex min-h-[2.25rem] flex-col justify-center gap-1 border-l border-slate-600/55 pl-4">
+          <div className="flex min-h-[2.25rem] flex-col justify-center gap-1 border-l border-spire-border-strong/55 pl-4">
             <span className={osdHudLabel}>Keys</span>
             <KeysLetters keys={vm?.keys} />
           </div>
           {vm?.in_game ? (
-            <div className="flex flex-wrap items-center gap-x-3 border-l border-slate-600/55 pl-4">
+            <div className="flex flex-wrap items-center gap-x-3 border-l border-spire-border-strong/55 pl-4">
               <div className="flex min-h-[2.25rem] flex-col justify-center gap-1">
                 <span className={osdHudLabel}>Deck</span>
                 <button
@@ -1357,7 +1465,7 @@ export function MonitorDashboard() {
                       ? "No master deck in this snapshot"
                       : "View master deck (full run list)"
                   }
-                  className="min-w-[2rem] rounded border border-slate-600/90 bg-slate-900/80 px-1.5 py-0.5 text-center font-mono text-[11px] font-semibold tabular-nums text-slate-300 transition hover:border-slate-500 hover:bg-slate-800/90 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="min-w-[2rem] rounded border border-spire-border-strong/90 bg-spire-canvas/80 px-1.5 py-0.5 text-center font-mono text-[13px] font-semibold tabular-nums text-spire-primary transition hover:border-spire-border-strong hover:bg-spire-panel/90 hover:text-spire-primary disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {fmtIntEn(masterDeck.length)}
                 </button>
@@ -1373,14 +1481,14 @@ export function MonitorDashboard() {
                       side="bottom"
                       className="w-auto shrink-0"
                     >
-                      <div className="font-console max-w-[7.5rem] truncate rounded border border-slate-600/90 bg-slate-800/80 px-1.5 py-0.5 text-xs font-medium text-slate-200">
+                      <div className="font-console max-w-[7.5rem] truncate rounded-md border-2 border-spire-border-strong bg-spire-canvas px-1.5 py-0.5 text-xs font-bold text-spire-primary shadow-sm">
                         {String(p.name ?? "Potion")}
                       </div>
                     </HoverTip>
                   ) : (
                     <div
                       key={i}
-                      className="font-console rounded border border-dashed border-slate-600/70 px-1.5 py-0.5 text-xs text-slate-600"
+                      className="font-console rounded border border-dashed border-spire-border-strong/70 px-1.5 py-0.5 text-xs text-spire-faint"
                     >
                       —
                     </div>
@@ -1391,14 +1499,14 @@ export function MonitorDashboard() {
             </div>
           ) : null}
           {showOrbStrip ? (
-            <div className="flex flex-wrap items-center gap-1.5 border-l border-slate-600/55 pl-4">
+            <div className="flex flex-wrap items-center gap-1.5 border-l border-spire-border-strong/55 pl-4">
               <HoverTip
                 tip={orbStripHelpText()}
                 side="bottom"
                 className="shrink-0"
               >
                 <span
-                  className={`${osdStatCaption} mr-0.5 cursor-help border-b border-dotted border-slate-500/80`}
+                  className={`${osdStatCaption} mr-0.5 cursor-help border-b border-dotted border-spire-label/80`}
                 >
                   {orbMechanics.ui?.strip_label ?? "Orbs"}
                 </span>
@@ -1415,11 +1523,11 @@ export function MonitorDashboard() {
                       className="w-auto shrink-0"
                     >
                       {empty ? (
-                        <div className="font-console rounded border border-dashed border-slate-600/70 px-1.5 py-0.5 text-xs text-slate-600">
+                        <div className="font-console rounded border border-dashed border-spire-border-strong/70 px-1.5 py-0.5 text-xs text-spire-faint">
                           {orbMechanics.ui?.empty_chip ?? "—"}
                         </div>
                       ) : (
-                        <div className="font-console max-w-[6.5rem] truncate rounded border border-violet-600/75 bg-violet-950/40 px-1.5 py-0.5 text-xs font-medium text-violet-100">
+                        <div className="font-console max-w-[6.5rem] truncate rounded border border-spire-secondary/50 bg-spire-secondary/12 px-1.5 py-0.5 text-xs font-medium text-spire-primary">
                           {name || "?"}
                         </div>
                       )}
@@ -1435,14 +1543,14 @@ export function MonitorDashboard() {
       {/* IDE workspace */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Col 1 — relics / powers */}
-        <aside className="flex w-36 shrink-0 flex-col border-r border-slate-700 bg-slate-900">
-          <div className="flex min-h-0 flex-1 flex-col border-b border-slate-700">
+        <aside className="flex w-36 shrink-0 flex-col border-r border-spire-border-subtle bg-spire-canvas">
+          <div className="flex min-h-0 flex-1 flex-col border-b border-spire-border-subtle">
             <div className={osdPanelStrip}>
               Relics · {fmtIntEn(relics.length)}
             </div>
             <div className="custom-scroll flex-1 space-y-1 overflow-y-auto p-2">
               {relics.length === 0 ? (
-                <div className="px-1 font-console text-sm italic text-slate-600">
+                <div className="px-1 font-console text-sm italic text-spire-faint">
                   None
                 </div>
               ) : (
@@ -1453,7 +1561,7 @@ export function MonitorDashboard() {
                     side="right"
                     className="w-full min-w-0"
                   >
-                    <div className="cursor-help truncate rounded border border-slate-700 bg-slate-800/50 px-1.5 py-1 text-sm text-slate-300">
+                    <div className="cursor-help truncate rounded-md border-2 border-spire-border-subtle bg-spire-canvas px-1.5 py-1 text-sm font-medium text-spire-primary shadow-sm">
                       {String(r.name ?? "?")}
                     </div>
                   </HoverTip>
@@ -1465,7 +1573,7 @@ export function MonitorDashboard() {
             <div className={osdPanelStrip}>Powers</div>
             <div className="custom-scroll flex-1 overflow-y-auto p-2">
               {playerPowers.length === 0 ? (
-                <div className="px-1 font-console text-sm italic text-slate-600">
+                <div className="px-1 font-console text-sm italic text-spire-faint">
                   None
                 </div>
               ) : (
@@ -1479,7 +1587,7 @@ export function MonitorDashboard() {
                       side="right"
                       className="w-full min-w-0"
                     >
-                      <div className="cursor-help truncate rounded border border-slate-700 bg-slate-800/50 px-1.5 py-0.5 text-sm">
+                      <div className="cursor-help truncate rounded-md border-2 border-spire-border-subtle bg-spire-canvas px-1.5 py-0.5 text-sm font-medium text-spire-primary shadow-sm">
                         {powerChipLabel(p)}
                       </div>
                     </HoverTip>
@@ -1491,31 +1599,37 @@ export function MonitorDashboard() {
         </aside>
 
         {/* Col 2–3 — main */}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-slate-700">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-spire-border-subtle">
           {/* Top: non-combat screen (from vm.screen) OR enemies | hand */}
           {showScreenPanel && vm ? (
-            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden border-b border-slate-700">
+            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden border-b border-spire-border-subtle">
               <GameScreenPanel
                 vm={vm}
                 onChoose={(cmd) => void queueManualCommand(cmd)}
               />
             </div>
           ) : (
-            <div className="flex min-h-0 flex-1 border-b border-slate-700">
-              <div className="flex min-h-0 min-w-0 flex-[0.68] flex-col border-r border-slate-700">
-                <div className={`sticky top-0 z-10 ${osdPanelStrip}`}>
+            <div className="flex min-h-0 min-w-0 flex-[1.45_1_0%] overflow-hidden border-b border-spire-border-subtle max-h-[min(68vh,44rem)]">
+              <div
+                className={`flex min-h-0 min-w-0 flex-col border-r border-spire-border-subtle bg-spire-canvas ${
+                  monsters.length === 0
+                    ? "max-w-[11rem] shrink-0 flex-[0_0_auto] basis-[22%]"
+                    : "min-w-0 flex-[0.68]"
+                }`}
+              >
+                <div className={`sticky top-0 z-10 ${osdCombatBoardStrip}`}>
                   Enemies · {fmtIntEn(monsters.length)}
                 </div>
-                <div className="custom-scroll flex-1 space-y-3 overflow-y-auto p-3">
+                <div className="custom-scroll flex-1 space-y-1.5 overflow-y-auto p-2">
                   {monsters.length === 0 ? (
-                    <div className="space-y-2 px-2 py-6 text-center text-sm text-slate-500">
-                      <p className="font-medium text-slate-400">No enemies</p>
+                    <div className="space-y-2 px-2 py-6 text-center text-sm text-spire-label">
+                      <p className="font-medium text-spire-muted">No enemies</p>
                       {nonCombatBoardHint ? (
-                        <p className="text-xs leading-relaxed text-slate-600">
+                        <p className="text-xs leading-relaxed text-spire-faint">
                           {nonCombatBoardHint}
                         </p>
                       ) : (
-                        <p className="text-xs text-slate-600">No enemies.</p>
+                        <p className="text-xs text-spire-faint">No enemies.</p>
                       )}
                     </div>
                   ) : (
@@ -1524,8 +1638,12 @@ export function MonitorDashboard() {
                 </div>
               </div>
 
-              <div className="flex min-h-0 min-w-0 flex-[1.32] flex-col bg-slate-900">
-                <div className={`sticky top-0 z-10 ${osdPanelStrip}`}>
+              <div
+                className={`flex min-h-0 min-w-0 flex-col bg-spire-canvas ${
+                  monsters.length === 0 ? "min-w-0 flex-1" : "flex-[1.32]"
+                }`}
+              >
+                <div className={`sticky top-0 z-10 ${osdCombatBoardStrip}`}>
                   <span className="min-w-0 shrink-0 truncate">
                     Hand · {fmtIntEn(hand.length)}
                   </span>
@@ -1543,16 +1661,16 @@ export function MonitorDashboard() {
                 </div>
                 <div className="custom-scroll min-h-0 flex-1 overflow-y-auto">
                   {hand.length === 0 ? (
-                    <div className="space-y-2 px-3 py-8 text-center text-sm text-slate-500">
-                      <p className="font-medium text-slate-400">
+                    <div className="space-y-2 px-2 py-4 text-center text-sm text-spire-label">
+                      <p className="font-medium text-spire-muted">
                         No cards in hand
                       </p>
                       {nonCombatBoardHint ? (
-                        <p className="text-xs leading-relaxed text-slate-600">
+                        <p className="text-xs leading-relaxed text-spire-faint">
                           {nonCombatBoardHint}
                         </p>
                       ) : (
-                        <p className="text-xs text-slate-600">No cards in hand.</p>
+                        <p className="text-xs text-spire-faint">No cards in hand.</p>
                       )}
                     </div>
                   ) : (
@@ -1564,15 +1682,15 @@ export function MonitorDashboard() {
           )}
 
           {/* Valid actions — full width under enemies + hand (z-index keeps it above scrolling map) */}
-          <div className="relative z-10 flex h-[6.25rem] max-h-[28vh] shrink-0 flex-col border-b border-t border-slate-700/90 bg-slate-900/95 shadow-[0_-6px_20px_rgba(0,0,0,0.35)]">
+          <div className="relative z-10 flex min-h-[2.75rem] max-h-[28vh] shrink-0 flex-col border-b-2 border-t-2 border-spire-border-subtle bg-spire-canvas shadow-[0_-4px_18px_rgba(42,34,24,0.06)]">
             <div
-              className={`shrink-0 border-b border-slate-700/85 bg-slate-800/80 px-2 py-1 ${osdSectionLabel}`}
+              className={`shrink-0 border-b-2 border-spire-border-muted bg-spire-canvas px-2 py-1.5 ${osdSectionLabel}`}
             >
               Valid actions
             </div>
             <div className="custom-scroll flex flex-1 flex-wrap content-start gap-1 overflow-y-auto px-2 py-1">
               {actions.length === 0 ? (
-                <span className="font-console text-xs text-slate-600">
+                <span className="font-console text-xs text-spire-faint">
                   No actions
                 </span>
               ) : (
@@ -1591,9 +1709,12 @@ export function MonitorDashboard() {
             </div>
           </div>
 
-          {/* Bottom: LLM prompt | session log */}
-          <div className="flex h-[min(38vh,30rem)] min-h-[20rem] shrink-0 border-t border-slate-700">
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-slate-700 bg-slate-950">
+          {/* Bottom: LLM user prompt — flex-1 shares vertical space with combat band (combat flex-grow is higher). */}
+          <div
+            className="flex min-h-0 flex-1 flex-col border-t border-spire-border-subtle"
+            style={{ minHeight: "min(22vh, 17rem)" }}
+          >
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-spire-canvas">
               <div
                 className={osdPanelStrip}
                 title="Tactical user message for this state (live trace or server preview)."
@@ -1609,57 +1730,25 @@ export function MonitorDashboard() {
                   Copy
                 </button>
               </div>
-              <pre className="font-telemetry custom-scroll flex-1 overflow-auto p-2 text-sm leading-relaxed whitespace-pre text-slate-400">
+              <pre className="font-telemetry custom-scroll flex-1 overflow-auto p-3 text-base font-medium leading-relaxed whitespace-pre text-spire-primary">
                 {tacticalPromptText}
               </pre>
-            </div>
-
-            <div className="flex w-[min(26vw,22rem)] min-w-[15rem] max-w-[24rem] shrink-0 flex-col bg-slate-950">
-              <div className={osdPanelStrip}>
-                <span>Session log</span>
-                <span className="font-telemetry text-xs tabular-nums text-slate-500">
-                  {fmtIntEn(logLines.length)}
-                </span>
-              </div>
-              <div className="custom-scroll flex-1 space-y-1 overflow-y-auto p-2 font-telemetry text-sm leading-snug">
-                {logLines.map((line, i) => (
-                  <div key={i} className="flex gap-2">
-                    <span className="shrink-0 whitespace-nowrap text-slate-500">
-                      [{line.t}]
-                    </span>
-                    <span
-                      className={`w-12 shrink-0 font-semibold ${
-                        line.kind === "ERROR"
-                          ? "text-red-400"
-                          : line.kind === "STATE"
-                            ? "text-blue-400"
-                            : line.kind === "SYSTEM"
-                              ? "text-yellow-500"
-                              : line.kind === "REPLAY"
-                                ? "text-violet-400"
-                                : "text-slate-500"
-                      }`}
-                    >
-                      {line.kind}
-                    </span>
-                    <span className="text-slate-300">
-                      {line.msg}
-                      {(line.repeat ?? 1) > 1 ? (
-                        <span className="whitespace-nowrap text-slate-500">
-                          {" "}
-                          x{fmtIntEn(line.repeat ?? 1)}
-                        </span>
-                      ) : null}
-                    </span>
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
         </main>
 
         {/* Col 4 — AI operator rail (compact; boxed headers avoid overlap with scroll areas) */}
-        <aside className="z-20 flex w-[min(32rem,40vw)] min-w-[26rem] shrink-0 flex-col border-l border-emerald-950/30 bg-[#07090c] shadow-[-8px_0_24px_rgba(0,0,0,0.4)]">
+        <aside
+          className="relative z-20 flex max-w-[min(960px,56vw)] shrink-0 flex-col border-l border-spire-success/25 bg-[var(--bg-canvas)] pl-1 shadow-[-6px_0_20px_rgba(42,34,24,0.07)]"
+          style={{ width: railWidthPx }}
+        >
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize AI rail"
+            className="absolute left-0 top-0 z-30 h-full w-1 cursor-col-resize hover:bg-spire-accent/20"
+            onMouseDown={onRailResizeMouseDown}
+          />
           <div className={osdPanelStrip}>
             <span className="min-w-0 truncate">AI control</span>
             <button
@@ -1679,7 +1768,7 @@ export function MonitorDashboard() {
           </div>
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 custom-scroll">
             <div
-              className="shrink-0 rounded border border-slate-700/80 bg-slate-950/80 px-2 py-2"
+              className="shrink-0 rounded-md border-2 border-spire-border-subtle bg-spire-canvas px-2 py-2 shadow-sm"
               title={aiRailTitle}
             >
               <AgentModeBar
@@ -1687,12 +1776,12 @@ export function MonitorDashboard() {
                 disabled={snapshot == null}
                 onSelect={(m) => void setAgentMode(m)}
               />
-              <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-slate-700/80 bg-slate-900/60 px-2.5 py-2">
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-md border-2 border-spire-border-subtle bg-spire-canvas px-2.5 py-2 shadow-sm">
                 <div className="min-w-0">
-                  <div className="font-console text-[11px] font-semibold uppercase tracking-wide text-slate-300">
+                  <div className="font-console text-[13px] font-semibold uppercase tracking-wide text-spire-primary">
                     Auto-start next run
                   </div>
-                  <p className="mt-0.5 font-telemetry text-[10px] leading-snug text-slate-500">
+                  <p className="mt-0.5 font-telemetry text-[13px] leading-snug text-spire-label">
                     Sends start on the title screen so a new run begins without
                     in-game Continue.
                   </p>
@@ -1713,15 +1802,15 @@ export function MonitorDashboard() {
                     )
                   }
                   className={
-                    "relative h-7 w-12 shrink-0 rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:cursor-not-allowed disabled:opacity-40 " +
+                    "relative h-7 w-12 shrink-0 rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spire-success/40 disabled:cursor-not-allowed disabled:opacity-40 " +
                     (agentForRail?.auto_start_next_game
-                      ? "border-emerald-600/80 bg-emerald-950/80"
-                      : "border-slate-600 bg-slate-950")
+                      ? "border-spire-success bg-spire-success/12"
+                      : "border-spire-border-strong bg-spire-panel-raised")
                   }
                 >
                   <span
                     className={
-                      "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-slate-100 shadow transition-transform " +
+                      "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-spire-primary shadow transition-transform " +
                       (agentForRail?.auto_start_next_game
                         ? "translate-x-5"
                         : "translate-x-0")
@@ -1733,9 +1822,9 @@ export function MonitorDashboard() {
             </div>
 
             {llmRunStatus.kind === "error" ? (
-              <div className="shrink-0 rounded border border-red-800/65 bg-red-950/35 p-2 shadow-[inset_0_0_0_1px_rgba(248,113,113,0.12)]">
+              <div className="shrink-0 rounded border border-spire-danger/45 bg-spire-danger/10 p-2 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--danger)_18%,transparent)]">
                 <div className="mb-1 flex items-start justify-between gap-2">
-                  <span className="font-console text-xs font-bold uppercase tracking-[0.1em] text-red-300">
+                  <span className="font-console text-xs font-bold uppercase tracking-[0.1em] text-spire-danger">
                     {llmRunStatus.title}
                   </span>
                   <button
@@ -1748,54 +1837,54 @@ export function MonitorDashboard() {
                     Copy
                   </button>
                 </div>
-                <p className="font-telemetry text-sm leading-snug text-red-100/95 whitespace-pre-wrap break-words">
+                <p className="font-telemetry text-sm leading-snug text-spire-primary/95 whitespace-pre-wrap break-words">
                   {llmRunStatus.message}
                 </p>
               </div>
             ) : (
-              <div className="shrink-0 rounded border border-sky-800/55 bg-sky-950/30 p-2 shadow-[inset_0_0_0_1px_rgba(56,189,248,0.12)]">
+              <div className="shrink-0 rounded border border-spire-live-border bg-spire-live-surface p-2 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--accent-primary)_14%,transparent)]">
                 <div className="mb-1 flex items-center gap-2">
                   {llmRunStatus.pulse !== false ? (
                     <span
-                      className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.7)]"
+                      className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-spire-accent shadow-[0_0_10px_color-mix(in_srgb,var(--accent-primary)_55%,transparent)]"
                       aria-hidden
                     />
                   ) : null}
-                  <span className="font-console text-xs font-bold uppercase tracking-[0.1em] text-sky-200">
+                  <span className="font-console text-xs font-bold uppercase tracking-[0.1em] text-spire-primary">
                     {llmRunStatus.title}
                   </span>
                 </div>
-                <p className="font-telemetry text-sm leading-snug text-sky-100/90">
+                <p className="font-telemetry text-sm leading-snug text-spire-primary/90">
                   {llmRunStatus.message}
                 </p>
               </div>
             )}
 
             {agentForRail?.pending_approval ? (
-              <div className="flex shrink-0 flex-col gap-2 rounded border border-amber-900/35 bg-slate-800/35 p-2">
-                <span className="font-console text-xs font-semibold uppercase tracking-[0.12em] text-amber-400">
+              <div className="flex shrink-0 flex-col gap-2 rounded-md border-2 border-spire-warning/60 bg-spire-canvas p-2 shadow-sm">
+                <span className="font-console text-xs font-semibold uppercase tracking-[0.12em] text-spire-warning">
                   Awaiting approval
                 </span>
-                <div className="space-y-1 rounded border border-slate-700/90 bg-slate-950 px-2 py-1.5 font-telemetry text-sm text-slate-200">
+                <div className="space-y-1 rounded-md border-2 border-spire-border-subtle bg-spire-canvas px-2 py-1.5 font-telemetry text-sm font-medium text-spire-primary">
                   {hitlQueuedSteps.length === 0 ? (
-                    <div className="text-xs font-semibold text-white">—</div>
+                    <div className="text-xs font-semibold text-spire-primary">—</div>
                   ) : (
                     hitlQueuedSteps.map((line, i) => (
                       <div
                         key={`${i}-${line}`}
                         className="flex gap-2 leading-snug"
                       >
-                        <span className="w-5 shrink-0 text-right font-mono text-xs text-slate-500">
+                        <span className="w-5 shrink-0 text-right font-mono text-xs text-spire-label">
                           {fmtIntEn(i + 1)}.
                         </span>
-                        <span className="min-w-0 flex-1 font-semibold tracking-wide text-white">
+                        <span className="min-w-0 flex-1 font-semibold tracking-wide text-spire-primary">
                           {line}
                         </span>
                       </div>
                     ))
                   )}
                 </div>
-                <p className="font-telemetry text-xs leading-snug text-slate-500">
+                <p className="font-telemetry text-xs leading-snug text-spire-label">
                   {hitlReadOnly
                     ? "Replay: view only (approve/reject/edit inactive)."
                     : "Approve runs the first queued command; reject cancels this proposal."}
@@ -1830,7 +1919,7 @@ export function MonitorDashboard() {
                     onChange={(e) => setEditCmd(e.target.value)}
                     disabled={hitlReadOnly}
                     placeholder="Edit command…"
-                    className="font-telemetry h-7 min-h-7 min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-sm leading-tight text-slate-100 outline-none focus-visible:border-indigo-500 focus-visible:ring-1 focus-visible:ring-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="font-telemetry h-8 min-h-8 min-w-0 flex-1 rounded-md border-2 border-spire-border-subtle bg-spire-canvas px-2 py-1 text-sm font-medium leading-tight text-spire-primary shadow-sm outline-none focus-visible:border-spire-secondary focus-visible:ring-2 focus-visible:ring-spire-ring-focus/35 disabled:cursor-not-allowed disabled:opacity-50"
                   />
                   <button
                     type="button"
@@ -1845,8 +1934,8 @@ export function MonitorDashboard() {
             ) : null}
 
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-slate-800/90 bg-slate-950/30">
-                <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-800 bg-slate-900/95 px-2 py-1">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border-2 border-spire-border-muted bg-spire-canvas shadow-sm">
+                <div className="flex shrink-0 items-center justify-between gap-2 border-b-2 border-spire-border-muted bg-spire-canvas px-2 py-1.5">
                   <span className={osdSectionLabel}>Model output</span>
                   <button
                     type="button"
@@ -1860,7 +1949,7 @@ export function MonitorDashboard() {
                 <textarea
                   readOnly
                   value={llmRaw}
-                  className="font-telemetry custom-scroll min-h-0 flex-1 resize-none border-0 bg-transparent p-2 text-sm leading-relaxed text-slate-400 outline-none"
+                  className="font-telemetry custom-scroll min-h-0 flex-1 resize-none border-0 bg-transparent p-3 text-sm font-medium leading-relaxed text-spire-primary outline-none"
                   placeholder={(() => {
                     const b = String(agentForRail?.llm_backend ?? "")
                       .trim()

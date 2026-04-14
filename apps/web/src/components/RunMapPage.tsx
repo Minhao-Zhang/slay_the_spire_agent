@@ -64,7 +64,7 @@ export function RunMapPage() {
   }, [current]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-[#0a0d11] to-[#06080a] text-sm text-slate-300">
+    <div className="metrics-page-bg min-h-screen text-sm text-[var(--text-primary)]">
       <RunMetricsRunBar
         runs={runs}
         run={run}
@@ -79,11 +79,11 @@ export function RunMapPage() {
 
       <main className="space-y-4 px-4 py-5">
         {!run ? (
-          <p className="text-sm text-slate-500">Select a run to view maps.</p>
+          <p className="text-sm text-spire-label">Select a run to view maps.</p>
         ) : null}
 
         {run && !mapLoading && mapPayload && !mapPayload.ok ? (
-          <p className="text-sm text-amber-400/90">
+          <p className="text-sm text-spire-warning/90">
             {mapPayload.reason === "read_error"
               ? "Could not read run directory for map history."
               : `Map history unavailable (${mapPayload.reason}).`}
@@ -91,14 +91,14 @@ export function RunMapPage() {
         ) : null}
 
         {run && mapPayload?.ok && acts.length === 0 && !mapLoading ? (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-spire-label">
             No map data in captured frames yet.
           </p>
         ) : null}
 
         {acts.length > 0 ? (
           <>
-            <div className="flex flex-wrap gap-2 border-b border-slate-700/80 pb-3">
+            <div className="flex flex-wrap gap-2 border-b border-spire-border-subtle/80 pb-3">
               {acts.map((a, i) => (
                 <button
                   key={a.act}
@@ -107,13 +107,13 @@ export function RunMapPage() {
                   className={
                     "rounded border px-3 py-1.5 font-console text-xs font-semibold uppercase tracking-wide transition " +
                     (safeTab === i
-                      ? "border-sky-600 bg-sky-950/60 text-sky-200"
-                      : "border-slate-700 bg-slate-950/50 text-slate-400 hover:border-slate-600")
+                      ? "border-spire-accent bg-spire-live-surface text-spire-primary"
+                      : "border-spire-border-subtle bg-spire-inset/50 text-spire-muted hover:border-spire-border-strong")
                   }
                 >
                   Act {fmtIntEn(a.act)}
                   {a.boss_name ? (
-                    <span className="ml-1 font-normal text-slate-500">
+                    <span className="ml-1 font-normal text-spire-label">
                       ({a.boss_name})
                     </span>
                   ) : null}
@@ -122,15 +122,44 @@ export function RunMapPage() {
             </div>
             {current ? (
               <div className="space-y-2">
-                <div className="min-h-[24rem] rounded border border-slate-700/80 bg-slate-950/30 p-2">
+                {current.boss_name ? (
+                  <div className="rounded border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-panel)_55%,transparent)] px-3 py-2 font-console text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                    Boss:{" "}
+                    <span className="normal-case tracking-normal text-[var(--text-primary)]">
+                      {current.boss_name}
+                    </span>
+                  </div>
+                ) : null}
+                <div className="min-h-[24rem] rounded border border-spire-border-subtle/80 bg-spire-inset/30 p-2">
                   <MapView
                     mapData={mapViz}
                     bossAvailable={false}
                     readOnly
+                    hideBossNode
                     visitedPath={current.visited_path}
                   />
                 </div>
-                <p className="text-[11px] text-slate-500">
+                <div className="flex flex-wrap gap-x-4 gap-y-2 text-[13px] text-spire-label">
+                  <span className="font-console font-semibold uppercase tracking-wide text-spire-muted">
+                    Legend
+                  </span>
+                  {(
+                    [
+                      ["M", "Monster"],
+                      ["E", "Elite"],
+                      ["R", "Rest"],
+                      ["$", "Shop"],
+                      ["?", "Event / missing"],
+                      ["T", "Treasure"],
+                    ] as const
+                  ).map(([sym, label]) => (
+                    <span key={sym} className="tabular-nums">
+                      <span className="font-mono text-spire-primary">{sym}</span>{" "}
+                      {label}
+                    </span>
+                  ))}
+                </div>
+                <p className="text-[13px] text-spire-label">
                   Visited steps: {fmtIntEn(current.visited_path.length)} · Nodes:{" "}
                   {fmtIntEn(current.nodes.length)}
                 </p>

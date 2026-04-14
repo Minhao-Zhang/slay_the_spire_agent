@@ -178,7 +178,7 @@ sequenceDiagram
 
 ## 6. Operator UI (`apps/web`)
 
-Vite + React Router: monitor (`/`), run metrics (`/metrics`), multi-run compare (`/metrics/compare`), map replay (`/metrics/map`). Dev server proxies **`/api`** and **`/ws`** to **`127.0.0.1:8000`**. See [`apps/web/README.md`](apps/web/README.md) and route table in [`apps/web/src/App.tsx`](apps/web/src/App.tsx).
+Vite + React Router: monitor (`/`), run metrics (`/metrics`), map replay (`/metrics/map`). Dev server proxies **`/api`** and **`/ws`** to **`127.0.0.1:8000`**. See [`apps/web/README.md`](apps/web/README.md) and route table in [`apps/web/src/App.tsx`](apps/web/src/App.tsx).
 
 Interaction flow with the dashboard and bridge: [user-sequence-diagram.md](user-sequence-diagram.md).
 

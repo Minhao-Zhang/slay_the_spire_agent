@@ -26,6 +26,50 @@ export type MapVizData = {
 const MIN_GRID_MAX_X = 6;
 const ROW_H = 78;
 
+/** Aligns with `map_analysis._SYMBOL_TO_BUCKET` (CommunicationMod single-char symbols). */
+type MapRoomBucket =
+  | "monster"
+  | "elite"
+  | "rest"
+  | "shop"
+  | "event"
+  | "treasure"
+  | "unknown";
+
+function bucketForSymbol(symbol: string | undefined): MapRoomBucket {
+  const ch = (symbol?.trim() || "?")[0] ?? "?";
+  switch (ch) {
+    case "M":
+      return "monster";
+    case "E":
+      return "elite";
+    case "R":
+      return "rest";
+    case "$":
+      return "shop";
+    case "?":
+      return "event";
+    case "T":
+      return "treasure";
+    default:
+      return "unknown";
+  }
+}
+
+/** Bucket fills — jewel tones on parchment map (borders align with theme accents). */
+const BUCKET_STYLE: Record<
+  MapRoomBucket,
+  { bg: string; border: string; fg: string }
+> = {
+  monster: { bg: "rgb(248 160 160 / 0.55)", border: "#b91c1c", fg: "#14110c" },
+  elite: { bg: "rgb(245 200 120 / 0.55)", border: "#9a6d00", fg: "#14110c" },
+  rest: { bg: "rgb(130 220 180 / 0.5)", border: "#059669", fg: "#14110c" },
+  shop: { bg: "rgb(150 190 255 / 0.5)", border: "#2563eb", fg: "#14110c" },
+  event: { bg: "rgb(190 170 248 / 0.48)", border: "#5b21b6", fg: "#14110c" },
+  treasure: { bg: "rgb(230 200 120 / 0.52)", border: "#7a5500", fg: "#14110c" },
+  unknown: { bg: "rgb(175 168 152 / 0.65)", border: "#6b5e4e", fg: "#14110c" },
+};
+
 function nodeKey(x: number, y: number): string {
   return `${x},${y}`;
 }
@@ -88,6 +132,8 @@ export function MapView({
   bossAvailable,
   readOnly = false,
   visitedPath,
+  /** Hide synthetic boss orb (e.g. run map analytics — boss shown in page chrome). */
+  hideBossNode = false,
 }: {
   mapData: MapVizData | null | undefined;
   onChoose?: (command: string) => void;
@@ -96,6 +142,7 @@ export function MapView({
   readOnly?: boolean;
   /** Draw a path through these map coordinates (e.g. from map_history). */
   visitedPath?: Array<{ x: number; y: number }>;
+  hideBossNode?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [cw, setCw] = useState(0);
@@ -120,7 +167,7 @@ export function MapView({
     return (
       <div
         ref={containerRef}
-        className="min-h-[8rem] w-full rounded border border-slate-800 bg-slate-950/50"
+        className="min-h-[8rem] w-full rounded border border-spire-border-muted bg-spire-inset/50"
       />
     );
   }
@@ -153,6 +200,9 @@ export function MapView({
     if (colW <= 0) return;
     const p = getPos(n.x, n.y);
     (n.children ?? []).forEach((c) => {
+      const ck = nodeKey(c.x, c.y);
+      // Drop synthetic edges to the boss orb / off-graph targets (not real room nodes).
+      if (!knownNodes.has(ck)) return;
       const ep = getPos(c.x, c.y);
       const isNext =
         current != null &&
@@ -170,7 +220,7 @@ export function MapView({
           strokeWidth={isNext ? 2 : 1}
           strokeDasharray={isNext ? undefined : "4 3"}
           vectorEffect="non-scaling-stroke"
-          className={isNext ? "text-sky-400" : "text-slate-600"}
+          className={isNext ? "text-spire-accent" : "text-spire-faint"}
         />,
       );
     });
@@ -200,10 +250,9 @@ export function MapView({
           x2={p1.x}
           y2={p1.y}
           stroke="currentColor"
-          strokeWidth={2}
-          strokeDasharray="6 4"
+          strokeWidth={2.5}
           vectorEffect="non-scaling-stroke"
-          className="text-emerald-500/90"
+          className="text-spire-success/90"
         />,
       );
     }
@@ -214,18 +263,18 @@ export function MapView({
   return (
     <div
       ref={containerRef}
-      className="relative w-full min-h-0 rounded border border-slate-800 bg-slate-950/50"
+      className="relative w-full min-h-0 rounded border border-spire-border-muted bg-spire-inset/50"
     >
       {cw > 0 ? (
         <>
           <svg
-            className="pointer-events-none absolute left-0 top-0 z-[1] w-full text-slate-600"
+            className="pointer-events-none absolute left-0 top-0 z-[1] w-full text-spire-faint"
             height={totalH}
             width="100%"
             aria-hidden
           >
-            {visitedLineEls}
             {lineEls}
+            {visitedLineEls}
           </svg>
           <div
             className="relative z-[2]"
@@ -240,29 +289,52 @@ export function MapView({
                 (nx) => nx.x === n.x && nx.y === n.y,
               );
               const canClick = !readOnly && nIdx !== -1;
+              const bucket = bucketForSymbol(n.symbol);
+              const pal = BUCKET_STYLE[bucket];
+              const readOnlyTip =
+                readOnly && (n.symbol === "?" || n.symbol === undefined)
+                  ? "? — event room in mod data, or missing symbol on this frame"
+                  : readOnly
+                    ? `${n.symbol ?? "?"} (${bucket})`
+                    : undefined;
               return (
                 <button
                   key={`node-${ni}-${n.x}-${n.y}`}
                   type="button"
                   disabled={!canClick}
-                  title={canClick ? `#${nIdx}` : undefined}
+                  title={
+                    canClick
+                      ? `#${nIdx}`
+                      : readOnlyTip ?? (wasVisited ? "Visited" : undefined)
+                  }
                   onClick={() => onChoose(`choose ${nIdx}`)}
                   className={
                     "absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 font-console text-xs font-bold transition " +
                     (isCur
-                      ? "border-amber-400 bg-amber-600 text-white shadow-[0_0_12px_rgba(251,191,36,0.45)]"
-                      : wasVisited
-                        ? "cursor-default border-emerald-600/90 bg-emerald-950/80 text-emerald-200"
-                        : canClick
-                          ? "cursor-pointer border-sky-500 bg-slate-900 text-sky-300 hover:bg-sky-900/80"
-                          : "cursor-default border-slate-600 bg-slate-900/90 text-slate-500")
+                      ? "z-[3] border-spire-warning bg-spire-warning text-spire-primary shadow-[0_0_12px_color-mix(in_srgb,var(--warning)_45%,transparent)]"
+                      : canClick
+                        ? "cursor-pointer border-spire-accent bg-spire-canvas text-spire-accent hover:bg-spire-tab-active/90"
+                        : wasVisited
+                          ? "cursor-default ring-2 ring-spire-success/55 ring-offset-2 ring-offset-spire-canvas"
+                          : "cursor-default")
                   }
-                  style={{ left: p.x, top: p.y }}
+                  style={
+                    isCur || canClick
+                      ? { left: p.x, top: p.y }
+                      : {
+                          left: p.x,
+                          top: p.y,
+                          backgroundColor: pal.bg,
+                          borderColor: pal.border,
+                          color: pal.fg,
+                        }
+                  }
                 >
                   {n.symbol ?? "?"}
                 </button>
               );
             })}
+            {!hideBossNode ? (
             <button
               type="button"
               disabled={readOnly || !bossAvailable}
@@ -277,13 +349,14 @@ export function MapView({
               className={
                 "absolute flex h-[52px] w-[52px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 font-console text-xl font-bold transition " +
                 (bossAvailable
-                  ? "cursor-pointer border-red-500 bg-red-950/80 text-red-300 hover:bg-red-900/90"
-                  : "cursor-not-allowed border-slate-700 bg-slate-900 text-slate-600 opacity-60")
+                  ? "cursor-pointer border-spire-danger bg-spire-danger/20 text-spire-danger hover:bg-spire-danger/28"
+                  : "cursor-not-allowed border-spire-border-subtle bg-spire-canvas text-spire-faint opacity-60")
               }
               style={{ left: bp.x, top: bp.y }}
             >
               {"\u2620"}
             </button>
+            ) : null}
           </div>
         </>
       ) : null}

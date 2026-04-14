@@ -50,8 +50,13 @@ ai_runtime: dict[str, Any] = {
 
 # Last envelope or raw ingress (CommunicationMod JSON) for React monitor / debug paste.
 _last_ingress_body: dict[str, Any] | None = None
+
+# MAP screen: accumulate {x,y} for visited-path overlay (live monitor + WebSocket snapshot).
+_live_map_visit_state: dict[str, Any] = {"act": None, "path": []}
 # Monotonic clock when `_last_ingress_body` was last set (game or debug paste).
 _last_ingress_monotonic: float | None = None
+# Basename under ``logs/games/`` for the active logging session (from bridge meta).
+_active_log_run: str | None = None
 
 
 def _touch_ingress_received() -> None:
@@ -75,6 +80,18 @@ def _ingress_is_live() -> bool:
     if _last_ingress_monotonic is None:
         return True
     return (time.monotonic() - _last_ingress_monotonic) <= _ingress_max_age_seconds()
+
+
+def _sanitize_active_log_run_basename(raw: Any) -> str | None:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s or "/" in s or "\\" in s or ".." in s:
+        return None
+    cls_slug, _asc = parse_game_dir_basename(s)
+    if cls_slug is None:
+        return None
+    return s
 
 
 class ConnectionManager:
@@ -440,6 +457,41 @@ def _build_agent_snapshot() -> dict[str, Any]:
     return snap
 
 
+def _live_map_visit_reset() -> None:
+    global _live_map_visit_state
+    _live_map_visit_state = {"act": None, "path": []}
+
+
+def _attach_live_map_visited_path(vm: dict[str, Any]) -> None:
+    """Append MAP ``current_node`` positions and expose ``map.visited_path`` for the client."""
+    global _live_map_visit_state
+    if not vm.get("in_game"):
+        _live_map_visit_reset()
+        return
+    mmap = vm.get("map")
+    if not isinstance(mmap, dict) or not mmap.get("nodes"):
+        return
+    header = vm.get("header") or {}
+    act_raw = header.get("act")
+    try:
+        act_key = int(act_raw) if act_raw is not None else 0
+    except (TypeError, ValueError):
+        act_key = 0
+    if _live_map_visit_state.get("act") != act_key:
+        _live_map_visit_state = {"act": act_key, "path": []}
+    screen = vm.get("screen") or {}
+    if screen.get("type") == "MAP":
+        cn = mmap.get("current_node")
+        if isinstance(cn, dict):
+            x_raw, y_raw = cn.get("x"), cn.get("y")
+            if isinstance(x_raw, (int, float)) and isinstance(y_raw, (int, float)):
+                xi, yi = int(x_raw), int(y_raw)
+                path: list[dict[str, int]] = _live_map_visit_state["path"]
+                if not path or path[-1]["x"] != xi or path[-1]["y"] != yi:
+                    path.append({"x": xi, "y": yi})
+    mmap["visited_path"] = list(_live_map_visit_state["path"])
+
+
 def _ingress_ready_for_command(data: dict[str, Any] | None) -> bool | None:
     inner = _inner_game_payload(data or {})
     if not inner or "ready_for_command" not in inner:
@@ -460,6 +512,8 @@ def _build_react_snapshot_payload() -> dict[str, Any]:
     if live and _last_ingress_body is not None:
         try:
             vm = process_state(_last_ingress_body)
+            if vm is not None:
+                _attach_live_map_visited_path(vm)
         except Exception as e:
             vm = None
             err_msg = str(e)
@@ -467,6 +521,7 @@ def _build_react_snapshot_payload() -> dict[str, Any]:
     else:
         # Game stopped or no feed: do not show a frozen board as if live.
         state_id = ""
+        _live_map_visit_reset()
 
     ingress_wire: dict[str, Any] | None = None
     if live and _last_ingress_body is not None:
@@ -492,6 +547,7 @@ def _build_react_snapshot_payload() -> dict[str, Any]:
         "agent": agent_snap,
         "live_ingress": live,
         "ingress_age_seconds": round(age_s, 1) if age_s is not None else None,
+        "active_log_run": _active_log_run,
     }
 
 
@@ -664,11 +720,17 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.post("/update_state")
 async def update_state(request: Request):
-    global _last_ingress_body
+    global _last_ingress_body, _active_log_run
     try:
         data = await request.json()
         meta = data.get("meta", {})
         state_id = meta.get("state_id", "")
+        if "active_log_run" in meta:
+            raw_alm = meta.get("active_log_run")
+            if raw_alm is None or raw_alm is False or raw_alm == "":
+                _active_log_run = None
+            else:
+                _active_log_run = _sanitize_active_log_run_basename(raw_alm)
         if state_id and state_id != ai_runtime["latest_state_id"]:
             stale_trace = _mark_trace_stale(state_id)
             ai_runtime["latest_state_id"] = state_id
