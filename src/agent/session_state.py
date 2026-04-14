@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
@@ -85,6 +86,9 @@ class TurnConversation:
     scene_key: str | None = None
     messages: list[dict[str, str]] = field(default_factory=list)
     action_history: list[str] = field(default_factory=list)
+    run_journal: deque[str] = field(default_factory=lambda: deque(maxlen=20))
+    reward_flow_key: str | None = None
+    reward_flow_ledger: list[str] = field(default_factory=list)
     strategy_notes: dict[str, str] = field(
         default_factory=lambda: {
             "deck_trajectory": "",
@@ -131,6 +135,23 @@ class TurnConversation:
 
     def remember_action(self, action: str) -> None:
         self.action_history.append(action)
+
+    def append_run_journal(self, line: str) -> None:
+        self.run_journal.append(line)
+
+    def open_reward_flow(self, key: str) -> None:
+        if self.reward_flow_key == key:
+            return
+        self.reward_flow_key = key
+        self.reward_flow_ledger = []
+
+    def close_reward_flow(self) -> None:
+        self.reward_flow_key = None
+        self.reward_flow_ledger = []
+
+    def append_reward_flow(self, entry: str) -> None:
+        if self.reward_flow_key is not None:
+            self.reward_flow_ledger.append(entry)
 
     def update_strategy_notes(self, notes: dict[str, str]) -> None:
         for key, value in notes.items():

@@ -101,7 +101,7 @@ flowchart TB
   Post --> Mem
 ```
 
-Module-level detail: [`ARCHITECTURE.md`](ARCHITECTURE.md).
+Module-level detail: [`architecture.md`](architecture.md) (with [data-flow-diagram.md](data-flow-diagram.md) and [user-sequence-diagram.md](user-sequence-diagram.md)).
 
 ## CommunicationMod `command`
 

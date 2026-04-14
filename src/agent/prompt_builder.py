@@ -648,7 +648,10 @@ def _screen_content_lines(vm: dict[str, Any]) -> list[str]:
 
     elif screen_type == "COMBAT_REWARD":
         rewards = content.get("rewards") or []
-        lines.append("Combat rewards — choose one or skip:")
+        lines.append(
+            "Combat rewards — choose one or PROCEED to leave. "
+            "Use PROCEED only after you have finished with all rewards."
+        )
         for r in rewards:
             label = r.get("label", r.get("reward_type", "?"))
             idx = r.get("choice_index", "?")
@@ -820,10 +823,12 @@ def _format_memory_hits(hits: list[RetrievalHit]) -> str:
 def build_prompt_groups(
     vm: dict[str, Any],
     recent_actions: list[str],
+    run_journal: list[str] | None = None,
     strategy_notes: list[str] | None = None,
     combat_plan_guide: str | None = None,
     prompt_profile: str = "default",
     memory_hits: list[RetrievalHit] | None = None,
+    reward_flow: list[str] | None = None,
 ) -> list[PromptGroup]:
     header = as_dict(vm.get("header"))
     inventory = as_dict(vm.get("inventory"))
@@ -997,25 +1002,41 @@ def build_prompt_groups(
             ),
         )
 
-    groups.append(
-        PromptGroup(
-            "History & tools",
-            [
-                PromptSubsection(
-                    "RECENT EXECUTED ACTIONS",
-                    _fmt_list(
-                        recent_action_lines,
-                        fallback="No prior executed actions in this scene.",
-                    ),
+    history_subsections: list[PromptSubsection] = []
+    if run_journal:
+        history_subsections.append(
+            PromptSubsection(
+                "RECENT RUN STEPS",
+                _fmt_list(
+                    list(run_journal)[-8:],
+                    fallback="No run steps recorded yet.",
                 ),
-                PromptSubsection(
-                    "TOOLING NOTES",
-                    tooling_body,
-                    profile_key="tooling_notes",
+            ),
+        )
+    if reward_flow:
+        history_subsections.append(
+            PromptSubsection(
+                "REWARD FLOW (this combat reward)",
+                _fmt_list(list(reward_flow)),
+            ),
+        )
+    history_subsections.extend(
+        [
+            PromptSubsection(
+                "RECENT EXECUTED ACTIONS",
+                _fmt_list(
+                    recent_action_lines,
+                    fallback="No prior executed actions in this scene.",
                 ),
-            ],
-        ),
+            ),
+            PromptSubsection(
+                "TOOLING NOTES",
+                tooling_body,
+                profile_key="tooling_notes",
+            ),
+        ],
     )
+    groups.append(PromptGroup("History & tools", history_subsections))
 
     if memory_hits:
         groups.append(
@@ -1045,18 +1066,22 @@ def build_user_prompt(
     vm: dict[str, Any],
     _state_id: str,
     recent_actions: list[str],
+    run_journal: list[str] | None = None,
     strategy_notes: list[str] | None = None,
     combat_plan_guide: str | None = None,
     prompt_profile: str = "default",
     memory_hits: list[RetrievalHit] | None = None,
+    reward_flow: list[str] | None = None,
 ) -> str:
     groups = build_prompt_groups(
         vm,
         recent_actions,
+        run_journal=run_journal,
         strategy_notes=strategy_notes,
         combat_plan_guide=combat_plan_guide,
         prompt_profile=prompt_profile,
         memory_hits=memory_hits,
+        reward_flow=reward_flow,
     )
     return _render_hierarchical(groups)
 

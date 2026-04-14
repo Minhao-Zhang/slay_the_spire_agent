@@ -10,6 +10,7 @@ from pathlib import Path
 
 import requests
 
+from src.agent.command_narration import describe_execution
 from src.agent.graph import SpireDecisionAgent
 from src.agent.policy import is_end_turn_command_token, resolve_token_play
 from src.agent.session_state import TurnConversation, is_command_failure_state, mark_trace_command_failed
@@ -570,6 +571,20 @@ def main():
         if reason:
             notify_dashboard("/log", {"message": reason})
 
+    def send_game_command(
+        action: str,
+        source: str,
+        *,
+        vm: dict,
+        legal_actions: list[dict] | None = None,
+        skip_journal: bool = False,
+    ) -> None:
+        if not skip_journal and agent.session:
+            line = describe_execution(vm, action, legal_actions or [])
+            if line:
+                agent.session.append_run_journal(line)
+        execute_action(action, source)
+
     def finalize_ai_execution(
         trace,
         state_id: str,
@@ -608,7 +623,8 @@ def main():
             )
         else:
             clear_queued_sequence()
-        execute_action(action, source)
+        vm_exec = vm_for_turn if vm_for_turn is not None else vm
+        send_game_command(action, source, vm=vm_exec, legal_actions=legal_actions or [])
 
     def _run_reflection_background(game_dir: Path | None) -> None:
         try:
@@ -878,7 +894,7 @@ def main():
                 last_ai_execution["state_id"] = state_id
                 last_ai_execution["action"] = canonical_cmd
                 last_ai_execution["source"] = seq_source
-                execute_action(canonical_cmd, seq_source)
+                send_game_command(canonical_cmd, seq_source, vm=vm, legal_actions=actions_list_now)
                 last_state_snapshot = None
                 last_log_signature = None
                 duplicate_run_length = 0
@@ -896,7 +912,12 @@ def main():
                     "/log",
                     {"message": f"Auto-selecting combat gold reward via {auto_gold_command!r}."},
                 )
-                execute_action(auto_gold_command, "auto-reward")
+                send_game_command(
+                    auto_gold_command,
+                    "auto-reward",
+                    vm=vm,
+                    legal_actions=vm.get("actions") or [],
+                )
                 last_ai_execution = {"trace": None, "state_id": None, "action": None, "source": None}
                 last_proposed_state_id = None
                 last_state_snapshot = None
@@ -909,7 +930,12 @@ def main():
                     "/log",
                     {"message": f"Combat reward cleared (no rows); auto-advancing with {auto_cr_proceed!r}."},
                 )
-                execute_action(auto_cr_proceed, "auto-reward")
+                send_game_command(
+                    auto_cr_proceed,
+                    "auto-reward",
+                    vm=vm,
+                    legal_actions=vm.get("actions") or [],
+                )
                 last_ai_execution = {"trace": None, "state_id": None, "action": None, "source": None}
                 last_proposed_state_id = None
                 last_state_snapshot = None
@@ -996,7 +1022,7 @@ def main():
                         vm_for_turn=vm,
                     )
                 else:
-                    execute_action(action, "ai")
+                    send_game_command(action, "ai", vm=vm, legal_actions=actions_list_for_check)
                 last_proposed_state_id = None
                 last_state_snapshot = None
                 last_log_signature = None
@@ -1219,7 +1245,7 @@ def main():
         last_log_signature = log_signature
 
         if manual_action:
-            execute_action(manual_action, "manual")
+            send_game_command(manual_action, "manual", vm=vm)
             last_ai_execution = {"trace": None, "state_id": None, "action": None, "source": None}
             last_proposed_state_id = None
             last_state_snapshot = None

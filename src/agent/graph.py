@@ -24,7 +24,30 @@ from src.agent.session_state import TurnConversation, format_executed_action
 from src.agent.strategist import hit_stable_id, run_strategist_llm
 from src.agent.tool_registry import execute_tool, list_function_tools_for_context, tool_filter_for_context
 from src.agent.tracing import create_trace
-from src.agent.vm_shapes import as_dict
+from src.agent.vm_shapes import as_dict, normalize_legal_actions
+
+
+def _reward_flow_label_for_choose(action: str, legal_actions: list[dict[str, Any]] | None) -> str:
+    normalized = action.strip()
+    for candidate in normalize_legal_actions(legal_actions or []):
+        command = str(candidate.get("command", "")).strip()
+        if command != normalized:
+            continue
+        label = str(candidate.get("label", "")).strip()
+        if label:
+            return f"Opened: {label}"
+    return f"Chose {normalized}"
+
+
+def _resolve_chosen_card_label_for_take(action: str, legal_actions: list[dict[str, Any]] | None) -> str:
+    normalized = action.strip()
+    for candidate in normalize_legal_actions(legal_actions or []):
+        command = str(candidate.get("command", "")).strip()
+        if command != normalized:
+            continue
+        label = str(candidate.get("label", "")).strip()
+        return label if label else normalized
+    return normalized
 
 
 class GraphState(TypedDict, total=False):
@@ -246,6 +269,10 @@ class SpireDecisionAgent:
         vm = state["vm"]
         turn_key = state["trace"].turn_key
         self.session.set_scene(turn_key)
+        screen_type = (as_dict(state["vm"].get("screen"))).get("type", "")
+        if screen_type == "COMBAT_REWARD":
+            floor = as_dict(state["vm"].get("header")).get("floor", "?")
+            self.session.open_reward_flow(f"{floor}:{state['state_id']}")
         tokenizer_model = self.config.decision_model.strip()
         if self.llm and self.session.needs_compaction(
             self.config.history_compact_token_threshold,
@@ -282,10 +309,12 @@ class SpireDecisionAgent:
             vm,
             state["state_id"],
             self.session.action_history,
+            run_journal=list(self.session.run_journal),
             strategy_notes=self.session.strategy_notes_lines(),
             combat_plan_guide=self.session.combat_plan_guide or None,
             prompt_profile=self.config.prompt_profile,
             memory_hits=memory_hits,
+            reward_flow=self.session.reward_flow_ledger or None,
         )
         prefix_parts: list[str] = []
         plan_ctx = state.get("planning_context_block")
@@ -496,3 +525,18 @@ class SpireDecisionAgent:
             return
         if trace and trace.turn_key == self.session.scene_key:
             self.session.remember_action(format_executed_action(action, legal_actions))
+
+        if trace:
+            screen = str(trace.screen_type or "").upper()
+            cmd = action.strip().upper()
+            if screen == "COMBAT_REWARD":
+                if cmd.startswith("CHOOSE"):
+                    self.session.append_reward_flow(_reward_flow_label_for_choose(action, legal_actions))
+                elif cmd == "PROCEED":
+                    self.session.close_reward_flow()
+            elif screen == "CARD_REWARD":
+                if cmd == "SKIP":
+                    self.session.append_reward_flow("Skipped card reward (no card taken)")
+                elif cmd.startswith("CHOOSE"):
+                    card_label = _resolve_chosen_card_label_for_take(action, legal_actions)
+                    self.session.append_reward_flow(f"Took card: {card_label}")

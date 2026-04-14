@@ -1,57 +1,25 @@
 # Architecture
 
-This document describes how **Spire Agent** is structured end to end: the game bridge, the FastAPI dashboard that hosts the agent, the LangGraph decision pipeline, durable knowledge and memory, reflection, and the React operator UI. Paths are relative to the repository root unless noted.
+This document describes how **Spire Agent** is structured end to end: the **bridge**, the **dashboard** (FastAPI), the **LangGraph** decision pipeline, durable knowledge and memory, reflection, and the **operator UI** (React). Paths are relative to the repository root unless noted.
+
+**Diagrams (repository root, kebab-case filenames):**
+
+| Document | Contents |
+|----------|----------|
+| [data-flow-diagram.md](data-flow-diagram.md) | Data paths: CommunicationMod ↔ bridge ↔ dashboard, view model, LangGraph, logs, `MEMORY_DIR`, reflection |
+| [user-sequence-diagram.md](user-sequence-diagram.md) | Operator UI, WebSocket snapshots, HITL approve/manual/auto, `poll_instruction`, stdout back to the game |
 
 ---
 
 ## 1. System overview
 
-At the highest level, three cooperating processes are usual in development: the **dashboard** (Python + agent), the **bridge** (Python stdin/stdout to CommunicationMod), and optionally the **Vite** dev server for the SPA. The game mod pushes JSON state to the bridge; the bridge forwards it to the dashboard; the dashboard runs the agent when asked and exposes HTTP/WebSocket for the UI.
+In development, three cooperating processes are usual: the **dashboard** (`uvicorn src.ui.dashboard:app`), the **bridge** (`src/main.py`, stdin/stdout to CommunicationMod), and optionally the **Vite** dev server for the operator UI (`apps/web`, proxy `/api` and `/ws` to the dashboard). The game mod pushes JSON state to the bridge; the bridge forwards it to the dashboard; the dashboard runs the agent when asked and exposes HTTP/WebSocket for the UI.
 
-```mermaid
-flowchart TB
-  subgraph Game["Game + mod"]
-    STS["Slay the Spire"]
-    CM["CommunicationMod"]
-    STS <--> CM
-  end
+**Ingress:** each game state line is handled by [`src/main.py`](src/main.py), which `POST`s to [`/update_state`](src/ui/dashboard.py); the dashboard uses [`src/ui/state_processor.py`](src/ui/state_processor.py) to build the **view model** (`vm`) consumed by the agent and operator UI.
 
-  subgraph Processes["Typical dev processes"]
-    Bridge["Bridge\nsrc/main.py"]
-    API["Dashboard + agent\nuvicorn src.ui.dashboard:app"]
-    UI["Operator UI\napps/web Vite → :5173"]
-  end
+**Egress:** when the mod is ready for input, the bridge `GET`s [`/poll_instruction`](src/ui/dashboard.py), receives a manual or AI-approved command, validates it against the current legal list, and **prints** the line for the mod.
 
-  subgraph Data["On disk"]
-    Know["data/knowledge/\nstrategy markdown"]
-    Ref["data/reference/\nJSON facts"]
-    Mem["MEMORY_DIR\nlessons · index"]
-    Logs["logs/games/\nper-run frames"]
-  end
-
-  subgraph Async["After a run (bridge thread)"]
-    Refl["Reflection pipeline"]
-    Cons["Consolidation\n(every N runs)"]
-  end
-
-  CM <-->|stdin/stdout JSON lines| Bridge
-  Bridge <-->|HTTP :8000| API
-  UI <-->|proxy /api /ws| API
-  API --> Know
-  API --> Ref
-  API --> Mem
-  Bridge --> Logs
-  API -.->|run metrics APIs| Logs
-  Bridge -.-> Refl
-  Logs -.-> Refl
-  Refl --> Mem
-  Bridge -.-> Cons
-  Cons --> Mem
-```
-
-**Ingress path:** each game state line is handled by [`src/main.py`](src/main.py), which `POST`s to [`/update_state`](src/ui/dashboard.py); the dashboard uses [`src/ui/state_processor.py`](src/ui/state_processor.py) to build the **view model** consumed by the agent and UI.
-
-**Egress path:** when the mod is ready for input, the bridge `GET`s [`/poll_instruction`](src/ui/dashboard.py), receives a manual or AI-approved command, validates it against the current legal list, and **prints** the line for the mod.
+For a visual of stores and the LangGraph path, see [data-flow-diagram.md](data-flow-diagram.md). For operator and game timing, see [user-sequence-diagram.md](user-sequence-diagram.md).
 
 ---
 
@@ -102,6 +70,8 @@ flowchart LR
 **Prompt construction:** [`build_user_prompt`](src/agent/prompt_builder.py) incorporates the processed VM; it can attach **map path analysis** via [`map_analysis.analyze_map_paths`](src/agent/map_analysis.py) when the screen supplies map data. Reference card text can be enriched from [`src/reference/knowledge_base.py`](src/reference/knowledge_base.py) (`data/reference/*.json`).
 
 **System prompt:** loaded from [`src/agent/prompts/system_prompt.md`](src/agent/prompts/system_prompt.md) through [`config.load_system_prompt`](src/agent/config.py).
+
+How this subgraph sits in the wider system (bridge, dashboard, disks) is summarized in [data-flow-diagram.md](data-flow-diagram.md).
 
 ---
 
@@ -187,28 +157,30 @@ Separately, **`consolidate_procedural_memory`** ([`reflection/consolidator.py`](
 
 ```mermaid
 sequenceDiagram
-  participant B as Bridge main.py
+  participant Br as Bridge\nsrc/main.py
   participant L as logs/games/run_dir
   participant R as reflection/runner
   participant A as RunAnalyzer
   participant F as Reflector LLM
   participant M as MemoryStore
 
-  B->>L: run complete
-  B->>R: run_reflection_pipeline
+  Br->>L: run complete
+  Br->>R: run_reflection_pipeline
   R->>A: analyze
   A->>L: read frames
   R->>F: reflect_on_run
   F-->>R: lessons + episodic
   R->>M: persist_reflection_to_memory
-  B->>M: consolidate (every N runs)
+  Br->>M: consolidate (every N runs)
 ```
 
 ---
 
-## 6. Frontend (`apps/web`)
+## 6. Operator UI (`apps/web`)
 
 Vite + React Router: monitor (`/`), run metrics (`/metrics`), multi-run compare (`/metrics/compare`), map replay (`/metrics/map`). Dev server proxies **`/api`** and **`/ws`** to **`127.0.0.1:8000`**. See [`apps/web/README.md`](apps/web/README.md) and route table in [`apps/web/src/App.tsx`](apps/web/src/App.tsx).
+
+Interaction flow with the dashboard and bridge: [user-sequence-diagram.md](user-sequence-diagram.md).
 
 ---
 
@@ -223,22 +195,10 @@ Vite + React Router: monitor (`/`), run metrics (`/metrics`), multi-run compare 
 
 ---
 
-## Legacy diagram: ingress only
-
-Minimal view of who talks to whom on the wire:
-
-```mermaid
-flowchart LR
-  Game[CommunicationMod]
-  Main[src.main]
-  Dash[src.ui.dashboard]
-  React[apps/web Vite]
-
-  Game -->|stdin JSON| Main
-  Main -->|POST /update_state| Dash
-  Main -->|GET /poll_instruction| Dash
-  React -->|/api/debug/* /ws| Dash
-```
+## 8. Wire-level ingress (minimal)
 
 - **Game → bridge:** each line includes `meta.state_id` and is normalized through [`process_state`](src/ui/state_processor.py).
+- **Bridge → dashboard:** `POST /update_state` with the same envelope the mod sent.
 - **Operators:** WebSocket **`/ws`** broadcasts **`snapshot`** payloads so the monitor stays live without polling everything.
+
+End-to-end sequence (operator, UI, dashboard, bridge, CommunicationMod): [user-sequence-diagram.md](user-sequence-diagram.md).

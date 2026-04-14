@@ -181,7 +181,7 @@ def run_strategist_llm(
         "game_state": build_game_state_for_strategist(vm),
         "knowledge_index": knowledge_index[:220],
         "previous_strategy": prev,
-        "recent_actions": list(session.action_history)[-12:],
+        "recent_actions": list(session.run_journal)[-12:],
     }
     user_msg = json.dumps(payload, ensure_ascii=False, default=str)
     trace.llm_calls.append(
