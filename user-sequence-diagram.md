@@ -1,6 +1,6 @@
 # User sequence diagram
 
-Typical interactions among the operator UI, dashboard, bridge, and game. Modes `manual`, `propose`, and `auto` are reflected in how `GET /poll_instruction` receives `manual_actions_queue` entries vs `approved_action` vs bridge-side auto-finalization. Narrative and tables: [architecture.md](architecture.md).
+Typical interactions among the operator UI, dashboard, bridge, and game. Modes `manual`, `propose`, and `auto` control how `GET /poll_instruction` returns `manual_actions_queue` entries vs `approved_action` vs bridge-side auto-finalization. Narrative and route tables: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ```mermaid
 sequenceDiagram
@@ -12,15 +12,24 @@ sequenceDiagram
   participant Br as Bridge\n(src/main.py)
   participant CM as CommunicationMod\n+ game
 
-  Op->>UI: Open monitor / metrics
-  UI->>API: Connect WS, GET /api/debug/snapshot (as needed)
+  Note over Br,API: Bridge startup
+  Br->>API: POST /api/ai/status (initial LLM probe)
+  API->>WS: snapshot
+
+  Op->>UI: Open monitor or metrics
+  UI->>API: WebSocket /ws (initial snapshot on connect)
+  UI->>API: GET /api/debug/snapshot (monitor bootstrap)
+  opt Run metrics page
+    UI->>API: GET /api/runs, GET /api/runs/{run}/metrics, …
+  end
   API->>WS: snapshot payload (ai_runtime, VM, trace)
   WS-->>UI: type snapshot
 
   Note over CM,Br: Live play
   CM->>Br: JSON line (stdin)
-  Br->>API: POST /update_state
-  API->>API: process_state → VM, broadcast
+  Br->>Br: process_state(state) for logging / shortcuts
+  Br->>API: POST /update_state { state, meta }
+  API->>API: process_state(envelope) → VM, broadcast
   API->>WS: snapshot
   WS-->>UI: live state + trace slot
 
@@ -28,13 +37,16 @@ sequenceDiagram
   UI->>API: POST /api/ai/mode
   API->>WS: snapshot
 
-  Note over Br,API: Bridge may start SpireDecisionAgent.propose in background; traces stream via POST /agent_trace
-  Br->>API: POST /agent_trace (progress / final)
+  Note over Br,API: Background propose + trace streaming
+  Br->>API: POST /api/ai/proposal_state (in_flight on/off)
+  Br->>API: POST /agent_trace (progress / final / failure)
   API->>WS: snapshot
 
   alt Propose mode (HITL)
     Op->>UI: Approve, reject, edit, or Retry AI
-    UI->>API: POST /api/ai/approve | /reject | /api/agent/retry …
+    UI->>API: POST /api/agent/resume (kind approve | reject | edit)
+    UI->>API: POST /api/agent/retry (Retry AI; bridge consumes GET /api/ai/retry_poll)
+    Note right of API: POST /api/ai/approve and /api/ai/reject are direct equivalents
     API->>API: approved_action or retry_proposal_request
     API->>WS: snapshot
   else Manual command

@@ -13,9 +13,9 @@ This document describes how **Spire Agent** is structured end to end: the **brid
 
 ## 1. System overview
 
-In development, three cooperating processes are usual: the **dashboard** (`uvicorn src.ui.dashboard:app`), the **bridge** (`src/main.py`, stdin/stdout to CommunicationMod), and optionally the **Vite** dev server for the operator UI (`apps/web`, proxy `/api` and `/ws` to the dashboard). The game mod pushes JSON state to the bridge; the bridge forwards it to the dashboard; the dashboard runs the agent when asked and exposes HTTP/WebSocket for the UI.
+In development, three cooperating processes are usual: the **dashboard** (`uvicorn src.ui.dashboard:app`), the **bridge** (`src/main.py`, stdin/stdout to CommunicationMod), and optionally the **Vite** dev server for the operator UI (`apps/web`, proxy `/api` and `/ws` to the dashboard). The game mod pushes JSON state to the bridge; the bridge forwards it to the dashboard; the **bridge** owns [`SpireDecisionAgent`](src/agent/graph.py) and runs **`propose`** in a background executor when the game loop asks for AI. The **dashboard** holds HITL/mode state (approved actions, traces, queues), serves HTTP/WebSocket to the UI, and answers **`poll_instruction`** for the bridge.
 
-**Ingress:** each game state line is handled by [`src/main.py`](src/main.py), which `POST`s to [`/update_state`](src/ui/dashboard.py); the dashboard uses [`src/ui/state_processor.py`](src/ui/state_processor.py) to build the **view model** (`vm`) consumed by the agent and operator UI.
+**Ingress:** each game state line is handled by [`src/main.py`](src/main.py), which runs [`process_state`](src/ui/state_processor.py) on the raw JSON for bridge-side logic and for **`propose`**, then `POST`s **`{ "state": <raw>, "meta": { "state_id", "active_log_run" } }`** to [`/update_state`](src/ui/dashboard.py). The dashboard calls `process_state` again on that envelope (see `raw.get("state", raw)` in [`state_processor.py`](src/ui/state_processor.py)) so the **view model** (`vm`) stays consistent between the bridge’s LangGraph input and the operator UI.
 
 **Egress:** when the mod is ready for input, the bridge `GET`s [`/poll_instruction`](src/ui/dashboard.py), receives a manual or AI-approved command, validates it against the current legal list, and **prints** the line for the mod.
 
@@ -25,15 +25,17 @@ For a visual of stores and the LangGraph path, see [data-flow-diagram.md](data-f
 
 ## 2. Dashboard HTTP and WebSocket surface
 
-The dashboard is the single long-lived Python service that owns **`SpireDecisionAgent`**, session state, and broadcasting snapshots to browsers.
+The dashboard is the long-lived FastAPI app that owns **operator-visible runtime state** (mode, queues, latest trace, snapshots) and **broadcasting** to browsers. The **bridge** process owns **`SpireDecisionAgent`**, disk logging session handles, and the thread pool that runs **`propose`**.
 
 | Cluster | Role | Representative routes |
 |--------|------|-------------------------|
 | Bridge | Game loop integration | `POST /update_state`, `GET /poll_instruction`, `POST /action_taken`, `POST /log`, `POST /agent_trace` |
-| AI / HITL | Modes, approval, retries | `POST /api/ai/approve`, `POST /api/ai/reject`, `POST /api/ai/mode`, `POST /api/ai/auto_start`, `GET /api/ai/state`, `GET /api/ai/retry_poll`, `POST /api/agent/retry`, `GET /api/agent/status`, `POST /api/agent/resume` |
+| Bridge → dashboard sync | LLM readiness + proposal lifecycle | `POST /api/ai/status` (capability / disabled state), `POST /api/ai/proposal_state` (in-flight `propose` token) — called from [`src/main.py`](src/main.py), not the browser |
+| AI / HITL | Modes, approval, retries | `POST /api/ai/mode`, `POST /api/ai/auto_start`, `GET /api/ai/state`, `GET /api/ai/retry_poll`, **`POST /api/agent/resume`** (operator UI: `approve` / `reject` / `edit`), `POST /api/agent/retry`, `GET /api/agent/status`, `POST /api/ai/approve`, `POST /api/ai/reject` |
 | Debug / live | Snapshot + manual play | `GET /api/debug/snapshot`, `POST /api/debug/ingress`, `POST /api/debug/manual_command`, `GET /api/debug/poll_instruction`, **`WebSocket /ws`** (`snapshot` events) |
-| Runs / metrics | Log-backed analytics | `GET /api/runs`, `GET /api/runs/{run_name}/metrics`, `GET /api/runs/{run_name}/map_history`, `GET /api/runs/{run_name}/frames`, … |
+| Runs / metrics | Log-backed analytics | `GET /api/runs`, `GET /api/experiments`, `GET /api/runs/{run_name}/metrics`, `GET /api/runs/{run_name}/map_history`, `GET /api/runs/{run_name}/frames`, … |
 | History (stub) | Placeholder | `GET /api/history/*` — not backed by persistent thread storage yet |
+| Legacy | Manual command (rare) | `POST /submit_action` — prefer `POST /api/debug/manual_command` for the React UI |
 
 Implementation: [`src/ui/dashboard.py`](src/ui/dashboard.py). The React app expects a **`DebugSnapshotPayload`**-shaped snapshot (AI runtime, latest trace, ingress metadata); see [`src/agent/schemas.py`](src/agent/schemas.py) for trace types.
 
@@ -44,23 +46,26 @@ Implementation: [`src/ui/dashboard.py`](src/ui/dashboard.py). The React app expe
 The in-process agent is [`SpireDecisionAgent`](src/agent/graph.py). It compiles a **`StateGraph`** over **`GraphState`**: view model (`vm`), prompts, messages, tool round-trips, **`AgentTrace`**, memory hits, strategist output, and planning blocks.
 
 ```mermaid
-flowchart LR
+flowchart TB
   START([START]) --> S[run_strategist]
   S --> P[resolve_combat_plan]
   P --> A[assemble_prompt]
   A --> R[run_agent]
-  R -->|tool calls| T[run_tool]
+  R --> D{after_agent}
+  D -->|tools under budget| T[run_tool]
   T --> R
-  R -->|final or error| V[validate_decision]
-  R -->|disabled / early end| END([END])
+  D -->|trace disabled or error| END([END])
+  D -->|no tool loop| V[validate_decision]
   V --> END
 ```
+
+Routing matches [`_after_agent`](src/agent/graph.py): `end` when the trace is `disabled` or `error`; otherwise `run_tool` while tool calls remain under `max_tool_roundtrips`; else `validate_decision`.
 
 **Node responsibilities**
 
 | Node | Module glue | What it does |
 |------|-------------|----------------|
-| **`run_strategist`** | [`strategist.py`](src/agent/strategist.py), [`memory/store.py`](src/agent/memory/store.py), [`memory/context_tags.py`](src/agent/memory/context_tags.py) | On a new “scene”, builds tags, retrieves a large pool of procedural hits from `MemoryStore`, loads a compact **knowledge index** from markdown under `KNOWLEDGE_DIR`, and (if AI is on) calls the **support** model to pick final lesson hits and emit `planning_context_block` / `non_combat_plan_block`. Caches hits for the same scene. |
+| **`run_strategist`** | [`strategist.py`](src/agent/strategist.py), [`memory/store.py`](src/agent/memory/store.py), [`build_context_tags`](src/agent/memory/context_tags.py) | On a new “scene”, builds tags, retrieves a large pool of procedural hits from `MemoryStore`, loads a compact **knowledge index** from markdown under `KNOWLEDGE_DIR`, and (if AI is on) calls the **support** model to pick final lesson hits and emit `planning_context_block` / `non_combat_plan_block`. Caches hits for the same scene. |
 | **`resolve_combat_plan`** | [`planning.py`](src/agent/planning.py) | Combat-only: produces combat planner summary / guide for turn 1+ as configured; does not overwrite strategist-owned non-combat plan text. |
 | **`assemble_prompt`** | [`prompt_builder.py`](src/agent/prompt_builder.py), [`session_state.py`](src/agent/session_state.py), [`llm_client.py`](src/agent/llm_client.py) | Sets scene on the session; may **compact** older chat via the support model when over token threshold; builds the user prompt from VM, action history, strategy notes, combat guide, **memory hits**; prepends strategist/planning blocks; appends user message to `TurnConversation`. |
 | **`run_agent`** | [`llm_client.py`](src/agent/llm_client.py), [`tool_registry.py`](src/agent/tool_registry.py) | Calls the **decision** model with tools (effort from config); records LLM segments on the trace. |
@@ -140,7 +145,7 @@ flowchart TB
   CON --> MS
 ```
 
-**Bridge-only / eval:** [`src/main.py`](src/main.py) orchestrates proposal futures, queueing multi-command sequences, `finalize_ai_execution`, and schedules **`run_reflection_pipeline`** plus periodic **`consolidate_procedural_memory`** after runs. [`src/eval/replay.py`](src/eval/replay.py) can replay logged frames without the game.
+**Bridge-only / eval:** [`src/main.py`](src/main.py) orchestrates proposal futures, queueing multi-command sequences, `finalize_ai_execution`, publishes AI status / proposal state to the dashboard, uses [`describe_execution`](src/agent/command_narration.py) for operator-facing command labels, and schedules **`run_reflection_pipeline`** plus periodic **`consolidate_procedural_memory`** after runs. [`src/eval/replay.py`](src/eval/replay.py) can replay logged frames without the game.
 
 ---
 
@@ -178,7 +183,7 @@ sequenceDiagram
 
 ## 6. Operator UI (`apps/web`)
 
-Vite + React Router: monitor (`/`), run metrics (`/metrics`), map replay (`/metrics/map`). Dev server proxies **`/api`** and **`/ws`** to **`127.0.0.1:8000`**. See [`apps/web/README.md`](apps/web/README.md) and route table in [`apps/web/src/App.tsx`](apps/web/src/App.tsx).
+Vite + React Router: monitor (`/`), run metrics (`/metrics`), map replay (`/metrics/map`); `/metrics/debug` redirects to `/metrics`. Dev server proxies **`/api`** and **`/ws`** to **`127.0.0.1:8000`**. See [`apps/web/README.md`](apps/web/README.md) and route table in [`apps/web/src/App.tsx`](apps/web/src/App.tsx).
 
 Interaction flow with the dashboard and bridge: [user-sequence-diagram.md](user-sequence-diagram.md).
 

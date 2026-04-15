@@ -1,6 +1,6 @@
 # Data flow diagram
 
-End-to-end movement of game state, view models, agent context, traces, logs, and memory. Narrative and tables: [architecture.md](architecture.md).
+End-to-end movement of game state, view models, agent context, traces, logs, and memory. Narrative and route tables: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ```mermaid
 flowchart TB
@@ -18,10 +18,12 @@ flowchart TB
 
   subgraph Bridge["Bridge src/main.py"]
     In["stdin: JSON line per frame"]
-    PS_B["process_state(raw)\n→ view model"]
+    PS_B["process_state(state)\nVM for bridge-only logic"]
+    Env["POST /update_state body\n{ state, meta }"]
     LogW["write frame + vm_summary\nstate_run metrics"]
     AIW["ThreadPoolExecutor:\nSpireDecisionAgent.propose(vm, state_id, …)"]
-    TrPost["POST /agent_trace\nstreaming trace updates"]
+    TrPost["POST /agent_trace"]
+    AiSync["POST /api/ai/status\nPOST /api/ai/proposal_state"]
     Poll["GET /poll_instruction"]
     Out["stdout: command line"]
     ReflT["background:\nrun_reflection_pipeline"]
@@ -30,10 +32,10 @@ flowchart TB
 
   subgraph Dash["Dashboard src/ui/dashboard.py"]
     Upd["POST /update_state"]
-    PS_D["process_state(data)\n→ VM for UI/agent"]
+    PS_D["process_state({state,meta})\n→ VM for UI + agent"]
     WS["WebSocket /ws\nsnapshot payload"]
-    Apis["/api/ai/* · /api/debug/*\nmanual queue · approve"]
-    PollH["GET /poll_instruction\nreturns manual + approved_action"]
+    Apis["/api/ai/* · /api/agent/*\n/api/debug/* · /api/runs/*"]
+    PollH["GET /poll_instruction\nmanual + approved_action"]
   end
 
   subgraph KB["Reference enrichment"]
@@ -51,18 +53,20 @@ flowchart TB
 
   STS <-->|"JSON lines"| In
   In --> PS_B
-  PS_B --> KB
-  KB --> Ref
-  In -->|"POST body"| Upd
+  PS_B --> DS
+  DS --> Ref
+  PS_B --> Env
+  Env --> Upd
   Upd --> PS_D
-  PS_D --> KB
+  PS_D --> DS
 
   Browser <-->|"HTTP"| Apis
   Browser <-->|"WS"| WS
   Upd --> WS
   TrPost --> WS
+  AiSync --> Apis
 
-  PS_D -->|"VM"| AIW
+  PS_B -->|"VM into propose"| AIW
   AIW --> ST
   ST --> Know
   ST --> Mem
@@ -86,3 +90,5 @@ flowchart TB
   PollH --> Out
   Out --> STS
 ```
+
+`process_state` runs in the bridge on the raw CommunicationMod object, then again in the dashboard on the `{ state, meta }` envelope so both sides share the same normalization rules ([`state_processor.py`](src/ui/state_processor.py): `state = raw.get("state", raw)`).
