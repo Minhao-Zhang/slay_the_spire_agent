@@ -6,6 +6,8 @@ export interface ActionDTO {
   label: string;
   command: string;
   style: ActionStyle;
+  /** ATTACK / SKILL / POWER / STATUS / CURSE / POTION when known — drives valid-action tint. */
+  card_type?: string | null;
   card_uuid_token?: string | null;
   hand_index?: number | null;
   monster_index?: number | null;

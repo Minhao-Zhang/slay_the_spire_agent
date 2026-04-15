@@ -84,9 +84,9 @@
 }
 
 @layer base {
-  /** Slightly larger UI: scales all rem-based Tailwind type (text-sm, text-xs, …). */
+  /** Root rem = browser default; keeps monitor/metrics typography readable without oversizing. */
   html {
-    font-size: 114%;
+    font-size: 100%;
   }
 
   body {
@@ -128,6 +128,62 @@
     var(--bg-canvas-wash) 0%,
     var(--bg-canvas) 100%
   );
+}
+
+/* Monitor HUD — flat bright gold (no gradient). */
+.hud-gold-metal {
+  color: #c9a010;
+}
+
+/* Valid actions — same hues as hand card names; light fill, deeper on hover. */
+@layer components {
+  .valid-action--attack {
+    border-color: var(--danger);
+    background-color: color-mix(in srgb, var(--danger) 12%, var(--bg-canvas));
+  }
+  .valid-action--attack:hover {
+    background-color: color-mix(in srgb, var(--danger) 30%, var(--bg-panel));
+  }
+
+  .valid-action--skill {
+    border-color: var(--accent-secondary);
+    background-color: color-mix(in srgb, var(--accent-secondary) 14%, var(--bg-canvas));
+  }
+  .valid-action--skill:hover {
+    background-color: color-mix(in srgb, var(--accent-secondary) 34%, var(--bg-panel));
+  }
+
+  .valid-action--power {
+    border-color: var(--success);
+    background-color: color-mix(in srgb, var(--success) 14%, var(--bg-canvas));
+  }
+  .valid-action--power:hover {
+    background-color: color-mix(in srgb, var(--success) 34%, var(--bg-panel));
+  }
+
+  .valid-action--status {
+    border-color: var(--warning);
+    background-color: color-mix(in srgb, var(--warning) 14%, var(--bg-canvas));
+  }
+  .valid-action--status:hover {
+    background-color: color-mix(in srgb, var(--warning) 32%, var(--bg-panel));
+  }
+
+  .valid-action--potion {
+    border-color: var(--chart-relic);
+    background-color: color-mix(in srgb, var(--chart-relic) 14%, var(--bg-canvas));
+  }
+  .valid-action--potion:hover {
+    background-color: color-mix(in srgb, var(--chart-relic) 32%, var(--bg-panel));
+  }
+
+  .valid-action--neutral {
+    border-color: color-mix(in srgb, var(--text-muted) 45%, var(--border-strong));
+    background-color: color-mix(in srgb, var(--text-muted) 7%, var(--bg-canvas));
+  }
+  .valid-action--neutral:hover {
+    background-color: color-mix(in srgb, var(--text-muted) 18%, var(--bg-panel));
+  }
 }
 
 @keyframes spire-section-in {

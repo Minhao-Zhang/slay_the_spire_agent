@@ -466,6 +466,12 @@ _COMMAND_BUTTONS = [
 ]
 
 
+def _card_type_upper(entity: dict) -> str:
+    """Upper type for dashboard valid-action tinting (matches hand card colors)."""
+    raw = entity.get("type") or entity.get("card_type") or ""
+    return str(raw).strip().upper() if raw else ""
+
+
 def event_option_choose_index(option: dict, list_index: int) -> int:
     """Index for ``choose N`` on EVENT screens.
 
@@ -512,6 +518,7 @@ def _build_actions(commands: list, game: dict, combat: Optional[dict],
                 continue
             uuid_full = card.get("uuid", "")
             card_uuid_token = uuid_full[:6] if uuid_full else ""
+            ct = _card_type_upper(card)
             if card.get("has_target"):
                 for mi, m in enumerate(monsters):
                     if not m.get("is_gone") and not m.get("half_dead"):
@@ -519,6 +526,7 @@ def _build_actions(commands: list, game: dict, combat: Optional[dict],
                             "label": f"{card['name']} \u2192 {m['name']}",
                             "command": f"PLAY {i + 1} {mi}",
                             "style": "success",
+                            "card_type": ct,
                             "card_uuid_token": card_uuid_token,
                             "hand_index": i + 1,
                             "monster_index": mi,
@@ -528,6 +536,7 @@ def _build_actions(commands: list, game: dict, combat: Optional[dict],
                     "label": card["name"],
                     "command": f"PLAY {i + 1}",
                     "style": "primary",
+                    "card_type": ct,
                     "card_uuid_token": card_uuid_token,
                     "hand_index": i + 1,
                 })
@@ -543,18 +552,21 @@ def _build_actions(commands: list, game: dict, combat: Optional[dict],
                                 "label": f"Use {pot['name']} \u2192 {m['name']}",
                                 "command": f"POTION USE {i} {mi}",
                                 "style": "primary",
+                                "card_type": "POTION",
                             })
                 else:
                     actions.append({
                         "label": f"Use {pot['name']}",
                         "command": f"POTION USE {i}",
                         "style": "primary",
+                        "card_type": "POTION",
                     })
             if pot.get("can_discard"):
                 actions.append({
                     "label": f"Discard {pot['name']}",
                     "command": f"POTION DISCARD {i}",
                     "style": "secondary",
+                    "card_type": "POTION",
                 })
 
     # Choose actions depend on screen type. EVENT may expose choices in JSON before
@@ -631,11 +643,15 @@ def _build_choose_actions(screen_type: str, s: dict, game: dict) -> list[dict]:
 
     elif screen_type == "SHOP_SCREEN":
         for i, c in enumerate(s.get("cards", [])):
-            actions.append({
+            ctd = _card_type_upper(c) if isinstance(c, dict) else ""
+            row = {
                 "label": f"Buy {c.get('name', '?')} ({c.get('price', '?')}g)",
                 "command": f"choose {c.get('name', i)}",
                 "style": "secondary",
-            })
+            }
+            if ctd:
+                row["card_type"] = ctd
+            actions.append(row)
         for r in s.get("relics", []):
             actions.append({
                 "label": f"Buy {r.get('name', '?')} ({r.get('price', '?')}g)",
@@ -647,6 +663,7 @@ def _build_choose_actions(screen_type: str, s: dict, game: dict) -> list[dict]:
                 "label": f"Buy {p.get('name', '?')} ({p.get('price', '?')}g)",
                 "command": f"choose {p.get('name', '?')}",
                 "style": "secondary",
+                "card_type": "POTION",
             })
         if s.get("purge_available"):
             actions.append({
@@ -678,7 +695,12 @@ def _build_choose_actions(screen_type: str, s: dict, game: dict) -> list[dict]:
     elif items:
         for i, it in enumerate(items):
             label = it.get("name") or it.get("reward_type") or it.get("label") or it.get("id") or f"Option {i}"
-            actions.append({"label": label, "command": f"choose {i}", "style": "secondary"})
+            row = {"label": label, "command": f"choose {i}", "style": "secondary"}
+            if isinstance(it, dict):
+                ct = _card_type_upper(it)
+                if ct:
+                    row["card_type"] = ct
+            actions.append(row)
 
     else:
         for i, choice in enumerate(game.get("choice_list", [])):

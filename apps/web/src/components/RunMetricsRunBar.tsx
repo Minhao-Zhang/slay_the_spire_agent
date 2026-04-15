@@ -64,72 +64,74 @@ export function RunMetricsRunBar({
   const spirePage = variant === "map" ? "map" : "metrics";
 
   return (
-    <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-panel)_88%,transparent)] px-4 py-3 backdrop-blur-sm">
-      <SpireAgentNav page={spirePage} runQuery={runQ} />
+    <header className="flex shrink-0 items-center border-b border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-panel)_88%,transparent)] px-3 py-2 backdrop-blur-sm">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+        <SpireAgentNav page={spirePage} runQuery={runQ} />
 
-      <label className="flex items-center gap-2">
-        <span className="text-xs uppercase tracking-wide text-spire-label">
-          Run
-        </span>
-        <select
-          value={run}
-          onChange={(e) => onRunChange(e.target.value)}
-          className="font-console h-8 max-w-[18rem] rounded border border-spire-border-subtle bg-spire-inset/80 px-2 text-xs text-spire-primary outline-none"
-          aria-label="Log run"
-        >
-          <option value="">Select run…</option>
-          {runs.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      {variant !== "map" && onFollowLiveChange ? (
-        <label className="flex cursor-pointer items-center gap-2">
-          <input
-            type="checkbox"
-            checked={followLive}
-            onChange={(e) => onFollowLiveChange(e.target.checked)}
-            className="h-3.5 w-3.5 rounded border-spire-border-strong"
-          />
+        <label className="flex items-center gap-2">
           <span className="text-xs uppercase tracking-wide text-spire-label">
-            Follow live
+            Run
           </span>
+          <select
+            value={run}
+            onChange={(e) => onRunChange(e.target.value)}
+            className="font-console h-8 max-w-[18rem] rounded border border-spire-border-subtle bg-spire-inset/80 px-2 text-xs text-spire-primary outline-none"
+            aria-label="Log run"
+          >
+            <option value="">Select run…</option>
+            {runs.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
         </label>
-      ) : null}
 
-      {variant !== "map" && loading ? (
-        <span className="text-xs text-spire-label">Loading…</span>
-      ) : null}
-      {variant === "map" && mapLoading ? (
-        <span className="text-xs text-spire-label">Loading map…</span>
-      ) : null}
+        {variant !== "map" && onFollowLiveChange ? (
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              checked={followLive}
+              onChange={(e) => onFollowLiveChange(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-spire-border-strong"
+            />
+            <span className="text-xs uppercase tracking-wide text-spire-label">
+              Follow live
+            </span>
+          </label>
+        ) : null}
 
-      {variant !== "map" && metricsReason ? (
-        <span className="text-xs text-spire-warning" title={metricsReason}>
-          {metricsReasonLabel(metricsReason)}
-        </span>
-      ) : null}
+        {variant !== "map" && loading ? (
+          <span className="text-xs text-spire-label">Loading…</span>
+        ) : null}
+        {variant === "map" && mapLoading ? (
+          <span className="text-xs text-spire-label">Loading map…</span>
+        ) : null}
 
-      {variant === "map" && mapError ? (
-        <span className="text-xs text-spire-warning" title={mapError}>
-          {mapError}
-        </span>
-      ) : null}
+        {variant !== "map" && metricsReason ? (
+          <span className="text-xs text-spire-warning" title={metricsReason}>
+            {metricsReasonLabel(metricsReason)}
+          </span>
+        ) : null}
 
-      {showFrameRow ? (
-        <span className="font-telemetry text-xs tabular-nums text-spire-label">
-          Frames: {fmtIntEn(frameCount)} · Rows: {fmtIntEn(recordsLength)}
-        </span>
-      ) : null}
+        {variant === "map" && mapError ? (
+          <span className="text-xs text-spire-warning" title={mapError}>
+            {mapError}
+          </span>
+        ) : null}
 
-      {variant === "map" && run && frameCount !== null ? (
-        <span className="font-telemetry text-xs tabular-nums text-spire-label">
-          Frames: {fmtIntEn(frameCount)}
-        </span>
-      ) : null}
+        {showFrameRow ? (
+          <span className="font-telemetry text-xs tabular-nums text-spire-label">
+            Frames: {fmtIntEn(frameCount)} · Rows: {fmtIntEn(recordsLength)}
+          </span>
+        ) : null}
+
+        {variant === "map" && run && frameCount !== null ? (
+          <span className="font-telemetry text-xs tabular-nums text-spire-label">
+            Frames: {fmtIntEn(frameCount)}
+          </span>
+        ) : null}
+      </div>
     </header>
   );
 }

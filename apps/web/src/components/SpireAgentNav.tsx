@@ -13,8 +13,8 @@ export type SpireAgentNavProps = {
 
 const pageLabel: Record<SpireNavPage, string> = {
   monitor: "Monitor",
-  metrics: "Run metrics",
-  map: "Run map",
+  metrics: "Metrics",
+  map: "Map",
 };
 
 export function SpireAgentNav({ page, runQuery }: SpireAgentNavProps) {
@@ -23,7 +23,9 @@ export function SpireAgentNav({ page, runQuery }: SpireAgentNavProps) {
       <span className="font-console text-sm font-bold tracking-[0.12em] text-[var(--text-primary)]">
         SPIRE AGENT
         <span className="ml-2 text-[var(--text-label)]">·</span>
-        <span className="ml-2 text-[var(--accent-primary)]">{pageLabel[page]}</span>
+        <span className="ml-2 uppercase text-[var(--accent-primary)]">
+          {pageLabel[page]}
+        </span>
       </span>
       <nav
         className="flex flex-wrap items-center gap-x-2 gap-y-1 border-l border-[color-mix(in_srgb,var(--border-subtle)_85%,transparent)] pl-3"
@@ -36,7 +38,7 @@ export function SpireAgentNav({ page, runQuery }: SpireAgentNavProps) {
         ) : null}
         {page !== "metrics" ? (
           <Link to={runQuery ? `/metrics${runQuery}` : "/metrics"} className={linkCls}>
-            Run metrics
+            Metrics
           </Link>
         ) : null}
         {page !== "map" ? (
@@ -44,7 +46,7 @@ export function SpireAgentNav({ page, runQuery }: SpireAgentNavProps) {
             to={runQuery ? `/metrics/map${runQuery}` : "/metrics/map"}
             className={linkCls}
           >
-            Run map
+            Map
           </Link>
         ) : null}
       </nav>

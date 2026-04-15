@@ -23,6 +23,8 @@ import {
   powerChipLabel,
 } from "../lib/entityKb";
 import { cardNameClass } from "../lib/cardTypeStyle";
+import { renderPromptMarkdown } from "../lib/renderPromptMarkdown";
+import { validActionVariant } from "../lib/validActionVariant";
 import {
   formatOrbChipTooltip,
   orbMechanics,
@@ -57,6 +59,37 @@ function isPotionSlotPlaceholder(p: Record<string, unknown>): boolean {
 
 type TipSide = "top" | "right" | "bottom";
 
+/** Keep a horizontally centered tooltip (translateX(-50%)) inside the viewport. */
+function clampTooltipCenterX(
+  anchorCenterX: number,
+  maxTooltipWidth: number,
+  vw: number,
+  margin: number,
+): number {
+  const half = maxTooltipWidth / 2;
+  const minC = margin + half;
+  const maxC = vw - margin - half;
+  if (minC <= maxC) {
+    return Math.min(Math.max(anchorCenterX, minC), maxC);
+  }
+  return vw / 2;
+}
+
+function clampTooltipCenterY(
+  anchorCenterY: number,
+  maxTooltipHeight: number,
+  vh: number,
+  margin: number,
+): number {
+  const half = maxTooltipHeight / 2;
+  const minC = margin + half;
+  const maxC = vh - margin - half;
+  if (minC <= maxC) {
+    return Math.min(Math.max(anchorCenterY, minC), maxC);
+  }
+  return vh / 2;
+}
+
 /** Renders in `document.body` with fixed position so parent `overflow-auto` never clips tooltips. */
 function HoverTip({
   tip,
@@ -71,6 +104,8 @@ function HoverTip({
 }) {
   const text = tip.trim();
   const wrapRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const clampPassRef = useRef(0);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<CSSProperties>({});
 
@@ -79,8 +114,10 @@ function HoverTip({
     if (!el) return;
     const r = el.getBoundingClientRect();
     const margin = 8;
-    const maxW = Math.min(22 * 16, window.innerWidth - 2 * margin);
-    const maxH = Math.min(window.innerHeight * 0.7, 24 * 16);
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const maxW = Math.min(22 * 16, vw - 2 * margin);
+    const maxH = Math.min(vh * 0.7, 24 * 16);
     const base: CSSProperties = {
       position: "fixed",
       zIndex: 99999,
@@ -90,9 +127,13 @@ function HoverTip({
     };
     if (side === "right") {
       let left = r.right + margin;
-      const top = r.top + r.height / 2;
-      const transformDefault = "translateY(-50%)";
-      if (left + 120 > window.innerWidth - margin) {
+      const top = clampTooltipCenterY(
+        r.top + r.height / 2,
+        maxH,
+        vh,
+        margin,
+      );
+      if (left + maxW > vw - margin) {
         left = r.left - margin;
         setPos({
           ...base,
@@ -105,23 +146,27 @@ function HoverTip({
           ...base,
           left,
           top,
-          transform: transformDefault,
+          transform: "translateY(-50%)",
         });
       }
       return;
     }
     if (side === "bottom") {
+      const anchorCx = r.left + r.width / 2;
+      const left = clampTooltipCenterX(anchorCx, maxW, vw, margin);
       setPos({
         ...base,
-        left: r.left + r.width / 2,
+        left,
         top: r.bottom + margin,
         transform: "translateX(-50%)",
       });
       return;
     }
+    const anchorCx = r.left + r.width / 2;
+    const left = clampTooltipCenterX(anchorCx, maxW, vw, margin);
     setPos({
       ...base,
-      left: r.left + r.width / 2,
+      left,
       top: r.top - margin,
       transform: "translate(-50%, -100%)",
     });
@@ -131,6 +176,37 @@ function HoverTip({
     if (!open) return;
     computePos();
   }, [open, computePos, text]);
+
+  /** Nudge tooltip after layout so flipped / wide content cannot clip off-screen. */
+  useLayoutEffect(() => {
+    if (!open) {
+      clampPassRef.current = 0;
+      return;
+    }
+    if (clampPassRef.current >= 4) return;
+    const tipEl = tooltipRef.current;
+    if (!tipEl || Object.keys(pos).length === 0) return;
+    const rect = tipEl.getBoundingClientRect();
+    const m = 8;
+    let dx = 0;
+    let dy = 0;
+    if (rect.left < m) dx = m - rect.left;
+    else if (rect.right > window.innerWidth - m) {
+      dx = window.innerWidth - m - rect.right;
+    }
+    if (rect.top < m) dy = m - rect.top;
+    else if (rect.bottom > window.innerHeight - m) {
+      dy = window.innerHeight - m - rect.bottom;
+    }
+    if (dx !== 0 || dy !== 0) {
+      clampPassRef.current += 1;
+      setPos((p) => ({
+        ...p,
+        left: (typeof p.left === "number" ? p.left : 0) + dx,
+        top: (typeof p.top === "number" ? p.top : 0) + dy,
+      }));
+    }
+  }, [open, pos]);
 
   useEffect(() => {
     if (!open) return;
@@ -166,6 +242,7 @@ function HoverTip({
       {open &&
         createPortal(
           <div
+            ref={tooltipRef}
             role="tooltip"
             style={pos}
             className="custom-scroll pointer-events-none rounded-md border border-spire-border-strong bg-spire-panel px-2.5 py-2 text-left font-telemetry text-sm font-normal leading-snug tracking-normal whitespace-pre-wrap text-spire-primary shadow-xl"
@@ -203,13 +280,9 @@ const osdBtnReject =
 const osdBtnCta =
   `${osdBtnBase} border-spire-secondary bg-spire-secondary/25 text-spire-primary hover:bg-spire-secondary/35`;
 
-/** Fixed height so Relics / Enemies / Hand / AI control (and other rails) align across columns. */
+/** Fixed height — Relics rail, Enemies/Hand combat headers, LLM prompt, AI control share one band size. */
 const osdPanelStrip =
   "flex h-12 min-h-12 shrink-0 items-center justify-between gap-2 overflow-hidden border-b-2 border-spire-border-subtle bg-spire-canvas px-3 font-console text-sm font-bold uppercase tracking-[0.12em] text-spire-primary";
-
-/** Shorter strip for combat board (enemies + hand) so the band uses less vertical chrome. */
-const osdCombatBoardStrip =
-  "flex h-9 min-h-9 shrink-0 items-center justify-between gap-2 overflow-hidden border-b-2 border-spire-border-subtle bg-spire-canvas px-2 font-console text-xs font-bold uppercase tracking-[0.12em] text-spire-primary";
 
 const osdSectionLabel =
   "font-console text-sm font-bold uppercase tracking-[0.12em] text-spire-label";
@@ -219,22 +292,18 @@ const osdStatCaption =
 
 /** Tighter label for the HUD stats strip (label + value stack). */
 const osdHudLabel =
-  "font-console text-[13px] font-semibold uppercase tracking-[0.22em] text-spire-label leading-none";
+  "font-console text-[12px] font-semibold uppercase tracking-[0.22em] text-spire-label leading-none";
 const osdHudValue =
-  "font-telemetry text-[17px] font-semibold tabular-nums leading-none";
+  "font-telemetry text-[15px] font-semibold tabular-nums leading-none";
 
-function actionBtnClass(style: string): string {
-  const map: Record<string, string> = {
-    danger:
-      "border-2 border-spire-danger bg-spire-canvas text-spire-primary shadow-sm hover:bg-spire-danger/12",
-    primary:
-      "border-2 border-spire-accent bg-spire-tab-active text-spire-primary shadow-sm hover:bg-spire-live-surface",
-    success:
-      "border-2 border-spire-success bg-spire-canvas text-spire-primary shadow-sm hover:bg-spire-success/15",
-    secondary:
-      "border-2 border-spire-border-strong bg-spire-canvas text-spire-primary shadow-sm hover:bg-spire-panel-raised",
-  };
-  return `font-console rounded-md py-1.5 px-3 text-sm font-bold uppercase tracking-wide transition ${map[style] ?? map.secondary}`;
+function actionBtnClass(action: ActionDTO): string {
+  const v = validActionVariant(action);
+  return (
+    "font-console rounded-md border-2 py-1.5 px-3 text-sm font-bold uppercase tracking-wide " +
+    "text-spire-primary shadow-sm transition-colors duration-150 " +
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spire-ring-focus/40 " +
+    `valid-action--${v}`
+  );
 }
 
 type PileKind = "draw" | "discard" | "exhaust";
@@ -337,7 +406,7 @@ function seedFirstSix(raw: string | null): string {
   return raw.length <= 6 ? raw : raw.slice(0, 6);
 }
 
-/** R · S · E = Ruby, Sapphire, Emerald — dim when missing, keyed colors when owned. */
+/** R · S · E = Ruby, Sapphire, Emerald — light brown when missing; gem colors when owned. */
 function KeysLetters({
   keys,
 }: {
@@ -347,11 +416,14 @@ function KeysLetters({
   const sapphire = keys?.sapphire === true;
   const emerald = keys?.emerald === true;
   const tip = `Act 3 keys\nRuby: ${ruby ? "yes" : "no"}\nSapphire: ${sapphire ? "yes" : "no"}\nEmerald: ${emerald ? "yes" : "no"}`;
+  /** Unowned — warm parchment brown (not gray). */
+  const offLetter =
+    "text-[color-mix(in_srgb,var(--border-subtle)_42%,var(--bg-canvas))]";
   const cell = (letter: string, on: boolean, onClass: string) => (
     <span
       className={
         "min-w-[0.65rem] text-center text-sm font-bold tabular-nums " +
-        (on ? onClass : "text-spire-faint")
+        (on ? onClass : offLetter)
       }
     >
       {letter}
@@ -364,9 +436,9 @@ function KeysLetters({
         aria-label="Act 3 keys: Ruby, Sapphire, Emerald"
       >
         {cell("R", ruby, "text-spire-danger")}
-        <span className="text-[13px] text-spire-faint">·</span>
-        {cell("S", sapphire, "text-spire-accent")}
-        <span className="text-[13px] text-spire-faint">·</span>
+        <span className={`text-[13px] ${offLetter} opacity-90`}>·</span>
+        {cell("S", sapphire, "text-spire-secondary")}
+        <span className={`text-[13px] ${offLetter} opacity-90`}>·</span>
         {cell("E", emerald, "text-spire-success")}
       </div>
     </HoverTip>
@@ -381,31 +453,34 @@ function EnemyCard({ m }: { m: Record<string, unknown> }) {
   const powers = (m.powers as Record<string, unknown>[] | undefined) ?? [];
   const tip = monsterTooltip(m);
 
+  const rowBand =
+    "flex min-h-10 items-center bg-spire-canvas px-2 py-2";
+
   return (
     <div className="flex flex-col overflow-hidden rounded-md border border-spire-border-subtle bg-spire-canvas shadow-sm">
-      <div className="flex items-center justify-between border-b border-spire-border-muted bg-spire-canvas px-2 py-1">
-        <div className="flex min-w-0 items-baseline gap-1.5">
-          <HoverTip
-            tip={tip}
-            side="bottom"
-            className="inline-flex min-w-0 max-w-[55%] shrink"
-          >
-            <span className="cursor-help truncate font-console text-xs font-bold text-spire-danger underline decoration-spire-danger/40 decoration-dotted underline-offset-2">
+      <div
+        className={`${rowBand} justify-between gap-x-2 gap-y-1 border-b border-spire-border-muted`}
+      >
+        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+          <HoverTip tip={tip} side="bottom" className="min-w-0">
+            <span className="cursor-help whitespace-normal break-words font-console text-xs font-bold text-spire-danger underline decoration-spire-danger/40 decoration-dotted underline-offset-2">
               {name}
             </span>
           </HoverTip>
-          <span className="font-console text-xs font-bold uppercase tracking-[0.18em] text-spire-label">
+          <span className="shrink-0 font-console text-xs font-bold uppercase tracking-[0.18em] text-spire-label">
             HP
           </span>
-          <span className="font-telemetry text-xs font-medium text-spire-primary">
+          <span className="shrink-0 font-telemetry text-xs font-medium text-spire-primary">
             {hp ? fmtGameStatDisplay(hp) : "—"}
           </span>
         </div>
-        <div className="max-w-[48%] shrink-0 truncate font-console text-[13px] font-semibold uppercase tracking-wide text-spire-danger">
-          {intent || "—"}
+        <div className="max-w-[min(11rem,42%)] shrink-0 text-right font-console text-[13px] font-semibold uppercase tracking-wide text-spire-danger">
+          <span className="block whitespace-normal break-words">
+            {intent || "—"}
+          </span>
         </div>
       </div>
-      <div className="flex flex-wrap gap-1 px-2 py-1">
+      <div className={`${rowBand} flex-wrap gap-1`}>
         {powers.length === 0 ? (
           <span className="text-[13px] text-spire-faint">—</span>
         ) : (
@@ -418,7 +493,7 @@ function EnemyCard({ m }: { m: Record<string, unknown> }) {
               side="bottom"
               className="inline-flex"
             >
-              <span className="inline-flex cursor-help rounded border border-spire-secondary/50 bg-spire-canvas px-1 py-0.5 text-[13px] font-semibold text-spire-secondary shadow-sm">
+              <span className="inline-flex cursor-help rounded border border-spire-secondary/50 bg-spire-canvas px-1.5 py-1 text-[13px] font-semibold leading-tight text-spire-secondary shadow-sm">
                 {powerChipLabel(p)}
               </span>
             </HoverTip>
@@ -600,6 +675,76 @@ function AgentModeBar({
   );
 }
 
+function RelicsPowersBar({
+  relics,
+  playerPowers,
+}: {
+  relics: Record<string, unknown>[];
+  playerPowers: Record<string, unknown>[];
+}) {
+  return (
+    <div
+      className="shrink-0 border-b-2 border-spire-border-subtle bg-[color-mix(in_srgb,var(--bg-panel)_55%,var(--bg-canvas))] px-3 py-2"
+      aria-label="Relics and powers"
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-4">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="shrink-0 font-console text-xs font-bold uppercase tracking-[0.14em] text-spire-label">
+            Relics · {fmtIntEn(relics.length)}
+          </span>
+          <div className="custom-scroll flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-0.5">
+            {relics.length === 0 ? (
+              <span className="font-console text-xs italic text-spire-faint">
+                None
+              </span>
+            ) : (
+              relics.map((r, i) => (
+                <HoverTip
+                  key={i}
+                  tip={labeledTooltip(String(r.name ?? "?"), r)}
+                  side="bottom"
+                  className="shrink-0"
+                >
+                  <div className="max-w-[10rem] cursor-help truncate rounded-md border-2 border-spire-border-subtle bg-spire-canvas px-1.5 py-0.5 text-xs font-medium text-spire-primary shadow-sm">
+                    {String(r.name ?? "?")}
+                  </div>
+                </HoverTip>
+              ))
+            )}
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-1 items-center gap-2 border-t border-spire-border-muted pt-2 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-4">
+          <span className="shrink-0 font-console text-xs font-bold uppercase tracking-[0.14em] text-spire-label">
+            Powers
+          </span>
+          <div className="custom-scroll flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-0.5">
+            {playerPowers.length === 0 ? (
+              <span className="font-console text-xs italic text-spire-faint">
+                None
+              </span>
+            ) : (
+              playerPowers.map((p, i) => (
+                <HoverTip
+                  key={i}
+                  tip={labeledTooltip(powerChipLabel(p), p, {
+                    skipPowerAmountLead: true,
+                  })}
+                  side="bottom"
+                  className="shrink-0"
+                >
+                  <div className="max-w-[9rem] cursor-help truncate rounded-md border-2 border-spire-border-subtle bg-spire-canvas px-1.5 py-0.5 text-xs font-medium text-spire-primary shadow-sm">
+                    {powerChipLabel(p)}
+                  </div>
+                </HoverTip>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function MonitorDashboard() {
   const {
     snapshot,
@@ -644,13 +789,15 @@ export function MonitorDashboard() {
   const [pileInspect, setPileInspect] = useState<PileKind | null>(null);
   const [deckInspectOpen, setDeckInspectOpen] = useState(false);
   const [replayJumpInput, setReplayJumpInput] = useState("");
-  const [railWidthPx, setRailWidthPx] = useState(520);
+  const [railWidthPx, setRailWidthPx] = useState(440);
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem("spireRailWidthPx");
       const n = raw ? Number.parseInt(raw, 10) : NaN;
-      if (Number.isFinite(n) && n >= 320 && n <= 960) setRailWidthPx(n);
+      if (Number.isFinite(n) && n >= 300) {
+        setRailWidthPx(Math.min(800, Math.max(300, n)));
+      }
     } catch {
       /* ignore */
     }
@@ -671,7 +818,7 @@ export function MonitorDashboard() {
       const startW = railWidthPx;
       const onMove = (ev: MouseEvent) => {
         const dx = startX - ev.clientX;
-        setRailWidthPx(Math.min(960, Math.max(320, startW + dx)));
+        setRailWidthPx(Math.min(800, Math.max(300, startW + dx)));
       };
       const onUp = () => {
         document.removeEventListener("mousemove", onMove);
@@ -1140,6 +1287,11 @@ export function MonitorDashboard() {
     : llmUserPromptLive ||
       "— User prompt not available (wait for agent trace or check dashboard logs). —";
 
+  const tacticalPromptMarkdown = useMemo(
+    () => renderPromptMarkdown(tacticalPromptText),
+    [tacticalPromptText],
+  );
+
   const aiRailTitle =
     "LLM backend and current frame id for this snapshot.";
   const runSeedRaw =
@@ -1414,7 +1566,7 @@ export function MonitorDashboard() {
             [
               ["Floor", header?.floor ?? "—", "text-spire-primary"],
               ["HP", header?.hp_display ?? "—", "text-spire-danger"],
-              ["Gold", header?.gold ?? "—", "text-spire-warning"],
+              ["Gold", header?.gold ?? "—", "hud-gold-metal"],
             ] as const
           ).map(([label, val, col]) => (
             <div
@@ -1430,7 +1582,7 @@ export function MonitorDashboard() {
           <div className="flex flex-wrap items-center gap-x-4 border-l border-spire-border-strong/55 pl-4">
             {(
               [
-                ["Energy", header?.energy ?? "—", "text-spire-secondary"],
+                ["Energy", header?.energy ?? "—", "text-spire-primary"],
                 ["Turn", header?.turn ?? "—", "text-spire-primary"],
               ] as const
             ).map(([label, val, col]) => (
@@ -1540,155 +1692,139 @@ export function MonitorDashboard() {
         </div>
       </div>
 
-      {/* IDE workspace */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Col 1 — relics / powers */}
-        <aside className="flex w-36 shrink-0 flex-col border-r border-spire-border-subtle bg-spire-canvas">
-          <div className="flex min-h-0 flex-1 flex-col border-b border-spire-border-subtle">
-            <div className={osdPanelStrip}>
-              Relics · {fmtIntEn(relics.length)}
-            </div>
-            <div className="custom-scroll flex-1 space-y-1 overflow-y-auto p-2">
-              {relics.length === 0 ? (
-                <div className="px-1 font-console text-sm italic text-spire-faint">
-                  None
-                </div>
-              ) : (
-                relics.map((r, i) => (
-                  <HoverTip
-                    key={i}
-                    tip={labeledTooltip(String(r.name ?? "?"), r)}
-                    side="right"
-                    className="w-full min-w-0"
-                  >
-                    <div className="cursor-help truncate rounded-md border-2 border-spire-border-subtle bg-spire-canvas px-1.5 py-1 text-sm font-medium text-spire-primary shadow-sm">
-                      {String(r.name ?? "?")}
-                    </div>
-                  </HoverTip>
-                ))
-              )}
-            </div>
-          </div>
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className={osdPanelStrip}>Powers</div>
-            <div className="custom-scroll flex-1 overflow-y-auto p-2">
-              {playerPowers.length === 0 ? (
-                <div className="px-1 font-console text-sm italic text-spire-faint">
-                  None
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {playerPowers.map((p, i) => (
-                    <HoverTip
-                      key={i}
-                      tip={labeledTooltip(powerChipLabel(p), p, {
-                        skipPowerAmountLead: true,
-                      })}
-                      side="right"
-                      className="w-full min-w-0"
-                    >
-                      <div className="cursor-help truncate rounded-md border-2 border-spire-border-subtle bg-spire-canvas px-1.5 py-0.5 text-sm font-medium text-spire-primary shadow-sm">
-                        {powerChipLabel(p)}
-                      </div>
-                    </HoverTip>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </aside>
+      <RelicsPowersBar relics={relics} playerPowers={playerPowers} />
 
-        {/* Col 2–3 — main */}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-spire-border-subtle">
-          {/* Top: non-combat screen (from vm.screen) OR enemies | hand */}
-          {showScreenPanel && vm ? (
-            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden border-b border-spire-border-subtle">
-              <GameScreenPanel
-                vm={vm}
-                onChoose={(cmd) => void queueManualCommand(cmd)}
-              />
-            </div>
-          ) : (
-            <div className="flex min-h-0 min-w-0 flex-[1.45_1_0%] overflow-hidden border-b border-spire-border-subtle max-h-[min(68vh,44rem)]">
-              <div
-                className={`flex min-h-0 min-w-0 flex-col border-r border-spire-border-subtle bg-spire-canvas ${
-                  monsters.length === 0
-                    ? "max-w-[11rem] shrink-0 flex-[0_0_auto] basis-[22%]"
-                    : "min-w-0 flex-[0.68]"
-                }`}
-              >
-                <div className={`sticky top-0 z-10 ${osdCombatBoardStrip}`}>
-                  Enemies · {fmtIntEn(monsters.length)}
+      {/* IDE workspace — center column + AI rail */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col border-r border-spire-border-subtle">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">
+            {/* Game state — half of center column (excl. AI rail); map/screen or stacked combat */}
+            <div className="flex min-h-[min(36vh,18rem)] min-w-0 flex-1 flex-col max-lg:border-b max-lg:border-spire-border-subtle lg:min-h-0 lg:min-w-0 lg:flex-1 lg:basis-0 lg:border-r lg:border-spire-border-subtle">
+              {showScreenPanel && vm ? (
+                <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                  <GameScreenPanel
+                    vm={vm}
+                    scrollBottomPadClass="pb-28"
+                    onChoose={(cmd) => void queueManualCommand(cmd)}
+                  />
                 </div>
-                <div className="custom-scroll flex-1 space-y-1.5 overflow-y-auto p-2">
-                  {monsters.length === 0 ? (
-                    <div className="space-y-2 px-2 py-6 text-center text-sm text-spire-label">
-                      <p className="font-medium text-spire-muted">No enemies</p>
-                      {nonCombatBoardHint ? (
-                        <p className="text-xs leading-relaxed text-spire-faint">
-                          {nonCombatBoardHint}
-                        </p>
+              ) : (
+                <div className="flex min-h-0 min-w-0 max-h-[min(68vh,44rem)] flex-1 flex-col overflow-hidden lg:max-h-none">
+                  {/* Enemies above hand — each pane scrolls; empty enemy strip stays compact */}
+                  <div
+                    className={
+                      monsters.length === 0
+                        ? "flex shrink-0 flex-col border-b border-spire-border-subtle bg-spire-canvas"
+                        : "flex min-h-0 min-w-0 flex-[5] flex-col border-b border-spire-border-subtle bg-spire-canvas basis-0"
+                    }
+                  >
+                    <div className={`sticky top-0 z-10 ${osdPanelStrip}`}>
+                      Enemies · {fmtIntEn(monsters.length)}
+                    </div>
+                    <div
+                      className={
+                        monsters.length === 0
+                          ? "custom-scroll space-y-1.5 overflow-y-auto p-2 pb-28"
+                          : "custom-scroll min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2 pb-28"
+                      }
+                    >
+                      {monsters.length === 0 ? (
+                        <div className="space-y-2 px-2 py-4 text-center text-sm text-spire-label">
+                          <p className="font-medium text-spire-muted">
+                            No enemies
+                          </p>
+                          {nonCombatBoardHint ? (
+                            <p className="text-xs leading-relaxed text-spire-faint">
+                              {nonCombatBoardHint}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-spire-faint">No enemies.</p>
+                          )}
+                        </div>
                       ) : (
-                        <p className="text-xs text-spire-faint">No enemies.</p>
+                        monsters.map((m, i) => <EnemyCard key={i} m={m} />)
                       )}
                     </div>
-                  ) : (
-                    monsters.map((m, i) => <EnemyCard key={i} m={m} />)
-                  )}
-                </div>
-              </div>
+                  </div>
 
-              <div
-                className={`flex min-h-0 min-w-0 flex-col bg-spire-canvas ${
-                  monsters.length === 0 ? "min-w-0 flex-1" : "flex-[1.32]"
-                }`}
-              >
-                <div className={`sticky top-0 z-10 ${osdCombatBoardStrip}`}>
-                  <span className="min-w-0 shrink-0 truncate">
-                    Hand · {fmtIntEn(hand.length)}
-                  </span>
-                  <div className="flex min-w-0 shrink items-stretch gap-1.5">
-                    <PileTelemetryBar
-                      draw={draw}
-                      discard={disc}
-                      exhaust={exhaust}
-                      onInspect={(k) => {
-                        setDeckInspectOpen(false);
-                        setPileInspect(k);
-                      }}
-                    />
+                  <div className="flex min-h-0 min-w-0 flex-[7] flex-col bg-spire-canvas basis-0">
+                    <div className={`sticky top-0 z-10 ${osdPanelStrip}`}>
+                      <span className="min-w-0 shrink-0 truncate">
+                        Hand · {fmtIntEn(hand.length)}
+                      </span>
+                      <div className="flex min-w-0 shrink items-stretch gap-1.5">
+                        <PileTelemetryBar
+                          draw={draw}
+                          discard={disc}
+                          exhaust={exhaust}
+                          onInspect={(k) => {
+                            setDeckInspectOpen(false);
+                            setPileInspect(k);
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="custom-scroll min-h-0 flex-1 overflow-y-auto pb-28">
+                      {hand.length === 0 ? (
+                        <div className="space-y-2 px-2 py-4 text-center text-sm text-spire-label">
+                          <p className="font-medium text-spire-muted">
+                            No cards in hand
+                          </p>
+                          {nonCombatBoardHint ? (
+                            <p className="text-xs leading-relaxed text-spire-faint">
+                              {nonCombatBoardHint}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-spire-faint">
+                              No cards in hand.
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <CardTable cards={hand} />
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="custom-scroll min-h-0 flex-1 overflow-y-auto">
-                  {hand.length === 0 ? (
-                    <div className="space-y-2 px-2 py-4 text-center text-sm text-spire-label">
-                      <p className="font-medium text-spire-muted">
-                        No cards in hand
-                      </p>
-                      {nonCombatBoardHint ? (
-                        <p className="text-xs leading-relaxed text-spire-faint">
-                          {nonCombatBoardHint}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-spire-faint">No cards in hand.</p>
-                      )}
-                    </div>
-                  ) : (
-                    <CardTable cards={hand} />
-                  )}
+              )}
+            </div>
+
+            {/* LLM user prompt — other half of center column on lg+ */}
+            <div className="flex min-h-[min(28vh,15rem)] min-w-0 flex-1 flex-col bg-spire-canvas lg:min-h-0 lg:min-w-0 lg:flex-1 lg:basis-0">
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <div
+                  className={osdPanelStrip}
+                  title="Tactical user message for this state (live trace or server preview)."
+                >
+                  <span className="min-w-0 shrink truncate">
+                    LLM user prompt
+                  </span>
+                  <button
+                    type="button"
+                    className={osdBtnGhost}
+                    onClick={() =>
+                      void copyClipboard(tacticalPromptText, "LLM user prompt")
+                    }
+                  >
+                    Copy
+                  </button>
+                </div>
+                <div className="font-telemetry custom-scroll min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 pb-28 text-sm font-medium leading-relaxed text-spire-primary">
+                  {tacticalPromptMarkdown}
                 </div>
               </div>
             </div>
-          )}
+          </div>
 
-          {/* Valid actions — full width under enemies + hand (z-index keeps it above scrolling map) */}
-          <div className="relative z-10 flex min-h-[2.75rem] max-h-[28vh] shrink-0 flex-col border-b-2 border-t-2 border-spire-border-subtle bg-spire-canvas shadow-[0_-4px_18px_rgba(42,34,24,0.06)]">
+          {/* Valid actions — floats over game + prompt; height follows content (scroll if huge) */}
+          <div className="absolute bottom-0 left-0 right-0 z-30 flex max-h-[min(45vh,20rem)] flex-col border-t-2 border-spire-border-subtle bg-spire-canvas/95 shadow-[0_-12px_32px_rgba(42,34,24,0.18)] backdrop-blur-[3px]">
             <div
-              className={`shrink-0 border-b-2 border-spire-border-muted bg-spire-canvas px-2 py-1.5 ${osdSectionLabel}`}
+              className={`shrink-0 border-b-2 border-spire-border-muted bg-spire-canvas/95 px-2 py-1.5 backdrop-blur-[3px] ${osdSectionLabel}`}
             >
               Valid actions
             </div>
-            <div className="custom-scroll flex flex-1 flex-wrap content-start gap-1 overflow-y-auto px-2 py-1">
+            <div className="custom-scroll max-h-[min(36vh,15rem)] shrink-0 overflow-x-hidden overflow-y-auto px-2 py-1">
+              <div className="flex flex-wrap content-start gap-1">
               {actions.length === 0 ? (
                 <span className="font-console text-xs text-spire-faint">
                   No actions
@@ -1698,7 +1834,7 @@ export function MonitorDashboard() {
                   <button
                     key={`${a.command}-${i}`}
                     type="button"
-                    className={actionBtnClass(a.style)}
+                    className={actionBtnClass(a)}
                     title={a.command}
                     onClick={() => void queueManualCommand(a.command)}
                   >
@@ -1706,40 +1842,14 @@ export function MonitorDashboard() {
                   </button>
                 ))
               )}
-            </div>
-          </div>
-
-          {/* Bottom: LLM user prompt — flex-1 shares vertical space with combat band (combat flex-grow is higher). */}
-          <div
-            className="flex min-h-0 flex-1 flex-col border-t border-spire-border-subtle"
-            style={{ minHeight: "min(22vh, 17rem)" }}
-          >
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-spire-canvas">
-              <div
-                className={osdPanelStrip}
-                title="Tactical user message for this state (live trace or server preview)."
-              >
-                <span className="min-w-0 shrink truncate">LLM user prompt</span>
-                <button
-                  type="button"
-                  className={osdBtnGhost}
-                  onClick={() =>
-                    void copyClipboard(tacticalPromptText, "LLM user prompt")
-                  }
-                >
-                  Copy
-                </button>
               </div>
-              <pre className="font-telemetry custom-scroll flex-1 overflow-auto p-3 text-base font-medium leading-relaxed whitespace-pre text-spire-primary">
-                {tacticalPromptText}
-              </pre>
             </div>
           </div>
         </main>
 
         {/* Col 4 — AI operator rail (compact; boxed headers avoid overlap with scroll areas) */}
         <aside
-          className="relative z-20 flex max-w-[min(960px,56vw)] shrink-0 flex-col border-l border-spire-success/25 bg-[var(--bg-canvas)] pl-1 shadow-[-6px_0_20px_rgba(42,34,24,0.07)]"
+          className="relative z-20 flex max-w-[min(800px,48vw)] shrink-0 flex-col border-l border-spire-success/25 bg-[var(--bg-canvas)] pl-1 shadow-[-6px_0_20px_rgba(42,34,24,0.07)]"
           style={{ width: railWidthPx }}
         >
           <div

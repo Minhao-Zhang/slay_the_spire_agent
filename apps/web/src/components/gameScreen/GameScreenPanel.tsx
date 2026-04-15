@@ -38,7 +38,7 @@ function CardPickTile({
       title={typeHint ? `Type: ${typeHint}` : undefined}
       className="relative flex min-h-[4.5rem] w-[9.5rem] shrink-0 flex-col rounded-md border-2 border-spire-border-subtle bg-spire-canvas p-2 text-left shadow-sm transition hover:border-spire-accent hover:bg-spire-panel-raised"
     >
-      <span className="absolute top-1.5 right-1.5 flex h-5 min-w-[1.25rem] items-center justify-center rounded bg-spire-accent px-1 font-console text-[13px] font-bold text-spire-primary">
+      <span className="absolute top-1.5 right-1.5 flex h-5 min-w-[1.25rem] items-center justify-center rounded border border-spire-border-subtle/80 bg-[#edd37a] px-1 font-console text-[13px] font-bold text-spire-primary shadow-sm">
         {fmtGameStatDisplay(card.cost ?? "—")}
       </span>
       <span className={`pr-6 text-sm leading-tight ${cardNameClass(card.type)}`}>
@@ -64,9 +64,12 @@ function asStr(v: unknown): string {
 export function GameScreenPanel({
   vm,
   onChoose,
+  scrollBottomPadClass,
 }: {
   vm: ViewModelDTO;
   onChoose: (command: string) => void;
+  /** Extra bottom padding on primary scroll regions (e.g. floating valid-actions bar). */
+  scrollBottomPadClass?: string;
 }) {
   const screen: GameScreenDTO | null | undefined = vm.screen;
   const [rawOpen, setRawOpen] = useState(false);
@@ -107,6 +110,10 @@ export function GameScreenPanel({
   const content = screen?.content ?? {};
   const type = String(screen?.type ?? "");
 
+  const scrollPad = scrollBottomPadClass?.trim() ?? "";
+  const spad = (classes: string) =>
+    scrollPad ? `${classes} ${scrollPad}` : classes;
+
   const body = (() => {
     switch (type) {
       case "MAP": {
@@ -119,7 +126,7 @@ export function GameScreenPanel({
             <div className="shrink-0 font-console text-xs font-medium text-spire-accent">
               {posLabel || "Selecting first node"}
             </div>
-            <div className="min-h-0 flex-1 overflow-auto">
+            <div className={spad("min-h-0 flex-1 overflow-auto")}>
               <MapView
                 mapData={map}
                 onChoose={onChoose}
@@ -144,7 +151,11 @@ export function GameScreenPanel({
       case "EVENT": {
         const opts = (content.options as Record<string, unknown>[]) ?? [];
         return (
-          <div className="custom-scroll min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+          <div
+            className={spad(
+              "custom-scroll min-h-0 flex-1 space-y-3 overflow-y-auto p-3",
+            )}
+          >
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-spire-primary">
               {asStr(content.body_text)}
             </p>
@@ -181,7 +192,11 @@ export function GameScreenPanel({
         const rewards =
           (content.rewards as Record<string, unknown>[]) ?? [];
         return (
-          <div className="custom-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+          <div
+            className={spad(
+              "custom-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-3",
+            )}
+          >
             <div className="grid max-w-xl gap-2">
               {rewards.map((r, i) => {
                 const idx = r.choice_index ?? i;
@@ -210,7 +225,9 @@ export function GameScreenPanel({
       case "CARD_REWARD": {
         const cards = (content.cards as Record<string, unknown>[]) ?? [];
         return (
-          <div className="custom-scroll min-h-0 flex-1 overflow-y-auto p-3">
+          <div
+            className={spad("custom-scroll min-h-0 flex-1 overflow-y-auto p-3")}
+          >
             <div className="flex flex-wrap justify-center gap-4 py-2">
               {cards.map((card, i) => (
                 <CardPickTile
@@ -228,7 +245,11 @@ export function GameScreenPanel({
         const restOpts =
           (content.rest_options as Record<string, unknown>[]) ?? [];
         return (
-          <div className="custom-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+          <div
+            className={spad(
+              "custom-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-3",
+            )}
+          >
             <div className="mx-auto grid max-w-xl gap-2">
               {restOpts.map((o, i) => (
                 <button
@@ -259,7 +280,11 @@ export function GameScreenPanel({
         const reason =
           type === "HAND_SELECT" ? asStr(content.screen_reason) : "";
         return (
-          <div className="custom-scroll min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+          <div
+            className={spad(
+              "custom-scroll min-h-0 flex-1 space-y-3 overflow-y-auto p-3",
+            )}
+          >
             {reason ? (
               <p className="text-sm text-spire-muted">{reason}</p>
             ) : null}
@@ -282,7 +307,11 @@ export function GameScreenPanel({
       case "SHOP_ROOM": {
         const choices = (content.choices as unknown[]) ?? [];
         return (
-          <div className="custom-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+          <div
+            className={spad(
+              "custom-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-3",
+            )}
+          >
             <div className="mx-auto grid max-w-sm gap-2">
               {choices.map((ch, i) => {
                 const s = asStr(ch);
@@ -317,7 +346,11 @@ export function GameScreenPanel({
         const purge = Boolean(content.purge_available);
         const purgeCost = content.purge_cost;
         return (
-          <div className="custom-scroll min-h-0 flex-1 space-y-5 overflow-y-auto p-3">
+          <div
+            className={spad(
+              "custom-scroll min-h-0 flex-1 space-y-5 overflow-y-auto p-3",
+            )}
+          >
             <div className="font-telemetry text-sm font-semibold text-spire-warning">
               Gold:{" "}
               {gold === undefined || gold === null
@@ -425,7 +458,11 @@ export function GameScreenPanel({
       case "BOSS_REWARD": {
         const relics = (content.relics as Record<string, unknown>[]) ?? [];
         return (
-          <div className="custom-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+          <div
+            className={spad(
+              "custom-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-3",
+            )}
+          >
             <div className="mx-auto grid max-w-xl gap-2">
               {relics.map((r, i) => {
                 const kb = r.kb as Record<string, unknown> | undefined;
@@ -479,7 +516,11 @@ export function GameScreenPanel({
         const raw = content.raw_screen_state;
         if (choices.length > 0) {
           return (
-            <div className="custom-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+            <div
+              className={spad(
+                "custom-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-3",
+              )}
+            >
               <div className="mx-auto grid max-w-xl gap-2">
                 {choices.map((ch, i) => (
                   <button
@@ -496,7 +537,11 @@ export function GameScreenPanel({
           );
         }
         return (
-          <div className="custom-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+          <div
+            className={spad(
+              "custom-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-3",
+            )}
+          >
             <p className="text-sm italic text-spire-label">
               No choices available for this screen type ({type || "unknown"}).
             </p>
