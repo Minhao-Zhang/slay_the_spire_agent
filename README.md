@@ -5,16 +5,16 @@
 ## What you get
 
 - **Autonomous loop** — LangGraph agent with tools, policy-validated commands, and modes from full autonomy (`auto`) to gated proposals (`propose`) to human-only (`manual`).
-- **`/` (Monitor)** — Live game state plus **observability**: prompts, strategist layer, combat framing, reasoning when available, proposals, and a session log—so you can audit *why* a long-run choice was made.
+- **Monitor (`/`)** — Live game state plus **observability**: prompts, strategist layer, combat framing, reasoning when available, proposals, and a session log—so you can audit *why* a long-run choice was made.
 - **Human decisions** — Same surface for **intervention**: approve or change a line, retry after failure, switch mode without restarting the game.
-- **Planning horizon** — Curated **`data/knowledge/`**, factual **`data/reference/`**, **map path analysis**, a **strategist** (support model) for scene-level notes, **combat planning**, **retrieval + `MEMORY_DIR`**, and **reflection** after runs so lessons accumulate across the spire.
+- **Planning horizon** — Curated `data/knowledge/`, factual `data/reference/`, **map path analysis**, a **strategist** (support model) for scene-level notes, **combat planning**, **retrieval** + `MEMORY_DIR`, and **reflection** after runs so lessons accumulate across the spire.
 - **`/metrics` · `/metrics/map`** — Per-run analytics and map replay to review **multi-act** trajectories, not just single combats.
 
 ## Screenshots
 
 | **Monitor** (`/`) — combat, legal actions, model context, trace, session log | **Run metrics** (`/metrics`) — charts and per-run analytics |
-| :--: | :--: |
-| ![Spire Agent monitor: live combat, hand, legal actions, LLM prompt, trace, session log](docs/images/dashboard_screenshot.png) | ![Spire Agent metrics: run analytics and charts](docs/images/metric_screenshot.png) |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| ![Monitor dashboard](docs/images/dashboard_screenshot.png)                   | ![Run metrics](docs/images/metric_screenshot.png)             |
 
 ## Requirements
 
@@ -30,36 +30,26 @@ uv sync
 npm install
 ```
 
-Copy [`.env.example`](.env.example) to **`.env`**. OpenAI-compatible **`API_BASE_URL`**; **Responses API** is the best-tested path. Empty **`API_KEY`** → manual-only. Rest is in `.env.example`.
+Copy [`.env.example`](.env.example) to `.env`. Set an OpenAI-compatible `API_BASE_URL`; **Responses API** is the best-tested path. Leave `API_KEY` empty for manual-only mode. Other variables are documented in `.env.example`.
 
 ## Run the stack
 
-Start the **API server** and **web UI** yourself. When you play with CommunicationMod, the mod **starts the bridge**—no extra terminal for that—using the **`command`** you set in the mod’s config (below).
+**1. API server** — Repo root: `run_api.bat` or `./run_api.sh` → `http://127.0.0.1:8000` (see console echo; `localhost` also works).
 
-**A — API server (`http://localhost:8000`):** `run_api.bat` or `./run_api.sh`  
-Bridge and UI use this (REST + WebSocket). **`/`** here is only a short info page, not the Monitor.
+**2. Web UI (dev)** — Repo root: `npm run dev:web` → `http://127.0.0.1:5173` (**/** Monitor, **/metrics**, **/metrics/map**).
 
-**B — Web UI (dev):** `npm run dev:web` → **`http://localhost:5173`** — **/** Monitor, **/metrics**, **/metrics/map**. Proxies to port **8000**.  
-Build: `npm run build:web` → `apps/web/dist/`.
+**3. CommunicationMod** — Set `command` to an absolute path to this repo:
 
-### CommunicationMod
+- **Windows:** `command=ABSOLUTE_PATH\run_agent.bat`
+- **macOS / Linux:** `command=ABSOLUTE_PATH/run_agent.sh` and `chmod +x run_agent.sh`
 
-Set the mod’s **`command`** to an **absolute path** to this repo’s launcher (after `uv sync`, it `cd`s here and runs **`.venv`** + **`-m src.main`** — see [`run_agent.bat`](run_agent.bat) / [`run_agent.sh`](run_agent.sh)):
+[`run_agent.bat`](run_agent.bat) / [`run_agent.sh`](run_agent.sh) use `.venv` and `python -m src.main` from the repo (after `uv sync`).
 
-**Windows:** `command=ABSOLUTE_PATH\run_agent.bat`  
-**macOS / Linux:** `command=ABSOLUTE_PATH/run_agent.sh`
-
-On Unix: `chmod +x run_agent.sh`. Alternative: **`command`** = `.venv` Python + `src/main.py`.
-
-**Bridge (spawned by the game):** prints **`ready`** when up. Debug the bridge alone: `uv run python -m src.main`.
-
-### Agent modes
-
-`propose` · `auto` · `manual` — see `.env.example`.
+**4. Game** — Start *Slay the Spire* with CommunicationMod and run a mod session.
 
 ## How it works
 
-The **bridge** ([`src/main.py`](src/main.py)) runs **`SpireDecisionAgent`**: a LangGraph loop that, each step, fuses the live view with **retrieval** (`data/knowledge`, `data/reference`), **strategist** output and **combat planning** for longer-horizon context, **map analysis** when you are on the map, and **memory** from past scenes and runs. The **decision** model chooses actions (with tools); outputs are **validated** before execution. The **API server** carries **HITL** state—approvals, edits, mode—so humans stay in the loop for **observability and decisions** while the agent can otherwise run on its own. The bridge sends the final command to the game. **`logs/`** feeds **Metrics** and **map** for reviewing whole runs.
+The **bridge** ([`src/main.py`](src/main.py)) runs **`SpireDecisionAgent`**: a LangGraph loop that, each step, fuses the live view with **retrieval** (`data/knowledge`, `data/reference`), **strategist** output and **combat planning** for longer-horizon context, **map analysis** when you are on the map, and **memory** from past scenes and runs. The **decision** model chooses actions (with tools); outputs are **validated** before execution. The **API server** carries **HITL** state—approvals, edits, mode—so humans stay in the loop for **observability and decisions** while the agent can otherwise run on its own. The bridge sends the final command to the game. The **`logs/`** tree feeds **Metrics** and **map** for reviewing whole runs.
 
 ```mermaid
 flowchart TB
@@ -96,6 +86,8 @@ flowchart TB
   Post --> Mem
 ```
 
+
+
 More detail: [`ARCHITECTURE.md`](ARCHITECTURE.md), [data-flow-diagram.md](data-flow-diagram.md), [user-sequence-diagram.md](user-sequence-diagram.md).
 
 ## Limitations
@@ -104,4 +96,4 @@ More detail: [`ARCHITECTURE.md`](ARCHITECTURE.md), [data-flow-diagram.md](data-f
 
 Unmodified [CommunicationMod](https://github.com/ForgottenArbiter/CommunicationMod) does **not** put the Watcher’s stance on `combat_state.player` in JSON (HP, block, energy, powers, orbs only). The agent cannot rely on stance from the wire unless the mod is extended (e.g. `stance_id`).
 
-Source: [CommunicationMod `GameStateConverter.java` — `convertPlayerToJson`](https://github.com/ForgottenArbiter/CommunicationMod/blob/master/src/main/java/communicationmod/GameStateConverter.java#L715-L741).
+Source: [CommunicationMod `GameStateConverter.java` — `convertPlayerToJson`](https://github.com/ForgottenArbiter/CommunicationMod/blob/master/src/main/java/communicationmod/GameStateConverter.java#L715-L741)
