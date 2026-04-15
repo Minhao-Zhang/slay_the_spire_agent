@@ -10,9 +10,11 @@
 - **Planning horizon** — Curated **`data/knowledge/`**, factual **`data/reference/`**, **map path analysis**, a **strategist** (support model) for scene-level notes, **combat planning**, **retrieval + `MEMORY_DIR`**, and **reflection** after runs so lessons accumulate across the spire.
 - **`/metrics` · `/metrics/map`** — Per-run analytics and map replay to review **multi-act** trajectories, not just single combats.
 
-## Monitor
+## Screenshots
 
-![Spire Agent monitor: live combat, hand, valid actions, LLM prompt, model output, and session log](docs/images/dashboard_screenshot.png)
+| **Monitor** (`/`) — combat, legal actions, model context, trace, session log | **Run metrics** (`/metrics`) — charts and per-run analytics |
+| :--: | :--: |
+| ![Spire Agent monitor: live combat, hand, legal actions, LLM prompt, trace, session log](docs/images/dashboard_screenshot.png) | ![Spire Agent metrics: run analytics and charts](docs/images/metric_screenshot.png) |
 
 ## Requirements
 
