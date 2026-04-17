@@ -134,6 +134,22 @@ flowchart TB
 
 ## 5) Observability Layer (Langfuse-first)
 
+### 5.0 Langfuse-native traces and sessions (strict contract)
+
+We **do not** define a parallel “logging shape” for LLM observability. The bridge and agent **must** follow Langfuse’s own **Trace** and **Session** semantics so Langfuse’s UI, public session links, APIs, and any tooling that keys off Langfuse fields behave exactly as Langfuse documents.
+
+- **Trace:** Each logical unit in §5.1 maps to exactly one Langfuse **`trace_id`**. All generations, spans, tool round-trips, and validators for that unit are **observations on that trace** (Langfuse’s trace model).
+- **Session:** A Langfuse **Session** groups **multiple traces** under one stable **`sessionId`** (Langfuse product field; see their Sessions feature). For this project, **one playable run** = **one session**: set **`sessionId` = `run_id`** where `run_id` is the stable id for the whole run (the same value we store as `runs.id` / `langfuse_session_id` in SQL). **`userId`** is set using Langfuse’s documented **`userId` / `user_id`** trace attribute (default for our deployment: same value as `run_id` unless we introduce a distinct operator identity).
+
+**Wire-up requirement:** `sessionId` and `userId` **must** be attached using Langfuse-supported **trace-level** mechanisms for the SDK in use (e.g. Python **`propagate_attributes(session_id=..., user_id=...)`** around nested calls, or any successor API Langfuse documents for the same effect). Duplicating `"session_id"` / `"user_id"` **only** inside ad-hoc observation **metadata** JSON **does not** satisfy this contract and **must not** be treated as implementing Sessions.
+
+**Normative references:**
+
+- Sessions: https://langfuse.com/docs/observability/features/sessions  
+- Observability / tracing overview (trace vs observation hierarchy, SDK links): https://langfuse.com/docs/observability/overview  
+
+Custom fields (`state_id`, `frame_id`, `decision_id`, tags, etc.) remain **metadata** on observations or traces as appropriate (§5.2); they **supplement**, not replace, Langfuse **`sessionId`** / **`userId`**.
+
 ### 5.1 Langfuse as source of truth
 
 Every LLM interaction produces exactly one Langfuse **trace** per logical unit and one **generation/observation** per round:
@@ -146,9 +162,10 @@ Every LLM interaction produces exactly one Langfuse **trace** per logical unit a
 | Per consolidation pass | one trace per pass                | one span (no LLM by default)                                                                                                         |
 
 
-Every Langfuse trace carries:
+Every Langfuse trace **must** carry (per §5.0 — **trace-level** Langfuse fields, not only nested metadata):
 
-- `user_id` / `session_id` = `run_id`,
+- **`sessionId`** = stable **`run_id`** for the whole game run (same id as `runs.id` / `runs.langfuse_session_id`),
+- **`userId`** = operator / run identity as above (default: same as `run_id`),
 - tags: `agent_mode`, `character`, `act`, `floor`, `experiment_id`, `prompt_profile`,
 - `langfuse.score`: attached from run outcome (`victory` = 1.0, `defeat` = 0.0, partial on incomplete), from lesson efficacy post-run, and from parity check results.
 
@@ -624,7 +641,7 @@ Requirements:
 
 **Scope.**
 
-- Langfuse SDK installed; `LangfuseClient` wrapper with client-generated `trace_id` and `observation_id`.
+- Langfuse SDK installed; `LangfuseClient` wrapper with client-generated `trace_id` and `observation_id`, and **§5.0-compliant** propagation of Langfuse **`sessionId`** / **`userId`** on traces (not metadata-only duplicates).
 - Instrument every LLM call site (decision, strategist, combat planner, compactor, reflector).
 - Alembic initialized for both engines. Migration `0001_init`.
 - Repo interface + dual-engine implementation for state tables.
@@ -642,7 +659,7 @@ Reproducibility hashes on `runs` added now (`system_prompt_hash`, `prompt_builde
 **Code hints.**
 
 - New: `src/persistence/__init__.py`, `src/persistence/engine.py` (engine factory), `src/persistence/repository.py` (protocol), `src/persistence/sql_repository.py` (SQLAlchemy impl), `src/persistence/migrations/` (Alembic tree).
-- New: `src/observability/langfuse_client.py` (wraps init, trace/observation helpers, redaction hook, local-fallback IDs).
+- New: `src/observability/langfuse_client.py` (wraps init, trace/observation helpers, redaction hook, local-fallback IDs; **must** satisfy **§5.0** for Langfuse-native traces + sessions).
 - Touch: `src/agent/llm_client.py` — wrap every API call to emit Langfuse observation + return IDs to caller.
 - Touch: `src/agent/graph.py`, `src/agent/strategist.py`, `src/agent/planning.py`, `src/agent/reflection/reflector.py` — each LLM call records its own `stage` metadata.
 - Touch: `src/main.py` — on each frame and decision, call `repo.insert_frame` / `repo.upsert_decision_final` when `SQL_STATE_MODE != off`.

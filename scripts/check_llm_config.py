@@ -1,15 +1,35 @@
+#!/usr/bin/env python3
+"""Check OpenAI-compatible LLM configuration (API key, base URL, Responses vs Chat).
+
+Loads ``.env`` like the bridge (via ``reload_agent_config``). Prints a JSON report and
+exits 0 only if a minimal ``hello`` completion succeeds.
+
+Run from repo root:
+
+    uv run python scripts/check_llm_config.py
+
+Or:
+
+    python scripts/check_llm_config.py
+"""
+
 from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from src.agent.config import (
     CONNECT_TIMEOUT_SECONDS,
     PROBE_TIMEOUT_SECONDS,
     reload_agent_config,
 )
-from src.agent.llm_client import ApiStyle, build_llm_check_result, LLMClient
+from src.agent.llm_client import ApiStyle, LLMClient, build_llm_check_result
 
 
 def attempt_style(llm: LLMClient, api_style: ApiStyle, message: str) -> dict[str, Any]:
