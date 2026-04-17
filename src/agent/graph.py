@@ -16,6 +16,7 @@ from src.agent.config import (
 from src.agent.memory import MemoryStore, build_context_tags
 from src.agent.memory.types import RetrievalHit
 from src.agent.llm_client import LLMClient
+from src.agent.llm_context import LlmCallContext
 from src.agent.planning import resolve_combat_planning
 from src.agent.policy import parse_agent_output, validate_final_decision
 from src.agent.prompt_builder import build_user_prompt
@@ -25,6 +26,7 @@ from src.agent.strategist import hit_stable_id, run_strategist_llm
 from src.agent.tool_registry import execute_tool, list_function_tools_for_context, tool_filter_for_context
 from src.agent.tracing import create_trace
 from src.agent.vm_shapes import as_dict, normalize_legal_actions
+from src.observability.langfuse_client import langfuse_trace_id_for_decision_id
 
 
 def _reward_flow_label_for_choose(action: str, legal_actions: list[dict[str, Any]] | None) -> str:
@@ -99,6 +101,9 @@ class SpireDecisionAgent:
         self._cached_planning_block: str | None = None
         self._cached_non_combat_plan_block: str | None = None
         self.graph = self._build_graph()
+        self.persistence_run_id: str | None = None
+        self.persistence_frame_id: str | None = None
+        self.persistence_event_index: int | None = None
 
     def set_ai_unavailable(self, status: str, reason: str) -> None:
         self.ai_enabled = False
@@ -168,6 +173,41 @@ class SpireDecisionAgent:
         if self.trace_callback:
             self.trace_callback(trace)
 
+    def _llm_ctx(self, state: GraphState, *, stage: str, round_index: int) -> LlmCallContext | None:
+        rid = self.persistence_run_id
+        if not rid:
+            return None
+        vm = state["vm"]
+        header = as_dict(vm.get("header"))
+        effort = (
+            (self.config.decision_reasoning_effort or "").strip().lower()
+            if stage == "decision"
+            else (self.config.support_reasoning_effort or "").strip().lower()
+        )
+        trace = state["trace"]
+        tags = {
+            "floor": header.get("floor"),
+            "character": header.get("class"),
+            "act": header.get("act"),
+            "agent_mode": str(trace.agent_mode),
+        }
+        return LlmCallContext(
+            run_id=rid,
+            frame_id=self.persistence_frame_id,
+            event_index=self.persistence_event_index,
+            state_id=state["state_id"],
+            client_decision_id=trace.decision_id,
+            turn_key=trace.turn_key,
+            stage=stage,
+            round_index=round_index,
+            prompt_profile=self.config.prompt_profile,
+            experiment_id=self.config.experiment_id,
+            langfuse_trace_id=trace.langfuse_trace_id or None,
+            reasoning_effort=effort or None,
+            mirror_llm_to_sql=True,
+            tags={k: v for k, v in tags.items() if v is not None},
+        )
+
     @staticmethod
     def _merge_token_usage(target: TraceTokenUsage, extra: TraceTokenUsage | None) -> None:
         if not extra:
@@ -236,6 +276,7 @@ class SpireDecisionAgent:
             llm=self.llm,
             max_hits=MAX_MEMORY_HITS,
             emit_trace=lambda: self._emit_trace(trace),
+            llm_call_context=self._llm_ctx(state, stage="strategist", round_index=len(trace.llm_calls) + 1),
         )
         self.session.update_strategy_notes(outcome.strategy_update)
         self._cached_memory_hits = outcome.hits
@@ -260,6 +301,7 @@ class SpireDecisionAgent:
             self.llm,
             self.ai_enabled,
             emit_trace=lambda: self._emit_trace(trace),
+            llm_call_context=self._llm_ctx(state, stage="combat_plan", round_index=len(trace.llm_calls) + 1),
         )
         # Strategist owns non-combat plan; do not overwrite.
         state["plan_text"] = outcome.planner_summary
@@ -289,15 +331,18 @@ class SpireDecisionAgent:
 
             max_chars = HISTORY_COMPACTION_MAX_CHARS
             summary = ""
+            compact_ctx = self._llm_ctx(state, stage="compactor", round_index=len(state["trace"].llm_calls) + 1)
             if older_messages:
                 summary = self.llm.summarize_history_compaction(
                     older_messages,
                     max_transcript_chars=max_chars,
+                    call_context=compact_ctx,
                 )
             if not summary and older_messages:
                 summary = self.llm.summarize_history_compaction(
                     older_messages,
                     max_transcript_chars=max(50_000, max_chars // 2),
+                    call_context=compact_ctx,
                 )
             if summary:
                 self.session.compact_history(summary, keep_recent)
@@ -388,6 +433,11 @@ class SpireDecisionAgent:
                 llm_role="decision",
                 reasoning_effort=effort,
                 function_tools=tools_arg,
+                call_context=self._llm_ctx(
+                    state,
+                    stage="decision",
+                    round_index=len(trace.llm_calls),
+                ),
             )
         except Exception as exc:  # noqa: BLE001
             trace.status = "error"
@@ -500,6 +550,7 @@ class SpireDecisionAgent:
         trace.experiment_tag = self.config.experiment_tag
         trace.experiment_id = self.config.experiment_id
         trace.deck_size = len((vm.get("inventory") or {}).get("deck") or [])
+        trace.langfuse_trace_id = langfuse_trace_id_for_decision_id(trace.decision_id)
         graph_state: GraphState = {
             "vm": vm,
             "state_id": state_id,

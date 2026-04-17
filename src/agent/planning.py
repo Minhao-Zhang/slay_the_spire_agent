@@ -53,6 +53,7 @@ def _ensure_combat_plan(
     llm: LLMClient | None,
     ai_enabled: bool,
     emit_trace: Callable[[], None],
+    llm_call_context: Any | None = None,
 ) -> bool:
     """Generate or refresh combat plan on session. Returns True if a new plan was stored."""
     trace.combat_plan_generated = False
@@ -104,6 +105,7 @@ def _ensure_combat_plan(
         result = llm.generate_combat_plan(
             system_prompt=COMBAT_PLAN_SYSTEM,
             user_content=planning_user,
+            call_context=llm_call_context,
         )
     except Exception as exc:  # noqa: BLE001
         trace.combat_plan_error = f"Combat plan failed: {exc}"
@@ -141,9 +143,12 @@ def resolve_combat_planning(
     llm: LLMClient | None,
     ai_enabled: bool,
     emit_trace: Callable[[], None],
+    llm_call_context: Any | None = None,
 ) -> PlanningOutcome:
     """Run combat LLM planning when in combat; non-combat planning comes from the strategist."""
-    combat_updated = _ensure_combat_plan(vm, trace, session, config, llm, ai_enabled, emit_trace)
+    combat_updated = _ensure_combat_plan(
+        vm, trace, session, config, llm, ai_enabled, emit_trace, llm_call_context=llm_call_context
+    )
     if vm.get("combat"):
         summary = _combat_planner_summary(vm)
     else:

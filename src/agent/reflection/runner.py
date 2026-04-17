@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from src.agent.config import AgentConfig
+from src.agent.llm_context import LlmCallContext
 from src.agent.memory import MemoryStore
+from src.observability.langfuse_client import langfuse_trace_id_for_decision_id
 from src.agent.reflection.analyzer import RunAnalyzer
 from src.agent.reflection.memory_storage import persist_reflection_to_memory, update_lesson_outcomes
 from src.agent.reflection.reflector import reflect_on_run
@@ -78,7 +80,30 @@ def run_reflection_pipeline(
         report_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
 
         existing = [e.lesson[:80] for e in memory_store.procedural_entries]
-        lessons, episodic = reflect_on_run(report, existing, llm_client, config)
+        sql_run_id: str | None = None
+        meta_path = game_dir / "sql_run_meta.json"
+        if meta_path.is_file():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                raw_rid = meta.get("sql_run_id")
+                if raw_rid:
+                    sql_run_id = str(raw_rid)
+            except (json.JSONDecodeError, OSError, TypeError):
+                sql_run_id = None
+        # Phase 0: Langfuse for every reflector call; SQL llm_call only when shadow + runs row exists.
+        obs_run_id = sql_run_id or game_dir.name
+        ref_ctx = LlmCallContext(
+            run_id=obs_run_id,
+            stage="reflector",
+            prompt_profile=config.prompt_profile,
+            experiment_id=config.experiment_id,
+            reasoning_effort="high",
+            mirror_llm_to_sql=bool(sql_run_id),
+            langfuse_trace_id=langfuse_trace_id_for_decision_id(f"reflection:{game_dir.name}"),
+        )
+        lessons, episodic = reflect_on_run(
+            report, existing, llm_client, config, llm_call_context=ref_ctx
+        )
 
         if episodic is None:
             episodic = _default_episodic_from_report(report)

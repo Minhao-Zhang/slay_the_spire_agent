@@ -1,14 +1,23 @@
+import atexit
 import concurrent.futures
 import datetime
+import hashlib
 import json
 import os
 import shutil
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 
 import requests
+
+from src.observability.langfuse_client import (
+    get_langfuse_client,
+    shutdown_langfuse_background_flush,
+)
+from src.persistence.settings import get_persistence_settings
 
 from src.agent.command_narration import describe_execution
 from src.agent.graph import SpireDecisionAgent
@@ -22,6 +31,12 @@ from src.agent.tracing import (
     build_turn_key,
     build_vm_summary,
     create_trace,
+    legacy_file_logs_enabled,
+    sql_shadow_create_run,
+    sql_shadow_repository_ready,
+    sql_shadow_insert_frame,
+    sql_shadow_upsert_decision_final,
+    sql_shadow_upsert_run_end,
     write_ai_log,
     write_run_end_snapshot,
 )
@@ -41,6 +56,17 @@ DASHBOARD_URL = "http://localhost:8000"
 MAX_LOG_RUNS = 10
 MENU_STATE_INTERVAL_SECONDS = 4.0
 MENU_IDLE_SLEEP_SECONDS = 0.05
+
+
+def _flush_langfuse_at_exit() -> None:
+    try:
+        shutdown_langfuse_background_flush()
+        get_langfuse_client().flush()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+atexit.register(_flush_langfuse_at_exit)
 
 
 def prune_old_log_runs(log_dir: str, keep: int = MAX_LOG_RUNS) -> None:
@@ -320,6 +346,54 @@ def main():
         "turn_key": "",   # turn key at the time the sequence was approved
     }
 
+    def _sha256_text(s: str | None) -> str | None:
+        if not s:
+            return None
+        return hashlib.sha256(s.encode("utf-8", errors="replace")).hexdigest()
+
+    def _persist_agent_decision_sql(trace: AgentTrace, state_id: str) -> None:
+        if not session or not session.sql_run_id:
+            return
+        ps = get_persistence_settings()
+        if not ps.sql_shadow_or_primary:
+            return
+        path = session.state_log_paths.get(state_id)
+        event_index = None
+        if path:
+            try:
+                event_index = int(path.stem)
+            except ValueError:
+                event_index = None
+        if event_index is None:
+            return
+        val_err = (trace.validation.error if trace.validation else "") or ""
+        sql_shadow_upsert_decision_final(
+            {
+                "run_id": session.sql_run_id,
+                "event_index": event_index,
+                "state_id": trace.state_id or state_id,
+                "client_decision_id": trace.decision_id,
+                "turn_key": trace.turn_key,
+                "status": trace.status,
+                "approval_status": trace.approval_status,
+                "execution_outcome": trace.execution_outcome,
+                "final_decision": trace.final_decision,
+                "final_decision_sequence": list(trace.final_decision_sequence or []),
+                "validation_error": val_err,
+                "error": trace.error or "",
+                "tool_names": list(trace.tool_names or []),
+                "prompt_profile": trace.prompt_profile,
+                "experiment_id": trace.experiment_id,
+                "experiment_tag": trace.experiment_tag,
+                "strategist_ran": trace.strategist_ran,
+                "planner_ran": False,
+                "react_ran": False,
+                "deck_size": trace.deck_size,
+                "user_message_sha256": _sha256_text(trace.user_prompt),
+                "assistant_message_sha256": _sha256_text(trace.response_text or trace.raw_output),
+            }
+        )
+
     def publish_ai_status(status: str, message: str, *, enabled: bool | None = None):
         notify_dashboard(
             "/api/ai/status",
@@ -385,6 +459,7 @@ def main():
             path = session.state_log_paths.get(sid) if session else None
             if path:
                 write_ai_log(path, stale)
+                _persist_agent_decision_sql(stale, sid)
             notify_dashboard("/agent_trace", stale.model_dump(mode="json"))
             notify_dashboard(
                 "/log",
@@ -419,6 +494,13 @@ def main():
     def start_proposal(vm: dict, state_id: str, agent_mode: str):
         proposal_state["token"] = int(proposal_state["token"]) + 1
         token = int(proposal_state["token"])
+        agent.persistence_run_id = session.sql_run_id if session else None
+        agent.persistence_frame_id = (
+            session.sql_frame_by_state_id.get(state_id) if session else None
+        )
+        agent.persistence_event_index = (
+            session.sql_event_index_by_state_id.get(state_id) if session else None
+        )
 
         def forward_trace(item):
             if proposal_state.get("future") is None:
@@ -504,6 +586,7 @@ def main():
         state_log_path = session.state_log_paths.get(completed_state_id) if session else None
         if state_log_path:
             write_ai_log(state_log_path, trace)
+            _persist_agent_decision_sql(trace, completed_state_id)
 
         # If the model failed validation for this state, allow another propose() on the next
         # ingress line with the same state_id. Otherwise last_proposed_state_id stays set and
@@ -531,30 +614,95 @@ def main():
         ei = session.event_index
         vm_summary = build_vm_summary(vm, state, state_id=state_id, event_index=ei)
         path = session.game_dir / f"{ei:04d}.json"
-        with path.open("w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "state": state,
-                    "vm_summary": vm_summary,
-                    "action": manual_action,
-                    "state_id": state_id,
-                    "meta": {
+        if legacy_file_logs_enabled():
+            with path.open("w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "state": state,
+                        "vm_summary": vm_summary,
+                        "action": manual_action,
+                        "state_id": state_id,
+                        "meta": {
+                            "event_index": ei,
+                            "ready_for_command": ready_for_command,
+                            "is_duplicate": is_duplicate,
+                            "duplicate_run_length": duplicate_run_length,
+                            "heartbeat": heartbeat,
+                            "agent_mode": agent_mode,
+                            "ai_enabled": agent.ai_enabled,
+                            "command_sent": command_sent,
+                            "command_source": command_source,
+                            "proposal_in_flight": proposal_state.get("future") is not None,
+                        },
+                    },
+                    f,
+                    indent=2,
+                )
+        append_state_run_metric(session.game_dir, vm_summary, event_index=ei, state_id=state_id)
+        ps = get_persistence_settings()
+        if ps.sql_shadow_or_primary and session.sql_run_id:
+            raw_floor = vm_summary.get("floor")
+            fi: int | None = None
+            if isinstance(raw_floor, int):
+                fi = raw_floor
+            elif raw_floor is not None and str(raw_floor).strip() != "":
+                try:
+                    fi = int(raw_floor)
+                except (TypeError, ValueError):
+                    fi = None
+            act_val = vm_summary.get("act")
+            act_i = act_val if isinstance(act_val, int) else None
+            is_floor_start = (
+                fi is not None
+                and session.prev_frame_floor is not None
+                and fi != session.prev_frame_floor
+            )
+            frame_uuid = str(uuid.uuid4())
+            meta = {
+                "event_index": ei,
+                "ready_for_command": ready_for_command,
+                "is_duplicate": is_duplicate,
+                "duplicate_run_length": duplicate_run_length,
+                "heartbeat": heartbeat,
+                "agent_mode": agent_mode,
+                "ai_enabled": agent.ai_enabled,
+                "command_sent": command_sent,
+                "command_source": command_source,
+                "proposal_in_flight": proposal_state.get("future") is not None,
+            }
+            try:
+                fid = sql_shadow_insert_frame(
+                    {
+                        "frame_id": frame_uuid,
+                        "run_id": session.sql_run_id,
                         "event_index": ei,
+                        "state_id": state_id,
+                        "screen_type": str(vm_summary.get("screen_type") or "NONE"),
+                        "floor": fi,
+                        "act": act_i,
+                        "turn_key": vm_summary.get("turn_key"),
                         "ready_for_command": ready_for_command,
-                        "is_duplicate": is_duplicate,
-                        "duplicate_run_length": duplicate_run_length,
-                        "heartbeat": heartbeat,
                         "agent_mode": agent_mode,
                         "ai_enabled": agent.ai_enabled,
                         "command_sent": command_sent,
                         "command_source": command_source,
-                        "proposal_in_flight": proposal_state.get("future") is not None,
-                    },
-                },
-                f,
-                indent=2,
-            )
-        append_state_run_metric(session.game_dir, vm_summary, event_index=ei, state_id=state_id)
+                        "action": manual_action,
+                        "is_floor_start": is_floor_start,
+                        "vm_summary": vm_summary,
+                        "meta": meta,
+                        "state_projection": vm_summary,
+                    }
+                )
+                if fid:
+                    session.sql_frame_by_state_id[state_id] = fid
+                    session.sql_event_index_by_state_id[state_id] = ei
+            except Exception as exc:  # noqa: BLE001
+                notify_dashboard(
+                    "/log",
+                    {"message": f"SQL shadow insert_frame failed: {exc!r}"},
+                )
+            if fi is not None:
+                session.prev_frame_floor = fi
         session.event_index += 1
         session.state_log_paths[state_id] = path
         return path
@@ -605,6 +753,7 @@ def main():
         state_log_path = session.state_log_paths.get(state_id) if session else None
         if state_log_path:
             write_ai_log(state_log_path, trace)
+        _persist_agent_decision_sql(trace, state_id)
         agent.remember_executed_action(trace, action, legal_actions)
         last_ai_execution["trace"] = trace
         last_ai_execution["state_id"] = state_id
@@ -720,6 +869,7 @@ def main():
             failed_state_log_path = session.state_log_paths.get(failed_state_id) if session else None
             if failed_state_log_path:
                 write_ai_log(failed_state_log_path, failed_trace)
+                _persist_agent_decision_sql(failed_trace, failed_state_id)
             notify_dashboard(
                 "/log",
                 {
@@ -808,6 +958,55 @@ def main():
             duplicate_run_length = 0
             clear_queued_sequence()
             proposal_failures["streak"] = 0
+            ps_boot = get_persistence_settings()
+            if (
+                ps_boot.sql_shadow_or_primary
+                and session.game_dir
+                and session.logging_enabled
+                and not session.sql_run_id
+            ):
+                if sql_shadow_repository_ready():
+                    run_uuid = str(uuid.uuid4())
+                    session.sql_run_id = run_uuid
+                    try:
+                        cfg_json = json.dumps(agent.config.model_dump(), sort_keys=True, default=str)
+                        cfg_h = hashlib.sha256(cfg_json.encode("utf-8")).hexdigest()
+                        sys_h = hashlib.sha256(agent.system_prompt.encode("utf-8")).hexdigest()
+                        engine = (
+                            "postgres"
+                            if "postgresql" in ps_boot.resolved_database_url().lower()
+                            else "sqlite"
+                        )
+                        exp_id = agent.config.experiment_id
+                        sql_shadow_create_run(
+                            {
+                                "run_id": run_uuid,
+                                "run_dir_name": session.game_dir.name,
+                                "seed": str(session.identity.get("seed") or ""),
+                                "character_class": str(session.identity.get("class") or ""),
+                                "ascension_level": int(session.identity.get("ascension_level") or 0),
+                                "storage_engine": engine,
+                                "system_prompt_hash": sys_h,
+                                "prompt_builder_version": "phase0-1",
+                                "reference_data_hash": None,
+                                "config_hash": cfg_h,
+                                "knowledge_version_id": None,
+                                "experiment_id": exp_id,
+                                "experiment": {
+                                    "id": exp_id,
+                                    "name": agent.config.experiment_tag or "default",
+                                    "decision_model": agent.config.decision_model,
+                                    "reasoning_effort": agent.config.decision_reasoning_effort,
+                                    "prompt_profile": agent.config.prompt_profile,
+                                    "config_hash": cfg_h,
+                                },
+                                "source_log_path": str(session.game_dir.resolve()),
+                                "langfuse_session_id": run_uuid,
+                            }
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        session.sql_run_id = None
+                        notify_dashboard("/log", {"message": f"SQL create_run failed: {exc!r}"})
 
         if lifecycle == GameLifecycle.WAITING_FOR_GAME and not in_game:
             instruction_menu = poll_instruction()
@@ -967,6 +1166,36 @@ def main():
         ):
             _, der = write_run_end_snapshot(session.game_dir, state, state_id=state_id)
             append_run_end_metric(session.game_dir, state_id=state_id, derived=der)
+            ps_re = get_persistence_settings()
+            if ps_re.sql_shadow_or_primary and session.sql_run_id and session.game_dir:
+                try:
+                    sql_shadow_upsert_run_end(
+                        {
+                            "run_id": session.sql_run_id,
+                            "state_id": der.get("state_id"),
+                            "victory": der.get("victory"),
+                            "score": der.get("score"),
+                            "screen_name": der.get("screen_name"),
+                            "floor": der.get("floor"),
+                            "act": der.get("act"),
+                            "gold": der.get("gold"),
+                            "current_hp": der.get("current_hp"),
+                            "max_hp": der.get("max_hp"),
+                            "deck_size": der.get("deck_size"),
+                            "relic_count": der.get("relic_count"),
+                            "potion_slots": der.get("potion_slots"),
+                            "recorded_at": der.get("recorded_at"),
+                        }
+                    )
+                    (session.game_dir / "sql_run_meta.json").write_text(
+                        json.dumps({"sql_run_id": session.sql_run_id}, indent=2),
+                        encoding="utf-8",
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    notify_dashboard(
+                        "/log",
+                        {"message": f"SQL run_end / sql_run_meta failed: {exc!r}"},
+                    )
             session.run_end_persisted = True
             _schedule_post_run_consolidation()
 

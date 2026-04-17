@@ -15,7 +15,10 @@ from src.agent.config import (
     PROBE_TIMEOUT_SECONDS,
     AgentConfig,
 )
+from src.agent.llm_context import LlmCallContext
 from src.agent.schemas import TraceTokenUsage, compute_uncached_input_tokens
+from src.observability.langfuse_client import get_langfuse_client
+from src.observability.llm_sql_recording import persist_llm_completion, serialize_messages_for_log
 from src.agent.tool_registry import list_function_tools
 
 
@@ -250,6 +253,35 @@ class LLMClient:
     def _client_for_role(self, role: LlmRole) -> OpenAI:
         return self.support_client if role == "support" else self.decision_client
 
+    def _langfuse_probe_record(
+        self,
+        name: str,
+        user_message: str,
+        output_text: str,
+        *,
+        error: str | None,
+        t0: float,
+    ) -> None:
+        """Langfuse-only (no SQL): connectivity probes are not tied to a game run."""
+        try:
+            lf = get_langfuse_client()
+            latency_ms = int(max(0.0, (time.perf_counter() - t0) * 1000))
+            meta: dict[str, Any] = {"kind": "llm_probe"}
+            if error:
+                meta["error"] = error
+            lf.log_generation(
+                trace_id="",
+                name=name,
+                input_text=user_message,
+                output_text=output_text if not error else "",
+                model=self.config.decision_model or "",
+                metadata=meta,
+                usage={},
+                latency_ms=latency_ms,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
     def check_api_capabilities(self) -> None:
         if self.capability_state in {"ready", "failed"}:
             return
@@ -309,32 +341,48 @@ class LLMClient:
         return "timed out" in lowered or "timeout" in lowered
 
     def _probe_responses_api(self) -> str | None:
+        t0 = time.perf_counter()
         try:
-            self._basic_responses_text(self.probe_client, "ping")
+            out = self._basic_responses_text(self.probe_client, "ping")
+            self._langfuse_probe_record("probe_responses", "ping", out, error=None, t0=t0)
             return None
         except Exception as exc:  # noqa: BLE001
-            return self._summarize_exception(exc)
+            err = self._summarize_exception(exc)
+            self._langfuse_probe_record("probe_responses", "ping", "", error=err, t0=t0)
+            return err
 
     def _probe_chat_completions_api(self) -> str | None:
+        t0 = time.perf_counter()
         try:
-            self._basic_chat_text(self.probe_client, "ping")
+            out = self._basic_chat_text(self.probe_client, "ping")
+            self._langfuse_probe_record("probe_chat_completions", "ping", out, error=None, t0=t0)
             return None
         except Exception as exc:  # noqa: BLE001
-            return self._summarize_exception(exc)
+            err = self._summarize_exception(exc)
+            self._langfuse_probe_record("probe_chat_completions", "ping", "", error=err, t0=t0)
+            return err
 
     def _verify_responses_api(self) -> str | None:
+        t0 = time.perf_counter()
         try:
-            self._basic_responses_text(self.decision_client, "ping")
+            out = self._basic_responses_text(self.decision_client, "ping")
+            self._langfuse_probe_record("verify_responses", "ping", out, error=None, t0=t0)
             return None
         except Exception as exc:  # noqa: BLE001
-            return self._summarize_exception(exc)
+            err = self._summarize_exception(exc)
+            self._langfuse_probe_record("verify_responses", "ping", "", error=err, t0=t0)
+            return err
 
     def _verify_chat_completions_api(self) -> str | None:
+        t0 = time.perf_counter()
         try:
-            self._basic_chat_text(self.decision_client, "ping")
+            out = self._basic_chat_text(self.decision_client, "ping")
+            self._langfuse_probe_record("verify_chat_completions", "ping", out, error=None, t0=t0)
             return None
         except Exception as exc:  # noqa: BLE001
-            return self._summarize_exception(exc)
+            err = self._summarize_exception(exc)
+            self._langfuse_probe_record("verify_chat_completions", "ping", "", error=err, t0=t0)
+            return err
 
     def _basic_chat_text(self, client: OpenAI, message: str) -> str:
         completion = client.chat.completions.create(
@@ -678,12 +726,14 @@ class LLMClient:
         messages: list[dict[str, Any]],
         *,
         max_transcript_chars: int = 200_000,
+        call_context: LlmCallContext | None = None,
     ) -> str:
         """Summarize older conversation turns before compacting them into memory (fast model)."""
         if not messages:
             return ""
         if not self.available:
             return ""
+        started = time.perf_counter()
         try:
             parts: list[str] = []
             for m in messages:
@@ -735,8 +785,39 @@ class LLMClient:
             if not choices:
                 return ""
             content = getattr(choices[0].message, "content", None) or ""
-            return content.strip()
-        except Exception:  # noqa: BLE001
+            out = content.strip()
+            usage_data = getattr(completion, "usage", None)
+            usage = _trace_token_usage(
+                input_tokens=getattr(usage_data, "prompt_tokens", None) if usage_data else None,
+                output_tokens=getattr(usage_data, "completion_tokens", None) if usage_data else None,
+                total_tokens=getattr(usage_data, "total_tokens", None) if usage_data else None,
+                cached_input_tokens=extract_cached_prompt_tokens_from_usage(usage_data),
+            )
+            persist_llm_completion(
+                call_context,
+                stage="compactor",
+                model=self.config.support_model,
+                system_prompt=prompt,
+                user_blob=transcript,
+                output_text=out,
+                usage=usage,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                status="ok",
+            )
+            return out
+        except Exception as exc:  # noqa: BLE001
+            persist_llm_completion(
+                call_context,
+                stage="compactor",
+                model=self.config.support_model,
+                system_prompt="",
+                user_blob="",
+                output_text="",
+                usage=None,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                status="error",
+                error_code=str(exc)[:500],
+            )
             return ""
 
     def run_streaming_turn(
@@ -750,32 +831,67 @@ class LLMClient:
         llm_role: LlmRole = "decision",
         reasoning_effort: str | None = None,
         function_tools: list[dict[str, Any]] | None = None,
+        call_context: LlmCallContext | None = None,
     ) -> dict:
         self.check_api_capabilities()
         if self.capability_state == "checking":
             raise RuntimeError("LLM configuration check is still running.")
         if not self.available or not self.api_style:
             raise RuntimeError(self.disabled_reason or "LLM is unavailable for this run.")
-        if self.api_style == "chat_completions":
-            return self._run_streaming_turn_chat_completions(
+        started = time.perf_counter()
+        try:
+            if self.api_style == "chat_completions":
+                result = self._run_streaming_turn_chat_completions(
+                    system_prompt=system_prompt,
+                    input_items=input_items,
+                    on_delta=on_delta,
+                    on_tool=on_tool,
+                    llm_role=llm_role,
+                    reasoning_effort=reasoning_effort,
+                    function_tools=function_tools,
+                )
+            else:
+                result = self._run_streaming_turn_responses(
+                    system_prompt=system_prompt,
+                    input_items=input_items,
+                    previous_response_id=previous_response_id,
+                    on_delta=on_delta,
+                    on_tool=on_tool,
+                    llm_role=llm_role,
+                    reasoning_effort=reasoning_effort,
+                    function_tools=function_tools,
+                )
+        except Exception as exc:
+            persist_llm_completion(
+                call_context,
+                stage="decision",
+                model=self.model_for_role(llm_role),
                 system_prompt=system_prompt,
-                input_items=input_items,
-                on_delta=on_delta,
-                on_tool=on_tool,
-                llm_role=llm_role,
-                reasoning_effort=reasoning_effort,
-                function_tools=function_tools,
+                user_blob=serialize_messages_for_log(input_items),
+                output_text="",
+                usage=None,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                status="error",
+                error_code=str(exc)[:500],
+                round_index=call_context.round_index if call_context else 1,
             )
-        return self._run_streaming_turn_responses(
+            raise
+        usage = result.get("token_usage")
+        if not isinstance(usage, TraceTokenUsage):
+            usage = None
+        persist_llm_completion(
+            call_context,
+            stage="decision",
+            model=self.model_for_role(llm_role),
             system_prompt=system_prompt,
-            input_items=input_items,
-            previous_response_id=previous_response_id,
-            on_delta=on_delta,
-            on_tool=on_tool,
-            llm_role=llm_role,
-            reasoning_effort=reasoning_effort,
-            function_tools=function_tools,
+            user_blob=serialize_messages_for_log(input_items),
+            output_text=str(result.get("raw_output") or ""),
+            usage=usage,
+            latency_ms=result.get("latency_ms") or int((time.perf_counter() - started) * 1000),
+            status="ok",
+            round_index=call_context.round_index if call_context else 1,
         )
+        return result
 
     def generate_combat_plan(
         self,
@@ -783,6 +899,7 @@ class LLMClient:
         system_prompt: str,
         user_content: str,
         max_output_tokens: int | None = None,
+        call_context: LlmCallContext | None = None,
     ) -> dict[str, Any]:
         """Single non-streaming completion without tools (opening combat battle guide)."""
         self.check_api_capabilities()
@@ -845,11 +962,23 @@ class LLMClient:
                 cached_input_tokens=extract_cached_prompt_tokens_from_usage(usage_data),
             )
         latency_ms = int((time.perf_counter() - started) * 1000)
-        return {
+        out = {
             "raw_output": text,
             "token_usage": usage,
             "latency_ms": latency_ms,
         }
+        persist_llm_completion(
+            call_context,
+            stage="combat_plan",
+            model=model_name,
+            system_prompt=system_prompt,
+            user_blob=user_content,
+            output_text=text,
+            usage=usage,
+            latency_ms=latency_ms,
+            status="ok",
+        )
+        return out
 
     def generate_plain_completion(
         self,
@@ -859,6 +988,7 @@ class LLMClient:
         llm_role: LlmRole = "support",
         max_output_tokens: int = 1024,
         reasoning_effort: str | None = None,
+        call_context: LlmCallContext | None = None,
     ) -> dict[str, Any]:
         """Single non-streaming text completion without tools (strategist, utilities)."""
         self.check_api_capabilities()
@@ -925,9 +1055,24 @@ class LLMClient:
                 cached_input_tokens=extract_cached_prompt_tokens_from_usage(usage_data),
             )
         latency_ms = int((time.perf_counter() - started) * 1000)
-        return {
+        out = {
             "raw_output": text,
             "token_usage": usage,
             "latency_ms": latency_ms,
         }
+        stage = (call_context.stage if call_context and call_context.stage else None) or "strategist"
+        if stage not in ("strategist", "reflector", "combat_plan"):
+            stage = "strategist"
+        persist_llm_completion(
+            call_context,
+            stage=stage,
+            model=model_name,
+            system_prompt=system_prompt,
+            user_blob=user_content,
+            output_text=text,
+            usage=usage,
+            latency_ms=latency_ms,
+            status="ok",
+        )
+        return out
 

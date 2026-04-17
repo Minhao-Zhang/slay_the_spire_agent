@@ -23,6 +23,10 @@ dependencies = [
     "pydantic>=2",
     "pyyaml>=6",
     "tiktoken>=0.7",
+    "langfuse>=4.3.1",
+    "sqlalchemy>=2.0.49",
+    "alembic>=1.18.4",
+    "psycopg[binary]>=3.3.3",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -30,3 +34,11 @@ packages = ["src"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]

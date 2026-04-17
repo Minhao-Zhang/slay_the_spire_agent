@@ -153,6 +153,10 @@ class AgentTrace(BaseModel):
     decision_id: str
     state_id: str
     turn_key: str
+    langfuse_trace_id: str = Field(
+        default="",
+        description="32-char hex Langfuse trace id; groups model calls for this decision.",
+    )
     timestamp: str
     update_seq: int = 0
     status: TraceStatus

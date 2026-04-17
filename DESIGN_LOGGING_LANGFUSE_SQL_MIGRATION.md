@@ -35,7 +35,7 @@ Decisions locked for this phase:
 - Secondary Planner node with retrieval tools and its own conversation thread.
 - ReAct-style retrieval consolidator that condenses knowledge once per "plan epoch".
 - Trigger policy controlling when planner / retrieval / strategist re-run.
-- Backfill from existing `logs/games/*` and `data/memory/*.ndjson` into the new schema.
+- Backfill from existing `logs/games/`* and `data/memory/*.ndjson` into the new schema.
 - Parity tooling comparing file-derived vs DB+Langfuse-derived outputs.
 - Backend read cutover behind stable API shapes.
 
@@ -67,12 +67,14 @@ We do **not** require:
 
 ### Storage principle
 
-| Kind of data | Home | Why |
-|---|---|---|
-| Prompts, responses, reasoning, tool call args/results, token counts, latencies | **Langfuse** | Native trace surface, UI, diffing, replay, cost analysis |
-| IDs, game state projection, decisions, knowledge rows, tags, feedback, lineage | **SQL** | Joinable, queryable, transactional, portable |
-| Full raw game-state envelope, large message bodies (if kept) | **Blob store** (content-addressed, optional) | Keeps SQL hot and small |
-| Markdown knowledge docs (edit surface) | Git + ingested into SQL | Authorable, diffable, reproducible |
+
+| Kind of data                                                                   | Home                                         | Why                                                      |
+| ------------------------------------------------------------------------------ | -------------------------------------------- | -------------------------------------------------------- |
+| Prompts, responses, reasoning, tool call args/results, token counts, latencies | **Langfuse**                                 | Native trace surface, UI, diffing, replay, cost analysis |
+| IDs, game state projection, decisions, knowledge rows, tags, feedback, lineage | **SQL**                                      | Joinable, queryable, transactional, portable             |
+| Full raw game-state envelope, large message bodies (if kept)                   | **Blob store** (content-addressed, optional) | Keeps SQL hot and small                                  |
+| Markdown knowledge docs (edit surface)                                         | Git + ingested into SQL                      | Authorable, diffable, reproducible                       |
+
 
 ---
 
@@ -126,6 +128,8 @@ flowchart TB
   LO -. updates .-> KE
 ```
 
+
+
 ---
 
 ## 5) Observability Layer (Langfuse-first)
@@ -134,11 +138,13 @@ flowchart TB
 
 Every LLM interaction produces exactly one Langfuse **trace** per logical unit and one **generation/observation** per round:
 
-| Logical unit | Trace scope | Observations per trace |
-|---|---|---|
-| Per decision frame | one trace per `decision_id` | strategist (optional), compactor (optional), planner (if ran), retrieval ReAct subspans, decision (+ each tool roundtrip), validator |
-| Per reflection run | one trace per `reflection_run.id` | analyzer (rule-based span), reflector (generation), consolidator (span) |
-| Per consolidation pass | one trace per pass | one span (no LLM by default) |
+
+| Logical unit           | Trace scope                       | Observations per trace                                                                                                               |
+| ---------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Per decision frame     | one trace per `decision_id`       | strategist (optional), compactor (optional), planner (if ran), retrieval ReAct subspans, decision (+ each tool roundtrip), validator |
+| Per reflection run     | one trace per `reflection_run.id` | analyzer (rule-based span), reflector (generation), consolidator (span)                                                              |
+| Per consolidation pass | one trace per pass                | one span (no LLM by default)                                                                                                         |
+
 
 Every Langfuse trace carries:
 
@@ -354,18 +360,20 @@ Every run references a `knowledge_version_id`, so retrieval at replay time is re
 
 All are performed via repository methods and emit `mutation_events`:
 
-| Operation | What it does | Revision reason |
-|---|---|---|
-| `create(entry)` | New lesson from reflector | `creation` |
-| `validate(entry_id, run_id)` | Bump `times_validated`; no revision | — |
-| `contradict(entry_id, run_id)` | Bump `times_contradicted`; if threshold exceeded, schedule refinement | — |
-| `refine(entry_id, new_body, rationale, trace_id)` | New revision, same entry_id, stays active | `refinement` |
-| `generalize(entry_ids[], new_body, trace_id)` | Create new entry; mark sources `superseded`; add `merged_into` lineage | `generalization` |
-| `split(entry_id, new_bodies[], trace_id)` | Mark source `superseded`; create children with `split_from` lineage | `split` |
-| `merge(entry_ids[], survivor_id, trace_id)` | Keep survivor; `superseded` losers; bump `times_validated` on survivor | `merge` |
-| `archive(entry_id, reason)` | Status → `archived`; stops retrieval | (status change, no revision) |
-| `deprecate(entry_id)` | Soft-hide without archival (e.g., game patch invalidated it) | (status change) |
-| `promote(entry_id, target_layer)` | Move procedural → strategy after many validations | `promotion` |
+
+| Operation                                         | What it does                                                           | Revision reason              |
+| ------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------- |
+| `create(entry)`                                   | New lesson from reflector                                              | `creation`                   |
+| `validate(entry_id, run_id)`                      | Bump `times_validated`; no revision                                    | —                            |
+| `contradict(entry_id, run_id)`                    | Bump `times_contradicted`; if threshold exceeded, schedule refinement  | —                            |
+| `refine(entry_id, new_body, rationale, trace_id)` | New revision, same entry_id, stays active                              | `refinement`                 |
+| `generalize(entry_ids[], new_body, trace_id)`     | Create new entry; mark sources `superseded`; add `merged_into` lineage | `generalization`             |
+| `split(entry_id, new_bodies[], trace_id)`         | Mark source `superseded`; create children with `split_from` lineage    | `split`                      |
+| `merge(entry_ids[], survivor_id, trace_id)`       | Keep survivor; `superseded` losers; bump `times_validated` on survivor | `merge`                      |
+| `archive(entry_id, reason)`                       | Status → `archived`; stops retrieval                                   | (status change, no revision) |
+| `deprecate(entry_id)`                             | Soft-hide without archival (e.g., game patch invalidated it)           | (status change)              |
+| `promote(entry_id, target_layer)`                 | Move procedural → strategy after many validations                      | `promotion`                  |
+
 
 **Retrieval always reads `current_version` of `status='active'` entries.** History is preserved; rollbacks are cheap.
 
@@ -389,6 +397,8 @@ sequenceDiagram
     Br->>Out: update validate/contradict for retrieved_ids
     Br->>Kn: schedule refinement if contradicted > threshold
 ```
+
+
 
 Key changes vs today:
 
@@ -428,12 +438,14 @@ Everything above runs with overlapping responsibilities and re-executes frequent
 
 ### 8.2 Proposed split
 
-| Role | Model | Owns | Chat history |
-|---|---|---|---|
-| **ReAct Retrieval agent** | support | Knowledge tools: `search_knowledge`, `get_entry`, `list_tags`, `expand_episodic`, `lookup_reference` | Its own short thread per *retrieval epoch*; thrown away after consolidation |
-| **Planner** | support (or decision with low effort) | Produces `plan_brief`: situation, 3-6 bullet plan, explicit do/avoid, open questions | Persistent thread keyed by `plan_epoch_id`, survives N frames |
-| **Decision** | decision | Executes per-frame action, given compact brief + hard facts | Per-turn conversation as today |
-| **Compactor** | support | Compacts decision thread when token budget exceeded | Stateless |
+
+| Role                      | Model                                 | Owns                                                                                                 | Chat history                                                                |
+| ------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **ReAct Retrieval agent** | support                               | Knowledge tools: `search_knowledge`, `get_entry`, `list_tags`, `expand_episodic`, `lookup_reference` | Its own short thread per *retrieval epoch*; thrown away after consolidation |
+| **Planner**               | support (or decision with low effort) | Produces `plan_brief`: situation, 3-6 bullet plan, explicit do/avoid, open questions                 | Persistent thread keyed by `plan_epoch_id`, survives N frames               |
+| **Decision**              | decision                              | Executes per-frame action, given compact brief + hard facts                                          | Per-turn conversation as today                                              |
+| **Compactor**             | support                               | Compacts decision thread when token budget exceeded                                                  | Stateless                                                                   |
+
 
 ### 8.3 ReAct retrieval: gather → consolidate → brief
 
@@ -446,6 +458,8 @@ flowchart LR
   C --> P[Planner]
 ```
 
+
+
 - Tool calls emit `frame_retrievals` + `frame_retrieval_hits` rows.
 - Entire loop = one Langfuse trace with one observation per tool call.
 - Output is a **consolidated brief** (target 400–800 tokens) with citations of `entry_id@version`. This is what the planner and decision model consume — **not** the raw hits.
@@ -455,17 +469,19 @@ flowchart LR
 
 A **plan epoch** is a window during which the brief + plan remain valid. Triggers that end an epoch:
 
-| Trigger | Temporary threshold (revisit after Phase 4 telemetry) | Reason |
-|---|---|---|
-| Floor change | any increment | Structural change in game |
-| Screen-type change (combat↔map↔event↔shop↔rest) | any transition | Decision class changes |
-| New boss preview / elite revealed | first time seen this act | New threats |
-| HP drop since epoch start | ≥ 25% of max HP | Plan assumptions invalidated |
-| Relic / key potion acquired | any acquisition | New capabilities |
-| Deck change since epoch start | ≥ 2 cards added or removed | Archetype drift |
-| Operator "replan" | manual | Override |
-| Staleness cap | ≥ 12 decisions in epoch | Safety |
-| Consecutive validation errors | ≥ 2 in a row | Plan bad → force fresh |
+
+| Trigger                                         | Temporary threshold (revisit after Phase 4 telemetry) | Reason                       |
+| ----------------------------------------------- | ----------------------------------------------------- | ---------------------------- |
+| Floor change                                    | any increment                                         | Structural change in game    |
+| Screen-type change (combat↔map↔event↔shop↔rest) | any transition                                        | Decision class changes       |
+| New boss preview / elite revealed               | first time seen this act                              | New threats                  |
+| HP drop since epoch start                       | ≥ 25% of max HP                                       | Plan assumptions invalidated |
+| Relic / key potion acquired                     | any acquisition                                       | New capabilities             |
+| Deck change since epoch start                   | ≥ 2 cards added or removed                            | Archetype drift              |
+| Operator "replan"                               | manual                                                | Override                     |
+| Staleness cap                                   | ≥ 12 decisions in epoch                               | Safety                       |
+| Consecutive validation errors                   | ≥ 2 in a row                                          | Plan bad → force fresh       |
+
 
 > Temporary decision: these thresholds are reasonable starting values, not tuned. They will be revisited after Phase 4 ships and we have epoch-duration and decision-quality telemetry.
 
@@ -484,18 +500,20 @@ Within an epoch:
 
 The planner thread is either *restarted fresh* or *continued with an update turn*, chosen deterministically from the trigger that ended the epoch:
 
-| Epoch-end trigger | Action | Why |
-|---|---|---|
-| Floor change | **restart** | New territory; old plan likely stale |
-| Screen-type change (e.g., combat→map) | restart | Different decision class |
-| Boss / elite revealed | restart | New strategic picture |
-| HP drop ≥ 25% | restart | Plan assumptions broken |
-| Relic / key potion acquired | **continue** with update turn | Capabilities added, narrative intact |
-| Card added to hand / added to deck | continue with update turn | Incremental drift |
-| Deck change ≥ 2 cards | continue with update turn | Narrative intact; just refresh |
-| Staleness cap (≥ 12 decisions) | continue with update turn | Stale but not broken |
-| Consecutive validation errors | restart | Plan is demonstrably bad |
-| Operator "replan" | restart | Human override |
+
+| Epoch-end trigger                     | Action                        | Why                                  |
+| ------------------------------------- | ----------------------------- | ------------------------------------ |
+| Floor change                          | **restart**                   | New territory; old plan likely stale |
+| Screen-type change (e.g., combat→map) | restart                       | Different decision class             |
+| Boss / elite revealed                 | restart                       | New strategic picture                |
+| HP drop ≥ 25%                         | restart                       | Plan assumptions broken              |
+| Relic / key potion acquired           | **continue** with update turn | Capabilities added, narrative intact |
+| Card added to hand / added to deck    | continue with update turn     | Incremental drift                    |
+| Deck change ≥ 2 cards                 | continue with update turn     | Narrative intact; just refresh       |
+| Staleness cap (≥ 12 decisions)        | continue with update turn     | Stale but not broken                 |
+| Consecutive validation errors         | restart                       | Plan is demonstrably bad             |
+| Operator "replan"                     | restart                       | Human override                       |
+
 
 > Temporary decision: the split above is the default. `PLANNER_CONTINUITY_OVERRIDE = always_restart | always_continue | by_trigger` exists in config for experimentation.
 > A `continue` action sends the prior brief plus a *delta block* ("what changed since last brief") as one additional user turn and asks the planner for a revised brief — cheaper than a restart and preserves the planner's prior reasoning.
@@ -584,17 +602,19 @@ Requirements:
 
 ### Feature flag matrix (set per phase)
 
-| Flag | Default | Purpose |
-|---|---|---|
-| `LANGFUSE_ENABLED` | on from Phase 0 | Toggle all LLM tracing |
-| `LANGFUSE_SAMPLE_RATE` | 1.0 | Runtime sampling if needed |
-| `SQL_STATE_MODE` | `off \| shadow \| primary` | State/decision write & read target |
-| `SQL_KNOWLEDGE_MODE` | `off \| shadow \| primary` | Memory store write & read target |
-| `USE_PLANNER` | off | Enable planner node |
-| `USE_REACT_RETRIEVAL` | off | Enable ReAct retrieval node |
-| `PLANNER_CONTINUITY_OVERRIDE` | `by_trigger` | Override continuity policy per §8.5 |
-| `WRITE_LEGACY_FILE_LOGS` | on until Phase 8 | Keep file writes during migration |
-| `WRITE_LEGACY_NDJSON` | on until Phase 5 | Keep `data/memory/*.ndjson` writes |
+
+| Flag                          | Default                  | Purpose                             |
+| ----------------------------- | ------------------------ | ----------------------------------- |
+| `LANGFUSE_ENABLED`            | on from Phase 0          | Toggle all LLM tracing              |
+| `LANGFUSE_SAMPLE_RATE`        | 1.0                      | Runtime sampling if needed          |
+| `SQL_STATE_MODE`              | `off | shadow | primary` | State/decision write & read target  |
+| `SQL_KNOWLEDGE_MODE`          | `off | shadow | primary` | Memory store write & read target    |
+| `USE_PLANNER`                 | off                      | Enable planner node                 |
+| `USE_REACT_RETRIEVAL`         | off                      | Enable ReAct retrieval node         |
+| `PLANNER_CONTINUITY_OVERRIDE` | `by_trigger`             | Override continuity policy per §8.5 |
+| `WRITE_LEGACY_FILE_LOGS`      | on until Phase 8         | Keep file writes during migration   |
+| `WRITE_LEGACY_NDJSON`         | on until Phase 5         | Keep `data/memory/*.ndjson` writes  |
+
 
 ---
 
@@ -603,6 +623,7 @@ Requirements:
 **Goal.** Every LLM call becomes observable in Langfuse; every frame and decision is shadow-mirrored to SQL. No behavior change.
 
 **Scope.**
+
 - Langfuse SDK installed; `LangfuseClient` wrapper with client-generated `trace_id` and `observation_id`.
 - Instrument every LLM call site (decision, strategist, combat planner, compactor, reflector).
 - Alembic initialized for both engines. Migration `0001_init`.
@@ -619,6 +640,7 @@ runs, run_frames, agent_decisions, run_end, llm_call, mutation_events, experimen
 Reproducibility hashes on `runs` added now (`system_prompt_hash`, `prompt_builder_version`, `reference_data_hash`, `config_hash`). `knowledge_version_id` exists as a nullable column; populated in Phase 3.
 
 **Code hints.**
+
 - New: `src/persistence/__init__.py`, `src/persistence/engine.py` (engine factory), `src/persistence/repository.py` (protocol), `src/persistence/sql_repository.py` (SQLAlchemy impl), `src/persistence/migrations/` (Alembic tree).
 - New: `src/observability/langfuse_client.py` (wraps init, trace/observation helpers, redaction hook, local-fallback IDs).
 - Touch: `src/agent/llm_client.py` — wrap every API call to emit Langfuse observation + return IDs to caller.
@@ -626,17 +648,20 @@ Reproducibility hashes on `runs` added now (`system_prompt_hash`, `prompt_builde
 - Touch: `src/main.py` — on each frame and decision, call `repo.insert_frame` / `repo.upsert_decision_final` when `SQL_STATE_MODE != off`.
 
 **Config.**
+
 - `LANGFUSE_ENABLED=true`, `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`.
 - `SQL_STATE_MODE=shadow`, `DATABASE_URL` (Postgres) and `SQLITE_PATH` (fallback).
 - `WRITE_LEGACY_FILE_LOGS=true`.
 
 **Tests.**
+
 - Unit: `LangfuseClient` falls back to `local-` trace IDs when unreachable; no exception propagates.
 - Unit: every `llm_call` stage appears in `llm_call` rows and carries both Langfuse IDs.
 - Integration: play a short live or scripted run; assert Langfuse project has one trace per logical unit (§5.1) and SQL rowcounts match file counts.
 - Contract: run repo test suite against both SQLite and Postgres; identical assertions.
 
 **Exit criteria.**
+
 - `pytest` green on contract suite for both engines.
 - A full game run produces matching Langfuse traces and SQL rows for frames, decisions, and llm_calls.
 - Flipping `SQL_STATE_MODE=off` produces unchanged file output (no unintended coupling).
@@ -651,7 +676,8 @@ You can open Langfuse and see every model call the agent made in the last run, w
 **Goal.** Every historical run becomes queryable from SQL; we have automated parity checks.
 
 **Scope.**
-- Importer walks `logs/games/*` and writes `runs`, `run_frames`, `agent_decisions`, `run_end`, and `llm_call` rows (historical calls get `langfuse_trace_id='local-<uuid>'`).
+
+- Importer walks `logs/games/`* and writes `runs`, `run_frames`, `agent_decisions`, `run_end`, and `llm_call` rows (historical calls get `langfuse_trace_id='local-<uuid>'`).
 - Importer is idempotent and resumable; tracks progress in a `backfill_jobs` table or operator-side manifest.
 - `analyze_run_from_db(run_id)` materializes `RunReport` via SQL.
 - Parity CLI: compares file-derived vs SQL-derived for each run on demand.
@@ -663,6 +689,7 @@ backfill_jobs(run_dir, stage, status, started_at, finished_at, error, rows_writt
 ```
 
 **Code hints.**
+
 - New: `scripts/backfill_logs.py` (CLI with `--logs-root`, `--run`, `--since`, `--dry-run`, `--resume`).
 - New: `src/persistence/run_report_view.py` — pure-SQL materialization of `RunReport` structure from frames + decisions + run_end.
 - New: `scripts/parity_check.py` — per-run diff (see §11).
@@ -670,17 +697,19 @@ backfill_jobs(run_dir, stage, status, started_at, finished_at, error, rows_writt
 **Config.** Unchanged from Phase 0.
 
 **Tests.**
+
 - Importer idempotency: import the same run twice; row counts stable, no duplicates.
 - Replay: pick three known runs (victory, defeat, incomplete); assert `analyze_run_from_db` output deep-equals file-derived `RunReport` modulo documented text-hashed fields.
 - Parity CLI on whole log corpus: frame count / decision count / metrics summary match; report any drift.
 
 **Exit criteria.**
+
 - Parity CLI reports zero material drift across the entire `logs/games/` corpus.
 - Backfill completes for every run directory currently in the repo.
 - `/api/runs` endpoint can be flagged to read from SQL and returns byte-equivalent payloads (tested but not yet default).
 
 **End-of-phase expectation.**
-A fresh Postgres/SQLite instance, populated from files, answers every existing `/api/runs/*` query correctly behind a read flag. SQL is provably a mirror of the file log corpus.
+A fresh Postgres/SQLite instance, populated from files, answers every existing `/api/runs/`* query correctly behind a read flag. SQL is provably a mirror of the file log corpus.
 
 ---
 
@@ -689,6 +718,7 @@ A fresh Postgres/SQLite instance, populated from files, answers every existing `
 **Goal.** Dashboard and replay endpoints read from SQL by default. File logs still written authoritatively.
 
 **Scope.**
+
 - `src/ui/dashboard.py` endpoints route reads through the repository when `SQL_STATE_MODE=primary`.
 - Legacy file-read helpers kept as fallback and for cold starts.
 - New endpoint `/api/llm_calls/{id}` returns the Langfuse deep link for UI use.
@@ -697,18 +727,22 @@ A fresh Postgres/SQLite instance, populated from files, answers every existing `
 **Schema migrations.** None.
 
 **Code hints.**
-- Touch: `src/ui/dashboard.py` — every endpoint that currently reads `logs/games/<run>` gains a `repo.*` path.
+
+- Touch: `src/ui/dashboard.py` — every endpoint that currently reads `logs/games/<run>` gains a `repo.`* path.
 - Touch: `src/eval/replay.py` — `summarize_run_directory`, `analyze_logs` gain repo-backed implementations selected by flag.
 
 **Config.**
+
 - Flip `SQL_STATE_MODE=primary` in dev/staging; `WRITE_LEGACY_FILE_LOGS=true` stays on.
 
 **Tests.**
-- Snapshot tests: every `/api/runs/*` response byte-equivalent between `SQL_STATE_MODE=shadow` (file-read) and `primary` (SQL-read) on a captured fixture corpus.
+
+- Snapshot tests: every `/api/runs/`* response byte-equivalent between `SQL_STATE_MODE=shadow` (file-read) and `primary` (SQL-read) on a captured fixture corpus.
 - Smoke: dashboard loads a run, replay page renders, map history renders — all against SQL.
 - Regression: flipping flag back to `shadow` still works.
 
 **Exit criteria.**
+
 - All existing API contract tests pass with `SQL_STATE_MODE=primary`.
 - Manual QA: operator UI looks and behaves identically.
 
@@ -722,6 +756,7 @@ SQL is the read source for the dashboard and replay. Files remain on disk as the
 **Goal.** A complete, versioned mirror of the current knowledge/memory state exists in SQL. Retrieval still happens from files.
 
 **Scope.**
+
 - Full knowledge schema lands (§7.2).
 - One-time ingestion of `data/knowledge/*.md` (as `layer=strategy`, revision 1) and `data/memory/*.ndjson` (as `layer=procedural|episodic`, revision 1). Lineage empty.
 - `knowledge_version` row is written at ingestion end, and at the start of every new run thereafter.
@@ -736,21 +771,25 @@ knowledge_entry_embedding (schema only), knowledge_version
 ```
 
 **Code hints.**
+
 - New: `scripts/ingest_knowledge.py` — idempotent ingestion CLI.
 - New: `src/persistence/knowledge_repository.py` — read helpers only at this stage (`get_entry`, `retrieve_candidates`, `snapshot_version`).
 - Touch: `src/agent/memory/store.py` — add `RetrievalShadowMode` wrapping the existing `retrieve` with a SQL-side comparator.
 - Touch: `src/main.py` — at run start, snapshot `knowledge_version` and set on `runs.knowledge_version_id`.
 
 **Config.**
+
 - `SQL_KNOWLEDGE_MODE=shadow`.
 - `WRITE_LEGACY_NDJSON=true`.
 
 **Tests.**
+
 - Ingestion idempotency: re-running the script creates no new revisions, no duplicate tags.
 - Retrieval shadow: replay N frames and assert `files top-k == sql top-k` for every frame (order-insensitive equality is fine).
 - Reproducibility: two consecutive ingestions of unchanged files produce the same `manifest_hash`.
 
 **Exit criteria.**
+
 - Shadow retrieval is clean (no mismatches) across a 20-run replay.
 - New live runs carry a `knowledge_version_id`.
 
@@ -764,6 +803,7 @@ SQL contains every strategy doc and every lesson as a versioned row. Retrieval s
 **Goal.** End-of-run reflection mutates knowledge through the SQL repository with full revision history and audit trail. NDJSON dual-write retained for rollback.
 
 **Scope.**
+
 - `reflection_runs` table populated.
 - Reflector's duplicate-detection path now issues `refine_entry` (text update → new revision) instead of the counter-only merge; near-duplicates among same-batch drafts trigger `generalize_entries`.
 - `update_lesson_outcomes` → `validate_entry` / `contradict_entry` repo calls.
@@ -777,21 +817,25 @@ reflection_runs (as per §6.5 with procedural_refined field)
 ```
 
 **Code hints.**
+
 - Touch: `src/agent/reflection/runner.py` — create a `reflection_runs` row before analyze; mark `status` transitions.
 - Touch: `src/agent/reflection/memory_storage.py` — replace direct `MemoryStore.rewrite_procedural` with repo ops: `create_entry`, `refine_entry`, `generalize_entries`, `validate_entry`, `contradict_entry`. Keep the Jaccard duplicate-detection logic; only the effect changes.
 - Touch: `src/agent/reflection/consolidator.py` — switch archival to `archive_entry`.
 - New: `src/persistence/knowledge_repository_writer.py` — implements the §7.3 operations with `mutation_events` emission.
 
 **Config.**
+
 - `SQL_KNOWLEDGE_MODE=shadow` (reads still from files; writes now fan out to both).
 - `WRITE_LEGACY_NDJSON=true`.
 
 **Tests.**
+
 - Unit per operation: `refine` creates a new revision with the correct `reason` and parent lineage; `generalize` creates one new entry and marks sources `superseded`; `split` preserves `split_from` lineage; `merge` keeps survivor history; `archive` flips status and no new revision.
 - End-to-end: run a full reflection pipeline on a fixture RunReport; assert SQL state matches NDJSON file state (converting back).
 - Audit: `mutation_events` contains one row per repository write with correct `actor` / `action`.
 
 **Exit criteria.**
+
 - For every run in a 10-run test corpus, SQL and NDJSON reflect the same active lesson set after reflection + consolidation.
 - Synthetic refinement/merge/split round-trips pass.
 
@@ -805,6 +849,7 @@ The agent now *refines* lessons instead of just accumulating them, with full his
 **Goal.** `MemoryStore` reads from SQL. NDJSON is a cold backup.
 
 **Scope.**
+
 - `MemoryStore.retrieve` switches to SQL.
 - Ingestion of strategy markdown becomes an on-change job: a watcher (or a manual CLI) re-ingests markdown files when their hash changes, creating a new `knowledge_revision` and bumping `knowledge_version`.
 - NDJSON writes are suppressed at runtime; rollback re-enabled by flipping `WRITE_LEGACY_NDJSON=true`.
@@ -812,19 +857,23 @@ The agent now *refines* lessons instead of just accumulating them, with full his
 **Schema migrations.** None.
 
 **Code hints.**
+
 - Touch: `src/agent/memory/store.py` — `retrieve` uses `knowledge_repository`; `knowledge_index_entries` becomes an SQL read.
 - Touch: `src/agent/strategist.py` — continues to work over the same `RetrievalHit` shape (no knowledge-shape change visible here).
 - New: `scripts/reingest_knowledge.py` — re-ingest markdown on hash change.
 
 **Config.**
+
 - `SQL_KNOWLEDGE_MODE=primary`.
 - `WRITE_LEGACY_NDJSON=false` (flip last, after a clean Phase 4 window).
 
 **Tests.**
+
 - Replay 20 runs; assert decisions are equivalent to Phase 4 runs (same knowledge, same retrievals).
 - Edit one strategy markdown file; re-ingest; assert a new `knowledge_version` is created and that future runs record it.
 
 **Exit criteria.**
+
 - Full replay suite passes with `SQL_KNOWLEDGE_MODE=primary`.
 - Operators can edit knowledge markdown and see the new version reflected within one run.
 
@@ -838,6 +887,7 @@ Knowledge is fully SQL-native. Every run is tied to a specific knowledge version
 **Goal.** Introduce plan epochs and the planner node. Retrieval within an epoch is deterministic top-k; the strategist still runs as a fallback only when `USE_PLANNER=false`.
 
 **Scope.**
+
 - Plan-epoch state machine inside `SpireDecisionAgent`; triggers per §8.4.
 - New graph node `planner` between `assemble_prompt` and `run_agent`; it runs only at epoch boundaries.
 - `planner_threads` table (optional sidecar keyed by `plan_epoch_id`).
@@ -855,23 +905,27 @@ frame_retrievals, frame_retrieval_hits (as §6.4)
 ```
 
 **Code hints.**
+
 - New: `src/agent/planner.py` — planner node, brief schema, delta-block renderer.
 - New: `src/agent/epochs.py` — trigger evaluator, epoch id lifecycle, continuity dispatcher.
 - Touch: `src/agent/graph.py` — insert `planner` node; `assemble_prompt` consumes `trace.plan_brief` + `trace.delta_block`.
 - Touch: `src/agent/prompt_builder.py` — no raw memory bodies in the decision prompt; use pre-picked K≤3 snippets from the brief.
 
 **Config.**
+
 - `USE_PLANNER=true` in staging; `false` in production until benchmark passes.
 - `PLANNER_CONTINUITY_OVERRIDE=by_trigger`.
 - `PLANNER_MAX_EPOCH_DECISIONS=12` (staleness cap per §8.4).
 
 **Tests.**
+
 - Unit: epoch trigger evaluator — given a synthetic sequence of VM states, emit the documented epoch boundaries exactly.
 - Unit: continuity dispatcher — given a trigger, produce correct `restart` vs `continue` action.
 - Integration: replay a known run under `USE_PLANNER=true`; assert no decision frame lacks a brief; assert at most one planner LLM call per epoch.
 - Benchmark: fixed-seed suite (e.g., 20 seeds × 3 characters) replayed under Phase 5 baseline and Phase 6. Report win rate, average tokens-per-decision, average decisions-per-epoch. Gate: win rate no worse than baseline within a defined confidence interval.
 
 **Exit criteria.**
+
 - Benchmark win rate ≥ baseline.
 - Average LLM token spend per run decreases (target ≥ 30% reduction on combat-heavy runs).
 - Epoch boundaries are observable in SQL and map cleanly to the VM event stream.
@@ -886,6 +940,7 @@ Decisions within an epoch are cheap and fast; planner runs only when something s
 **Goal.** Replace deterministic top-k with a ReAct retrieval agent that gathers and consolidates knowledge into a brief with citations. Strategist is removed.
 
 **Scope.**
+
 - `react_retrieve` node before `planner` at epoch boundaries.
 - Knowledge tools exposed to the support model: `search_knowledge(tags, limit)`, `get_entry(entry_id, at_version)`, `list_tags(prefix)`, `expand_episodic(run_filters)`, `lookup_reference(card|relic|event name)`.
 - ReAct loop bounded by `REACT_MAX_STEPS` and token budget.
@@ -895,22 +950,26 @@ Decisions within an epoch are cheap and fast; planner runs only when something s
 **Schema migrations.** None (frame_retrievals already exists; `selector='react_agent'` from Phase 6 onward).
 
 **Code hints.**
+
 - New: `src/agent/react_retrieval.py` — loop driver, tool dispatch, consolidation formatter.
 - New: `src/agent/tools/knowledge_tools.py` — tool definitions wired into `tool_registry`.
 - Touch: `src/agent/graph.py` — insert `react_retrieve` node; remove `run_strategist` node; delete `src/agent/strategist.py` after the benchmark passes.
 - Touch: `src/agent/prompts/` — new `react_retrieval_prompt.md`, new `planner_prompt.md`.
 
 **Config.**
+
 - `USE_REACT_RETRIEVAL=true`.
 - `REACT_MAX_STEPS=6`, `REACT_TOKEN_BUDGET=4000`.
 
 **Tests.**
+
 - Unit per tool: each knowledge tool returns a stable JSON schema; budget enforcement fires at limits.
 - Integration: replay benchmark Phase 6 vs Phase 7 on the same fixed-seed suite. Gate: win rate no worse than Phase 6; brief citation coverage ≥ 80% of briefs cite at least one entry.
 - Sampled operator review: N=10 briefs manually read for relevance and hallucinated citation rate.
 - Langfuse: every ReAct trace has one observation per tool call; `frame_retrievals.selector='react_agent'`.
 
 **Exit criteria.**
+
 - Benchmark win rate ≥ Phase 6.
 - Hallucinated-citation rate < 2%.
 - Token spend per epoch within configured budget on ≥ 95% of epochs.
@@ -925,8 +984,9 @@ The agent explicitly reasons about what knowledge to fetch, then produces a comp
 **Goal.** Delete redundant file-write paths, tighten retention, and close the migration.
 
 **Scope.**
+
 - After two clean weeks on Phase 7: set `WRITE_LEGACY_FILE_LOGS=false`; stop writing `*.json`, `*.ai.json`, `run_metrics.ndjson`, `run_end_snapshot.json`.
-- Archive existing `logs/games/*` to cold storage.
+- Archive existing `logs/games/`* to cold storage.
 - Remove the legacy file-read fallback paths from `src/ui/dashboard.py` and `src/eval/replay.py`.
 - Introduce blob store for large text previously kept on disk (optional raw state, full prompts if any are still kept locally).
 - Retention job for `mutation_events` and old `knowledge_revision` history if needed.
@@ -934,17 +994,21 @@ The agent explicitly reasons about what knowledge to fetch, then produces a comp
 **Schema migrations.** None required; possibly `0006_blob_refs` if the blob columns are added.
 
 **Code hints.**
+
 - Delete: file log helpers in `src/agent/tracing.py` (`write_ai_log`, `append_*_run_metric` once all call sites removed).
 - Touch: `src/main.py` — no file writes except during emergency debug flag.
 
 **Config.**
+
 - `WRITE_LEGACY_FILE_LOGS=false`.
 
 **Tests.**
+
 - Smoke: run end to end; assert no writes under `logs/games/` (other than the optional archive).
 - Disk footprint check: bridge produces ≤ X MB/hour of local files (should be near zero).
 
 **Exit criteria.**
+
 - No endpoint reads files; no code path writes the legacy sidecars.
 - All tests green on a fresh checkout.
 
@@ -967,17 +1031,19 @@ Not a prerequisite for any phase above. Once Phase 5–7 are stable, land:
 
 These are the tools and invariants that every phase maintains, rather than phase-specific tests.
 
-| Invariant | Tool / check |
-|---|---|
-| Repository parity across engines | `pytest tests/persistence/contract_test.py` runs against SQLite and Postgres; CI fails if any case diverges |
-| State parity (files vs SQL) | `scripts/parity_check.py --run <name>`: frame hashes, decision payloads, `RunReport` deep-equal |
-| Reflection parity | Same `RunReport` fed through reflector twice (file-store vs SQL-store) produces equal drafts |
-| Knowledge retrieval parity | Replay suite asserts top-k equality between files and SQL while both exist |
-| Langfuse coverage | Every `llm_call` row has a reachable `langfuse_trace_id` (or documented `local-` prefix) |
-| Epoch correctness | Replay asserts epoch boundaries match documented triggers deterministically |
-| Refinement round-trip | Synthetic: create → refine → generalize → split → merge → archive → verify lineage reconstructs the full graph |
-| Audit completeness | Every repository mutation produces exactly one `mutation_events` row |
-| Rollback safety | Flipping any `SQL_*_MODE` flag back to `shadow` or `off` never breaks the dashboard or bridge |
+
+| Invariant                        | Tool / check                                                                                                   |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Repository parity across engines | `pytest tests/persistence/contract_test.py` runs against SQLite and Postgres; CI fails if any case diverges    |
+| State parity (files vs SQL)      | `scripts/parity_check.py --run <name>`: frame hashes, decision payloads, `RunReport` deep-equal                |
+| Reflection parity                | Same `RunReport` fed through reflector twice (file-store vs SQL-store) produces equal drafts                   |
+| Knowledge retrieval parity       | Replay suite asserts top-k equality between files and SQL while both exist                                     |
+| Langfuse coverage                | Every `llm_call` row has a reachable `langfuse_trace_id` (or documented `local-` prefix)                       |
+| Epoch correctness                | Replay asserts epoch boundaries match documented triggers deterministically                                    |
+| Refinement round-trip            | Synthetic: create → refine → generalize → split → merge → archive → verify lineage reconstructs the full graph |
+| Audit completeness               | Every repository mutation produces exactly one `mutation_events` row                                           |
+| Rollback safety                  | Flipping any `SQL_*_MODE` flag back to `shadow` or `off` never breaks the dashboard or bridge                  |
+
 
 Each tool is committed to the repo and runnable by a single command; parity and benchmark runs are wired into CI for Phases 1, 2, 4, 5 and run on demand for Phases 6, 7.
 
@@ -985,16 +1051,18 @@ Each tool is committed to the repo and runnable by a single command; parity and 
 
 ## 12) Risks and Mitigations
 
-| Risk | Mitigation |
-|---|---|
-| Langfuse outage blocks LLM calls | Never block; `local-` trace IDs + retry exporter |
-| Knowledge refinement introduces regression | Every refinement preserves prior revision; rollback is a one-column update |
-| Planner + ReAct increase latency | Epoch caching; strict budgets; planner skipped if epoch valid |
-| Dual-engine SQL drift | Repository contract tests run on both engines per PR |
-| Strategist removal breaks decisions | Replay-benchmark on fixed seeds before ship; rollback via git revert if needed |
-| Reflection pipeline stalls | `reflection_runs.status` timeouts + retries; observable via `/api/reflection/*` |
-| Over-refinement of good lessons | `knowledge_revision` preserves every prior version; rollback is a one-column flip of `current_version_id`; manual operator approval lane available if needed later |
-| Knowledge tag explosion | Tag cardinality monitoring; slug canonicalization reused from `tag_utils` |
+
+| Risk                                       | Mitigation                                                                                                                                                         |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Langfuse outage blocks LLM calls           | Never block; `local-` trace IDs + retry exporter                                                                                                                   |
+| Knowledge refinement introduces regression | Every refinement preserves prior revision; rollback is a one-column update                                                                                         |
+| Planner + ReAct increase latency           | Epoch caching; strict budgets; planner skipped if epoch valid                                                                                                      |
+| Dual-engine SQL drift                      | Repository contract tests run on both engines per PR                                                                                                               |
+| Strategist removal breaks decisions        | Replay-benchmark on fixed seeds before ship; rollback via git revert if needed                                                                                     |
+| Reflection pipeline stalls                 | `reflection_runs.status` timeouts + retries; observable via `/api/reflection/`*                                                                                    |
+| Over-refinement of good lessons            | `knowledge_revision` preserves every prior version; rollback is a one-column flip of `current_version_id`; manual operator approval lane available if needed later |
+| Knowledge tag explosion                    | Tag cardinality monitoring; slug canonicalization reused from `tag_utils`                                                                                          |
+
 
 ---
 
@@ -1002,11 +1070,13 @@ Each tool is committed to the repo and runnable by a single command; parity and 
 
 ### 13.1 Locked-for-now (temporary, revisit after Phase 4 telemetry)
 
-| Item | Current value | Where |
-|---|---|---|
-| Epoch-end thresholds (HP drop, deck delta, staleness, validation errors) | 25% HP, ≥2 cards, 12 decisions, 2 consecutive errors | §8.4 |
-| Planner continuity mapping per trigger | `restart` on floor/screen/boss/HP/errors; `continue` on relic/card/deck drift/staleness | §8.5 |
-| Strategist retirement | direct cutover in Phase 4, no A/B flag | §10 |
+
+| Item                                                                     | Current value                                                                           | Where |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ----- |
+| Epoch-end thresholds (HP drop, deck delta, staleness, validation errors) | 25% HP, ≥2 cards, 12 decisions, 2 consecutive errors                                    | §8.4  |
+| Planner continuity mapping per trigger                                   | `restart` on floor/screen/boss/HP/errors; `continue` on relic/card/deck drift/staleness | §8.5  |
+| Strategist retirement                                                    | direct cutover in Phase 4, no A/B flag                                                  | §10   |
+
 
 ### 13.2 Still open
 

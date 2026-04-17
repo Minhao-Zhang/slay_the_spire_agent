@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from dataclasses import replace
 from typing import Any
 
 from src.agent.config import REFLECTION_MAX_LESSONS_PER_RUN, AgentConfig
@@ -85,6 +86,7 @@ def reflect_on_run(
     existing_lessons: list[str],
     llm_client: Any,
     config: AgentConfig,
+    llm_call_context: Any | None = None,
 ) -> tuple[list[ProceduralLessonDraft], EpisodicDraft | None]:
     """Return procedural drafts and optional episodic draft; empty on failure."""
     try:
@@ -98,12 +100,14 @@ def reflect_on_run(
             f"existing_lesson_snippets (dedup hints):\n{snippets or '(none)'}\n"
         )
 
+        ctx = replace(llm_call_context, stage="reflector", round_index=1) if llm_call_context else None
         out = llm_client.generate_plain_completion(
             system_prompt=_REFLECTOR_SYSTEM,
             user_content=user,
             llm_role="decision",
             max_output_tokens=4096,
             reasoning_effort="high",
+            call_context=ctx,
         )
         text = str(out.get("raw_output") or "")
         data = _extract_json_object(text)

@@ -174,6 +174,7 @@ def run_strategist_llm(
     llm: LLMClient,
     max_hits: int,
     emit_trace: Any,
+    llm_call_context: Any = None,
 ) -> StrategistCallOutcome:
     system = load_strategist_system_prompt()
     prev = dict(session.strategy_notes)
@@ -201,6 +202,7 @@ def run_strategist_llm(
         llm_role="support",
         max_output_tokens=2048,
         reasoning_effort=None,
+        call_context=llm_call_context,
     )
     usage = result.get("token_usage")
     if isinstance(usage, TraceTokenUsage):

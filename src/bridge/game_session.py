@@ -111,6 +111,10 @@ class GameSession:
     saw_game_over: bool = False
     identity: dict[str, Any] = field(default_factory=dict)
     warned_no_seed: bool = False
+    sql_run_id: str | None = None
+    sql_frame_by_state_id: dict[str, str] = field(default_factory=dict)
+    sql_event_index_by_state_id: dict[str, int] = field(default_factory=dict)
+    prev_frame_floor: int | None = None
 
     def reset_for_new_game(self) -> None:
         self.game_dir = None
@@ -122,3 +126,7 @@ class GameSession:
         self.saw_game_over = False
         self.identity.clear()
         self.warned_no_seed = False
+        self.sql_run_id = None
+        self.sql_frame_by_state_id.clear()
+        self.sql_event_index_by_state_id.clear()
+        self.prev_frame_floor = None

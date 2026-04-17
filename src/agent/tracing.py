@@ -16,6 +16,73 @@ from src.agent.schemas import AgentMode, AgentTrace, PersistedAiLog
 from src.agent.vm_shapes import as_dict
 
 
+def legacy_file_logs_enabled() -> bool:
+    from src.persistence.settings import get_persistence_settings
+
+    return get_persistence_settings().write_legacy_file_logs
+
+
+def sql_shadow_repository_ready() -> bool:
+    """True when shadow/primary SQL is on and a repository instance exists."""
+    from src.persistence.settings import get_persistence_settings
+    from src.persistence.sql_repository import get_sql_repository
+
+    return bool(
+        get_persistence_settings().sql_shadow_or_primary and get_sql_repository()
+    )
+
+
+def sql_shadow_create_run(payload: dict[str, Any]) -> None:
+    """Phase 0: insert ``runs`` (+ experiment) when shadow/primary SQL is enabled."""
+    from src.persistence.settings import get_persistence_settings
+    from src.persistence.sql_repository import get_sql_repository
+
+    if not get_persistence_settings().sql_shadow_or_primary:
+        return
+    repo = get_sql_repository()
+    if not repo:
+        return
+    repo.create_run(payload)
+
+
+def sql_shadow_insert_frame(payload: dict[str, Any]) -> str | None:
+    """Phase 0: mirror ``run_frames`` when ``SQL_STATE_MODE`` is shadow/primary."""
+    from src.persistence.settings import get_persistence_settings
+    from src.persistence.sql_repository import get_sql_repository
+
+    if not get_persistence_settings().sql_shadow_or_primary:
+        return None
+    repo = get_sql_repository()
+    if not repo:
+        return None
+    return repo.insert_frame(payload)
+
+
+def sql_shadow_upsert_decision_final(payload: dict[str, Any]) -> None:
+    """Phase 0: mirror terminal ``agent_decisions`` row."""
+    from src.persistence.settings import get_persistence_settings
+    from src.persistence.sql_repository import get_sql_repository
+
+    if not get_persistence_settings().sql_shadow_or_primary:
+        return
+    repo = get_sql_repository()
+    if not repo:
+        return
+    repo.upsert_decision_final(payload)
+
+
+def sql_shadow_upsert_run_end(payload: dict[str, Any]) -> None:
+    from src.persistence.settings import get_persistence_settings
+    from src.persistence.sql_repository import get_sql_repository
+
+    if not get_persistence_settings().sql_shadow_or_primary:
+        return
+    repo = get_sql_repository()
+    if not repo:
+        return
+    repo.upsert_run_end(payload)
+
+
 def utc_now_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
@@ -294,10 +361,11 @@ def write_run_end_snapshot(run_dir: Path, raw_envelope: dict[str, Any], *, state
         "derived": derived,
     }
     path = run_dir / RUN_END_SNAPSHOT_FILENAME
-    tmp = path.with_suffix(".json.tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, default=str)
-    os.replace(tmp, path)
+    if legacy_file_logs_enabled():
+        tmp = path.with_suffix(".json.tmp")
+        with tmp.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, default=str)
+        os.replace(tmp, path)
     return path, derived
 
 
@@ -315,6 +383,8 @@ def append_run_end_metric(run_dir: Path, *, state_id: str, derived: dict[str, An
 
 def append_run_metric_line(run_dir: Path, record: dict[str, Any]) -> None:
     """Append one JSON object to run_metrics.ndjson (append-only)."""
+    if not legacy_file_logs_enabled():
+        return
     path = run_dir / "run_metrics.ndjson"
     line = json.dumps(record, separators=(",", ":"), default=str) + "\n"
     with path.open("a", encoding="utf-8") as f:
@@ -413,8 +483,9 @@ def append_ai_decision_run_metric(run_dir: Path, trace: AgentTrace, state_log_pa
 
 def write_ai_log(state_log_path: Path, trace: AgentTrace) -> None:
     payload = build_persisted_ai_log(trace)
-    ai_log_path = build_ai_sidecar_path(state_log_path)
-    with ai_log_path.open("w", encoding="utf-8") as f:
-        json.dump(payload.model_dump(), f, indent=2)
-    append_ai_decision_run_metric(state_log_path.parent, trace, state_log_path)
+    if legacy_file_logs_enabled():
+        ai_log_path = build_ai_sidecar_path(state_log_path)
+        with ai_log_path.open("w", encoding="utf-8") as f:
+            json.dump(payload.model_dump(), f, indent=2)
+        append_ai_decision_run_metric(state_log_path.parent, trace, state_log_path)
 
