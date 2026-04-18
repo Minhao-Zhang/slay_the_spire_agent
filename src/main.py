@@ -495,6 +495,9 @@ def main():
         proposal_state["token"] = int(proposal_state["token"]) + 1
         token = int(proposal_state["token"])
         agent.persistence_run_id = session.sql_run_id if session else None
+        agent.persistence_langfuse_session_id = (
+            session.game_dir.name if session and session.game_dir else None
+        )
         agent.persistence_frame_id = (
             session.sql_frame_by_state_id.get(state_id) if session else None
         )
@@ -1001,7 +1004,7 @@ def main():
                                     "config_hash": cfg_h,
                                 },
                                 "source_log_path": str(session.game_dir.resolve()),
-                                "langfuse_session_id": run_uuid,
+                                "langfuse_session_id": session.game_dir.name,
                             }
                         )
                     except Exception as exc:  # noqa: BLE001
@@ -1188,7 +1191,13 @@ def main():
                         }
                     )
                     (session.game_dir / "sql_run_meta.json").write_text(
-                        json.dumps({"sql_run_id": session.sql_run_id}, indent=2),
+                        json.dumps(
+                            {
+                                "sql_run_id": session.sql_run_id,
+                                "langfuse_session_id": session.game_dir.name,
+                            },
+                            indent=2,
+                        ),
                         encoding="utf-8",
                     )
                 except Exception as exc:  # noqa: BLE001

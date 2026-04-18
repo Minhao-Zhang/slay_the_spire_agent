@@ -711,6 +711,8 @@ backfill_jobs(run_dir, stage, status, started_at, finished_at, error, rows_writt
 - New: `src/persistence/run_report_view.py` — pure-SQL materialization of `RunReport` structure from frames + decisions + run_end.
 - New: `scripts/parity_check.py` — per-run diff (see §11).
 
+**Transactional import (implementation detail).** Each run’s backfill uses one database transaction for all run-scoped rows (`runs`, `run_frames`, `agent_decisions`, `llm_call`, `run_end`, and the corresponding `mutation_events` with `actor=migration`). The `backfill_jobs` row is set to `pending` / `running` before that transaction starts; after commit it is updated to `succeeded` (or, on error, the transaction rolls back and the job row is updated to `failed` in a follow-up commit so progress is still visible). Large imports call `session.flush()` every `BACKFILL_FLUSH_EVERY_N_FRAMES` (default 50) inside the transaction to limit memory.
+
 **Config.** Unchanged from Phase 0.
 
 **Tests.**

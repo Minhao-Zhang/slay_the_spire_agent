@@ -1,0 +1,15 @@
+{
+  "state_id": "state-i-0",
+  "vm_summary": {
+    "floor": 2,
+    "screen_type": "SHOP",
+    "turn_key": "floor_2_shop",
+    "current_hp": 55,
+    "max_hp": 55,
+    "gold": 75,
+    "deck_size": 11,
+    "relic_count": 1,
+    "act": 1
+  },
+  "meta": {"ready_for_command": true, "agent_mode": "manual", "ai_enabled": false}
+}

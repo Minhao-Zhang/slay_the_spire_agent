@@ -1,0 +1,15 @@
+{
+  "state_id": "state-v-0",
+  "decision_id": "dec-v-0",
+  "turn_key": "floor_1_none",
+  "status": "executed",
+  "final_decision": "proceed",
+  "planner_summary": "early path",
+  "llm_model_used": "fixture-model",
+  "reasoning_effort_used": "low",
+  "strategist_ran": false,
+  "tool_names": ["read_screen"],
+  "total_tokens": 42,
+  "latency_ms": 10,
+  "retrieved_lesson_ids": ["L1", "L2"]
+}

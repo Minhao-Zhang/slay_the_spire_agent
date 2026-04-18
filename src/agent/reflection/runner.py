@@ -81,6 +81,7 @@ def run_reflection_pipeline(
 
         existing = [e.lesson[:80] for e in memory_store.procedural_entries]
         sql_run_id: str | None = None
+        langfuse_session_from_meta: str | None = None
         meta_path = game_dir / "sql_run_meta.json"
         if meta_path.is_file():
             try:
@@ -88,12 +89,16 @@ def run_reflection_pipeline(
                 raw_rid = meta.get("sql_run_id")
                 if raw_rid:
                     sql_run_id = str(raw_rid)
+                raw_sid = meta.get("langfuse_session_id")
+                if raw_sid:
+                    langfuse_session_from_meta = str(raw_sid).strip() or None
             except (json.JSONDecodeError, OSError, TypeError):
                 sql_run_id = None
-        # Phase 0: Langfuse for every reflector call; SQL llm_call only when shadow + runs row exists.
-        obs_run_id = sql_run_id or game_dir.name
+        # Phase 0: Langfuse session = log folder basename (same session as live play when meta matches).
+        lf_session_id = langfuse_session_from_meta or game_dir.name
         ref_ctx = LlmCallContext(
-            run_id=obs_run_id,
+            run_id=sql_run_id,
+            langfuse_session_id=lf_session_id,
             stage="reflector",
             prompt_profile=config.prompt_profile,
             experiment_id=config.experiment_id,

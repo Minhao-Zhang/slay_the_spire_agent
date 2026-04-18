@@ -42,7 +42,7 @@ def test_reflection_langfuse_trace_is_stable_per_run_name() -> None:
 
 def test_persist_skips_sql_repository_when_mirror_false(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("SQL_STATE_MODE", "shadow")
-    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "")
     monkeypatch.setenv("SQLITE_PATH", str(tmp_path / "t.db"))
     clear_engine_cache()
     reload_persistence_settings()
@@ -56,7 +56,8 @@ def test_persist_skips_sql_repository_when_mirror_false(tmp_path, monkeypatch) -
     monkeypatch.setattr("src.observability.llm_sql_recording.get_langfuse_client", lambda: lf)
 
     ctx = LlmCallContext(
-        run_id="file-run-dir-name",
+        run_id=None,
+        langfuse_session_id="2026-04-17-12-00-00_IRONCLAD_A0_12345678",
         mirror_llm_to_sql=False,
         langfuse_trace_id=langfuse_trace_id_for_decision_id("reflection:file-run-dir-name"),
         prompt_profile="default",
@@ -73,11 +74,14 @@ def test_persist_skips_sql_repository_when_mirror_false(tmp_path, monkeypatch) -
         status="ok",
     )
     lf.log_generation.assert_called_once()
+    call_kw = lf.log_generation.call_args.kwargs
+    assert call_kw.get("session_id") == "2026-04-17-12-00-00_IRONCLAD_A0_12345678"
+    assert call_kw.get("user_id") == "2026-04-17-12-00-00_IRONCLAD_A0_12345678"
 
 
 def test_persist_writes_sql_when_mirror_true(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("SQL_STATE_MODE", "shadow")
-    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "")
     monkeypatch.setenv("SQLITE_PATH", str(tmp_path / "t2.db"))
     clear_engine_cache()
     reload_persistence_settings()
@@ -111,7 +115,7 @@ def test_persist_writes_sql_when_mirror_true(tmp_path, monkeypatch) -> None:
                 "config_hash": "b" * 64,
             },
             "source_log_path": "/tmp/x",
-            "langfuse_session_id": run_id,
+            "langfuse_session_id": "x",
         }
     )
 
@@ -122,6 +126,7 @@ def test_persist_writes_sql_when_mirror_true(tmp_path, monkeypatch) -> None:
 
     ctx = LlmCallContext(
         run_id=run_id,
+        langfuse_session_id="x",
         mirror_llm_to_sql=True,
         langfuse_trace_id="d" * 32,
         event_index=0,
@@ -145,6 +150,9 @@ def test_persist_writes_sql_when_mirror_true(tmp_path, monkeypatch) -> None:
 
         n = s.query(LlmCallRow).filter(LlmCallRow.run_id == run_id).count()
     assert n == 1
+    lf_kw = lf.log_generation.call_args.kwargs
+    assert lf_kw.get("session_id") == "x"
+    assert lf_kw.get("user_id") == "x"
 
     clear_engine_cache()
     reload_persistence_settings()

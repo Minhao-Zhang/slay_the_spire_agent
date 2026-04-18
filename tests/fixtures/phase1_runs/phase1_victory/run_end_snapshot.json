@@ -1,0 +1,12 @@
+{
+  "state_id": "state-v-end",
+  "derived": {
+    "seed": "fixture-seed-v",
+    "class": "IRONCLAD",
+    "ascension_level": 2,
+    "victory": true,
+    "floor": 51,
+    "score": 999,
+    "recorded_at": "2026-04-01T12:00:00+00:00"
+  }
+}

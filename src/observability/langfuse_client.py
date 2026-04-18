@@ -9,6 +9,7 @@ import random
 import secrets
 import threading
 import uuid
+from contextlib import nullcontext
 from functools import lru_cache
 from typing import Any
 
@@ -70,6 +71,21 @@ def _local_pair() -> tuple[str, str]:
 
 def _hex_trace_id() -> str:
     return secrets.token_hex(16)
+
+
+def sanitize_langfuse_trace_attribute(value: str | None, *, max_len: int = 200) -> str | None:
+    """Langfuse requires US-ASCII session/user ids and drops values longer than ``max_len``."""
+    if not value:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    ascii_s = s.encode("ascii", errors="replace").decode("ascii").strip()
+    if not ascii_s:
+        return None
+    if len(ascii_s) > max_len:
+        ascii_s = ascii_s[:max_len]
+    return ascii_s
 
 
 def _maybe_redact(text: str, *, enabled: bool) -> str:
@@ -143,6 +159,8 @@ class LangfuseRecorder:
         metadata: dict[str, Any] | None,
         usage: dict[str, int | None],
         latency_ms: int | None,
+        session_id: str | None = None,
+        user_id: str | None = None,
     ) -> tuple[str, str]:
         """Return ``(trace_id, observation_id)`` for SQL (``local-`` prefix on failure/skip)."""
         if random.random() > self._settings.langfuse_sample_rate:
@@ -164,39 +182,51 @@ class LangfuseRecorder:
 
         observation_id = f"local-{uuid.uuid4()}"
         try:
+            from langfuse import propagate_attributes
             from langfuse.types import TraceContext
 
-            gen = self._client.start_observation(
-                trace_context=TraceContext(trace_id=tid),
-                name=name,
-                as_type="generation",
-                input=inp,
-                output=out,
-                model=model or "",
-                metadata=metadata or {},
+            sess = sanitize_langfuse_trace_attribute(session_id)
+            usr_in = sanitize_langfuse_trace_attribute(user_id)
+            if sess is None and usr_in is not None:
+                sess = usr_in
+            usr = usr_in or sess
+            prop_ctx = (
+                propagate_attributes(session_id=sess, user_id=usr)
+                if sess is not None and usr is not None
+                else nullcontext()
             )
-            usage_details: dict[str, int] = {}
-            for k, v in usage.items():
-                if v is None:
-                    continue
-                try:
-                    usage_details[k] = int(v)
-                except (TypeError, ValueError):
-                    continue
-            if usage_details:
-                try:
-                    gen.update(usage_details=usage_details)
-                except TypeError:
+            with prop_ctx:
+                gen = self._client.start_observation(
+                    trace_context=TraceContext(trace_id=tid),
+                    name=name,
+                    as_type="generation",
+                    input=inp,
+                    output=out,
+                    model=model or "",
+                    metadata=metadata or {},
+                )
+                usage_details: dict[str, int] = {}
+                for k, v in usage.items():
+                    if v is None:
+                        continue
                     try:
-                        gen.update(usage=usage_details)
+                        usage_details[k] = int(v)
+                    except (TypeError, ValueError):
+                        continue
+                if usage_details:
+                    try:
+                        gen.update(usage_details=usage_details)
+                    except TypeError:
+                        try:
+                            gen.update(usage=usage_details)
+                        except Exception as exc:  # noqa: BLE001
+                            logger.debug("langfuse usage update: %s", exc)
                     except Exception as exc:  # noqa: BLE001
                         logger.debug("langfuse usage update: %s", exc)
+                try:
+                    gen.end()
                 except Exception as exc:  # noqa: BLE001
-                    logger.debug("langfuse usage update: %s", exc)
-            try:
-                gen.end()
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("langfuse gen.end: %s", exc)
+                    logger.debug("langfuse gen.end: %s", exc)
             oid = getattr(gen, "id", None) or getattr(gen, "trace_id", None)
             if oid:
                 observation_id = str(oid)

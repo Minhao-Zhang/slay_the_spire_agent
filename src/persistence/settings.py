@@ -2,7 +2,7 @@
 
 Environment variables (load via python-dotenv from process cwd):
 
-- ``SQL_STATE_MODE``: ``off`` | ``shadow`` | ``primary`` (primary reserved for later phases).
+- ``SQL_STATE_MODE``: ``off`` | ``shadow`` | ``primary`` (``primary`` enables SQL-backed ``GET /api/runs`` in the dashboard; agent writes follow the same matrix as ``shadow``).
 - ``DATABASE_URL``: Postgres URL when using Postgres (e.g. ``postgresql+psycopg://...``).
 - ``SQLITE_PATH``: Path to SQLite file when ``DATABASE_URL`` is unset (default ``data/state.db``).
 - ``LANGFUSE_ENABLED``: ``true`` / ``false``.

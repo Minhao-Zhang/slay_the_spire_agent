@@ -11,6 +11,9 @@ class LlmCallContext:
     """Optional; when fields are missing, recording is skipped or degraded."""
 
     run_id: str | None = None
+    """SQL ``runs.id`` (UUID) when shadow/primary SQL created a row; omit when SQL off."""
+    langfuse_session_id: str | None = None
+    """Langfuse ``sessionId`` / ``userId``: log folder basename under ``logs/games/`` when set."""
     frame_id: str | None = None
     event_index: int | None = None
     state_id: str | None = None

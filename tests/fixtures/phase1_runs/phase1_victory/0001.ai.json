@@ -1,0 +1,15 @@
+{
+  "state_id": "state-v-1",
+  "decision_id": "dec-v-1",
+  "turn_key": "elite_combat_turn",
+  "status": "executed",
+  "final_decision": "attack",
+  "planner_summary": "facing an elite on floor 6",
+  "llm_model_used": "fixture-model",
+  "reasoning_effort_used": "medium",
+  "strategist_ran": true,
+  "tool_names": ["read_screen", "plan_combat"],
+  "total_tokens": 99,
+  "latency_ms": 25,
+  "retrieved_lesson_ids": ["L2"]
+}

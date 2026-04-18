@@ -16,7 +16,7 @@ from src.persistence.sql_repository import SqlRepository
 @pytest.fixture
 def sqlite_repo(tmp_path, monkeypatch):
     monkeypatch.setenv("SQL_STATE_MODE", "shadow")
-    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "")
     monkeypatch.setenv("SQLITE_PATH", str(tmp_path / "state.db"))
     clear_engine_cache()
     reload_persistence_settings()
@@ -80,7 +80,7 @@ def test_create_run_insert_frame_decision_llm(sqlite_repo: SqlRepository) -> Non
                 "config_hash": "b" * 64,
             },
             "source_log_path": "/tmp/x",
-            "langfuse_session_id": run_id,
+            "langfuse_session_id": "test-run-dir",
         }
     )
     fid = str(uuid.uuid4())

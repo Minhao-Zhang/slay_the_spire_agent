@@ -1,0 +1,15 @@
+{
+  "state_id": "state-d-0",
+  "vm_summary": {
+    "floor": 3,
+    "screen_type": "REST",
+    "turn_key": "floor_3_rest",
+    "current_hp": 45,
+    "max_hp": 60,
+    "gold": 30,
+    "deck_size": 15,
+    "relic_count": 1,
+    "act": 1
+  },
+  "meta": {"ready_for_command": true, "agent_mode": "manual", "ai_enabled": false}
+}

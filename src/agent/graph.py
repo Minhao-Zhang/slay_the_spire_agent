@@ -102,6 +102,7 @@ class SpireDecisionAgent:
         self._cached_non_combat_plan_block: str | None = None
         self.graph = self._build_graph()
         self.persistence_run_id: str | None = None
+        self.persistence_langfuse_session_id: str | None = None
         self.persistence_frame_id: str | None = None
         self.persistence_event_index: int | None = None
 
@@ -175,7 +176,8 @@ class SpireDecisionAgent:
 
     def _llm_ctx(self, state: GraphState, *, stage: str, round_index: int) -> LlmCallContext | None:
         rid = self.persistence_run_id
-        if not rid:
+        sid = (self.persistence_langfuse_session_id or "").strip() or None
+        if not rid and not sid:
             return None
         vm = state["vm"]
         header = as_dict(vm.get("header"))
@@ -193,6 +195,7 @@ class SpireDecisionAgent:
         }
         return LlmCallContext(
             run_id=rid,
+            langfuse_session_id=sid,
             frame_id=self.persistence_frame_id,
             event_index=self.persistence_event_index,
             state_id=state["state_id"],
@@ -204,7 +207,7 @@ class SpireDecisionAgent:
             experiment_id=self.config.experiment_id,
             langfuse_trace_id=trace.langfuse_trace_id or None,
             reasoning_effort=effort or None,
-            mirror_llm_to_sql=True,
+            mirror_llm_to_sql=bool(rid),
             tags={k: v for k, v in tags.items() if v is not None},
         )
 

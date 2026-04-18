@@ -1,0 +1,14 @@
+{
+  "state_id": "state-d-0",
+  "decision_id": "dec-d-0",
+  "turn_key": "floor_3_rest",
+  "status": "executed",
+  "final_decision": "smith",
+  "planner_summary": "upgrade at rest",
+  "llm_model_used": "fixture-model",
+  "reasoning_effort_used": "low",
+  "strategist_ran": false,
+  "tool_names": [],
+  "total_tokens": 20,
+  "latency_ms": 8
+}

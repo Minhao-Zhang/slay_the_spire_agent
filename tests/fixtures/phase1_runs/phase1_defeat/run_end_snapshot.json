@@ -1,0 +1,12 @@
+{
+  "state_id": "state-d-end",
+  "derived": {
+    "seed": "fixture-seed-d",
+    "class": "SILENT",
+    "ascension_level": 0,
+    "victory": false,
+    "floor": 18,
+    "score": 120,
+    "recorded_at": "2026-04-02T08:00:00+00:00"
+  }
+}

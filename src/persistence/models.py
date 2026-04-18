@@ -197,3 +197,26 @@ class MutationEventRow(Base):
     before_json: Mapped[Any | None] = mapped_column(_JSON, nullable=True)
     after_json: Mapped[Any | None] = mapped_column(_JSON, nullable=True)
     langfuse_trace_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class BackfillJobRow(Base):
+    """Phase 1: one row per ``logs/games/<run_dir>`` import job.
+
+    ``status`` (see ``src.persistence.backfill_constants``): ``pending`` | ``running`` |
+    ``succeeded`` | ``failed``.
+
+    ``stage`` while running or on failure: ``runs`` | ``frames`` | ``decisions`` |
+    ``llm_calls`` | ``run_end``; on success final ``stage`` is ``done``.
+    """
+
+    __tablename__ = "backfill_jobs"
+    __table_args__ = (UniqueConstraint("run_dir", name="uq_backfill_jobs_run_dir"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    run_dir: Mapped[str] = mapped_column(Text, nullable=False)
+    stage: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rows_written_json: Mapped[Any | None] = mapped_column(_JSON, nullable=True)

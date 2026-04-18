@@ -1,0 +1,15 @@
+{
+  "state_id": "state-v-1",
+  "vm_summary": {
+    "floor": 6,
+    "screen_type": "COMBAT",
+    "turn_key": "elite_combat_turn",
+    "current_hp": 70,
+    "max_hp": 80,
+    "gold": 120,
+    "deck_size": 14,
+    "relic_count": 2,
+    "act": 1
+  },
+  "meta": {"ready_for_command": true, "agent_mode": "manual", "ai_enabled": true}
+}

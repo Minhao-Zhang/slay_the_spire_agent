@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from src.agent.schemas import AgentTrace, TraceTokenUsage
+from src.persistence.settings import reload_persistence_settings
 from src.agent.tracing import (
     append_ai_decision_run_metric,
     build_persisted_ai_log,
@@ -85,6 +86,9 @@ class TestDeriveSurrogateMetrics(unittest.TestCase):
 
 
 class TestAppendAiDecisionRunMetric(unittest.TestCase):
+    def setUp(self) -> None:
+        reload_persistence_settings()
+
     def test_ndjson_includes_phase4_fields(self) -> None:
         trace = AgentTrace(
             decision_id="d1",

@@ -9,7 +9,7 @@ from typing import Any
 
 from src.agent.llm_context import LlmCallContext
 from src.agent.schemas import TraceTokenUsage
-from src.observability.langfuse_client import get_langfuse_client
+from src.observability.langfuse_client import get_langfuse_client, sanitize_langfuse_trace_attribute
 from src.persistence.settings import get_persistence_settings
 from src.persistence.sql_repository import get_sql_repository
 
@@ -44,8 +44,11 @@ def persist_llm_completion(
 ) -> None:
     if ctx is None:
         return
-    run_key = (ctx.run_id or "").strip()
-    if not run_key:
+    sql_run_key = (ctx.run_id or "").strip()
+    lf_session = sanitize_langfuse_trace_attribute((ctx.langfuse_session_id or "").strip() or None)
+    if not lf_session:
+        lf_session = sanitize_langfuse_trace_attribute(sql_run_key or None)
+    if not sql_run_key and not lf_session:
         return
     settings = get_persistence_settings()
     lf = get_langfuse_client()
@@ -59,9 +62,8 @@ def persist_llm_completion(
     meta = {
         **(ctx.tags or {}),
         "stage": eff_stage,
-        "run_id": run_key,
-        "user_id": run_key,
-        "session_id": run_key,
+        "sql_run_id": sql_run_key or None,
+        "langfuse_session_id": lf_session,
         "prompt_profile": ctx.prompt_profile,
         "frame_id": ctx.frame_id,
         "event_index": ctx.event_index,
@@ -79,8 +81,10 @@ def persist_llm_completion(
         metadata=meta,
         usage=ud,
         latency_ms=latency_ms,
+        session_id=lf_session,
+        user_id=lf_session,
     )
-    if not (settings.sql_shadow_or_primary and ctx.mirror_llm_to_sql):
+    if not (settings.sql_shadow_or_primary and ctx.mirror_llm_to_sql and sql_run_key):
         return
     repo = get_sql_repository()
     if repo is None:
@@ -89,7 +93,7 @@ def persist_llm_completion(
         repo.record_llm_call(
             {
                 "id": str(uuid.uuid4()),
-                "run_id": run_key,
+                "run_id": sql_run_key,
                 "frame_id": ctx.frame_id,
                 "event_index": ctx.event_index,
                 "state_id": ctx.state_id or "",

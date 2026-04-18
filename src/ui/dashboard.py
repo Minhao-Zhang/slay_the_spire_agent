@@ -1059,6 +1059,15 @@ def _load_run_metrics_records(run_name: str) -> tuple[list[dict[str, Any]] | Non
 async def get_runs():
     """List replay/metrics run **directories** under ``logs/games``."""
     try:
+        from src.persistence.settings import get_persistence_settings
+        from src.persistence.sql_repository import get_sql_repository
+
+        if get_persistence_settings().sql_state_mode == "primary":
+            repo = get_sql_repository()
+            if repo is not None:
+                runs = repo.list_run_dir_names_desc()
+                return {"runs": runs, "archived": {}}
+
         runs_set: set[str] = set()
         if os.path.isdir(LOG_GAMES_DIR):
             for entry in os.listdir(LOG_GAMES_DIR):

@@ -105,7 +105,7 @@ def main() -> int:
                     "config_hash": "1" * 64,
                 },
                 "source_log_path": str(ROOT / "scripts" / "check_database_config.py"),
-                "langfuse_session_id": run_id,
+                "langfuse_session_id": f"__db_check__/{run_id[:8]}",
             }
         )
         from src.persistence.models import RunRow

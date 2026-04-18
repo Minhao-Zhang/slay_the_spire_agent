@@ -40,6 +40,12 @@ def iter_ai_json_paths(run_dir: Path) -> list[Path]:
     return [p for _, p in paths]
 
 
+def ai_sidecar_event_index(path: Path) -> int | None:
+    """Event index from ``NNNN.ai.json`` (``Path.stem`` is wrong here: it yields ``NNNN.ai``)."""
+    m = _AI_JSON.match(path.name)
+    return int(m.group(1)) if m else None
+
+
 def read_json_dict(path: Path) -> dict[str, Any] | None:
     try:
         raw = path.read_text(encoding="utf-8")
